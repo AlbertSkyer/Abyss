@@ -31,6 +31,7 @@ import '../transcript.dart';
 import '../queued_messages.dart';
 import 'claude_code_transport.dart';
 import 'claude_code_translator.dart';
+import 'claude_core_setting.dart';
 import 'claude_elicitation.dart';
 import 'claude_goal.dart';
 import 'claude_numbers.dart';
@@ -137,8 +138,8 @@ class ClaudeCodeKernel
   }) : _openLink = openLink ?? openExternal,
        _usageOffBy = usageOffBy ?? _usageOn,
        _providers = providers ?? ModelProviders.current,
-       _providerEnvironment =
-           providerEnvironment ?? providerSessionLaunchEnvironment {
+       _providerEnvironment = providerEnvironment ?? providerLaunchEnvironment,
+       _hasProviderEnvironment = providerEnvironment != null {
     _translator = ClaudeTranslator(
       emit: emit,
       nextSeq: () => nextSeq,
@@ -231,6 +232,10 @@ class ClaudeCodeKernel
   /// The ChatGPT providers' accounts: the app's when null.
   final CodexService? _codex;
   final ProviderEnvironment _providerEnvironment;
+
+  /// Whether [_providerEnvironment] was given ([ClaudeCodeKernel.new]'s
+  /// `providerEnvironment`, as tests do): else the launch picks it.
+  final bool _hasProviderEnvironment;
 
   static Future<String?> _usageOn() async => null;
 
@@ -585,6 +590,14 @@ class ClaudeCodeKernel
     );
   }
 
+  /// Whether this session's subagents take the pool: only BaoCode's own
+  /// core on this machine is handed it. The CLI has no equivalent option,
+  /// and a remote core is started without it. Only such a session needs
+  /// another upstream's pool model routed through the proxy.
+  bool get _takesSubagentPool =>
+      !RemoteLocation.isRemote(_cwd) &&
+      ClaudeCore.current() == ClaudeCore.builtin;
+
   Future<void> _launch() async {
     await _history;
     // One process at a time on a session: the last one, if restarted.
@@ -600,6 +613,13 @@ class ClaudeCodeKernel
       // Through the proxy, the effort goes with the model's name; to
       // Anthropic's API, as Claude Code's own, if it is one of its.
       final direct = custom == null || !custom.$1.protocolOf(custom.$2).proxied;
+      // The pool's other upstreams need the proxy only where the pool is
+      // used; elsewhere it would route needlessly.
+      final providerEnvironment = _hasProviderEnvironment
+          ? _providerEnvironment
+          : _takesSubagentPool
+          ? providerSessionLaunchEnvironment
+          : providerLaunchEnvironment;
       Map<String, String>? env;
       if ((custom, model) case ((final provider, _), final model?)) {
         try {
@@ -607,7 +627,7 @@ class ClaudeCodeKernel
             // The window picked, as the model's own: else the CLI holds
             // the conversation to 200K. The provider's env may say else.
             ClaudeModelVariables.maxContextTokens: '${_autocompact!}',
-            ...await _providerEnvironment(provider, model),
+            ...await providerEnvironment(provider, model),
           };
         } on Object catch (error) {
           throw ClaudeUnavailable(
