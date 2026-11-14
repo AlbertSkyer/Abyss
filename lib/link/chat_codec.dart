@@ -311,6 +311,8 @@ abstract final class ChatCodec {
       'duration': ?item.duration?.inMilliseconds,
       'ranBefore': ?item.ranBefore?.inMilliseconds,
       'model': ?item.model,
+      'assignedModel': ?item.assignedModel,
+      'requestedModel': ?item.requestedModel,
       if (item.children.isNotEmpty)
         'children': [for (final child in item.children) encode(child)],
       'result': ?item.result,
@@ -446,6 +448,8 @@ abstract final class ChatCodec {
         startedAt: time('startedAt'),
         duration: duration('duration'),
         model: optional('model'),
+        assignedModel: optional('assignedModel'),
+        requestedModel: optional('requestedModel'),
         children: [
           for (final child in (json['children'] as List?) ?? const [])
             ?decode(child),

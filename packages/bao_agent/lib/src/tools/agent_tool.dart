@@ -9,6 +9,7 @@ import '../engine/agent_loop.dart';
 import '../engine/agent_run.dart';
 import '../engine/session.dart';
 import '../engine/session_store.dart';
+import '../engine/subagent_models.dart';
 import '../engine/tasks.dart';
 import '../engine/worktrees.dart';
 import '../hooks/hooks.dart';
@@ -66,7 +67,8 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         'enum': ['sonnet', 'opus', 'haiku', 'fable'],
         'description':
             'The model it runs on, over its definition\'s and the default '
-            'for agents; when left out, its definition\'s, else the one you '
+            'for agents; when left out, its definition\'s, else the one set '
+            'for agents, else one of the subagent pool, else the one you '
             'run on',
       },
       'effort': {
@@ -174,21 +176,30 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       _truthy(session.environment['CLAUDE_CODE_SUBAGENT_MODEL_FORCE']);
 
   /// The model [agent] works with, as an id: the one [asked] for, else its
-  /// definition's, else the one set for agents. [forced], as the CLI does:
-  /// the one set for agents over both, a definition's `inherit` too; only
-  /// a call's `inherit` stands.
+  /// definition's, else the one set for agents, else one of the session's
+  /// pool. [forced], as the CLI does: the one set for agents over both, a
+  /// definition's `inherit` too; only a call's `inherit` stands. Like
+  /// [assignmentFor], it takes a pool place when none of those names one.
   static String modelFor(
     AgentSession session,
     AgentDefinition agent,
     String? asked,
-  ) {
-    final subagent = asText(session.environment['CLAUDE_CODE_SUBAGENT_MODEL']);
-    final alias = forced(session)
-        ? (asked == 'inherit' ? asked : subagent)
-        : asked ?? agent.model ?? subagent;
-    if (alias == null || alias == 'inherit') return session.resolvedModel;
-    return session.catalog.resolve(alias);
-  }
+  ) => assignmentFor(session, agent, asked).model;
+
+  /// The same choice as [modelFor], with where it came from and the pool
+  /// entry it used: what its task and its call's result report.
+  static SubagentModelAssignment assignmentFor(
+    AgentSession session,
+    AgentDefinition agent,
+    String? asked,
+  ) => session.subagentModels.assign(
+    forced: forced(session),
+    sessionModel: session.resolvedModel,
+    asked: asked,
+    definitionModel: agent.model,
+    configuredSubagent: session.environment['CLAUDE_CODE_SUBAGENT_MODEL'],
+    resolve: session.catalog.resolve,
+  );
 
   @override
   Future<ToolOutput> call(
@@ -201,6 +212,9 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         ? _general(session)
         : _definition(session, type) ?? _general(session);
     final description = asText(input['description']) ?? agent.name;
+    // Chosen before anything awaited, so calls launched together take the
+    // pool in the order they were made, whatever each then waits on.
+    final assignment = assignmentFor(session, agent, asText(input['model']));
     final isolation = asText(input['isolation']) ?? agent.isolation;
     Worktree? worktree;
     if (isolation == 'worktree') {
@@ -221,7 +235,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       agentId: session.tasks.newId('a'),
       description: description,
       prompt: '${input['prompt'] ?? ''}',
-      model: modelFor(session, agent, asText(input['model'])),
+      assignment: assignment,
       effort: asText(input['effort']) ?? agent.effort,
       toolUseId: context.toolUseId,
       parentReads: context.run.readFiles,
@@ -238,6 +252,9 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       agentId: job.agentId,
       toolUseId: context.toolUseId,
       agentType: agent.name,
+      model: assignment.model,
+      requestedModel: assignment.requested,
+      modelSource: assignment.source.name,
       background: background,
     );
     // In the foreground it stops with the turn; sent to the background,
@@ -285,6 +302,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       'prompt': job.prompt,
       'outputFile': task.outputFile,
       'resolvedModel': job.model,
+      ...job.assignment.toJson(),
       if (job.worktree case final worktree?) ...Worktrees.toJson(worktree),
     },
   );
@@ -329,6 +347,7 @@ class SubagentOutcome {
       'totalToolUseCount': job.run?.toolUses ?? 0,
       'usage': result.usage,
       'resolvedModel': job.model,
+      ...job.assignment.toJson(),
       if (job.worktree case final worktree?) ...Worktrees.toJson(worktree),
     };
     if (!result.ok && result.reason != 'max_turns') {
@@ -361,7 +380,7 @@ class SubagentJob {
     required this.agentId,
     required this.description,
     required this.prompt,
-    required this.model,
+    required this.assignment,
     required this.toolUseId,
     required this.parentReads,
     this.effort,
@@ -375,7 +394,16 @@ class SubagentJob {
   final String agentId;
   final String description;
   final String prompt;
-  final String model;
+
+  /// The model it runs on, and why it was chosen.
+  final SubagentModelAssignment assignment;
+
+  /// The model its calls are made with.
+  String get model => assignment.model;
+
+  /// The model its call asked for, if it did.
+  String? get requestedModel => assignment.requested;
+
   final String? effort;
   final String toolUseId;
   final ReadFileState parentReads;
@@ -582,6 +610,9 @@ class SubagentJob {
       agentId: agentId,
       toolUseId: toolUseId,
       agentType: agent.name,
+      model: model,
+      requestedModel: requestedModel,
+      modelSource: assignment.source.name,
     );
     unawaited(start(task, text));
     return task;

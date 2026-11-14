@@ -137,7 +137,8 @@ class ClaudeCodeKernel
   }) : _openLink = openLink ?? openExternal,
        _usageOffBy = usageOffBy ?? _usageOn,
        _providers = providers ?? ModelProviders.current,
-       _providerEnvironment = providerEnvironment ?? providerLaunchEnvironment {
+       _providerEnvironment =
+           providerEnvironment ?? providerSessionLaunchEnvironment {
     _translator = ClaudeTranslator(
       emit: emit,
       nextSeq: () => nextSeq,
@@ -622,6 +623,7 @@ class ClaudeCodeKernel
       _launchedSuggestions = PromptSuggestions.current();
       _appliedSwitches = ExtensionSwitches.current();
       final sdkServers = ClaudeSdkTools.serversFor(_cwd);
+      final subagentPool = _launchSubagentPool(custom?.$1);
       final transport = await _start(
         _launched = ClaudeLaunch(
           cwd: _cwd,
@@ -656,6 +658,7 @@ class ClaudeCodeKernel
             (final provider, _) => _requestedModels(provider),
             null => const [],
           },
+          subagentPool: subagentPool,
         ),
       );
       if (_disposed) {
@@ -3232,6 +3235,28 @@ class ClaudeCodeKernel
     (final provider, _) => '${provider.id}|${provider.launchFingerprint}',
     null => '',
   };
+
+  /// The subagent pool (Settings → Models) as the session on [provider] is
+  /// handed it: that upstream's own models by their ids (as it asks for
+  /// them), other upstreams' as `@<id>/<model>` refs, which the proxy
+  /// routes there (the session is put through it when the pool picks one).
+  /// Entries no longer configured, or turned off, are left out: with none
+  /// left, subagents keep the model they had.
+  List<String> _launchSubagentPool(ModelProvider? provider) {
+    if (provider == null) return const [];
+    return [
+      for (final entry in _providers.subagentPoolEntries)
+        if (entry.provider case final upstream?)
+          if (entry.model case final model?)
+            if (upstream.enabled &&
+                upstream.connected &&
+                model.enabled &&
+                !model.missing)
+              upstream.id == provider.id
+                  ? model.id
+                  : modelRef(upstream.id, model.id),
+    ];
+  }
 
   String get _providerKey => _providerKeyOf(_model);
 

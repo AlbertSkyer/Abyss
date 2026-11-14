@@ -24,13 +24,15 @@ Map<String, String> launchEnvironment({
   ProxyEndpoint? proxy,
   String? noProxy,
   bool recordUsage = false,
+  bool requiresProxy = false,
 }) {
   final String baseUrl;
   final String token;
   var apiKey = '';
   // Its calls kept: through the proxy, which keeps them, whatever it
-  // speaks.
-  final proxied = provider.throughProxy || recordUsage;
+  // speaks. A subagent pool that names another upstream's model needs it
+  // too, the proxy alone sending `@<id>/<model>` there.
+  final proxied = provider.throughProxy || recordUsage || requiresProxy;
   if (proxied) {
     if (proxy == null) {
       throw StateError('${provider.name} needs the model proxy');

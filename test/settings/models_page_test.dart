@@ -1774,14 +1774,15 @@ void main() {
       );
     }
 
-    testWidgets('is empty at first, and says what it does not do yet', (
+    testWidgets('is empty at first, and says when the pool is taken', (
       tester,
     ) async {
       await pump(tester);
       expect(find.text('Subagent Model Pool'), findsOneWidget);
       expect(find.text('No models picked yet.'), findsOneWidget);
+      expect(find.textContaining('taken in turn (round-robin'), findsOneWidget);
       expect(
-        find.textContaining('does not alter the process-wide Claude Code'),
+        find.textContaining('the Claude Code CLI does not'),
         findsOneWidget,
       );
     });

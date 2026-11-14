@@ -12048,7 +12048,7 @@ abstract class AppLocalizations {
   /// No description provided for @modelsSubagentPoolDescription.
   ///
   /// In en, this message translates to:
-  /// **'Models to hand to parallel subagents in a future update, in order. This only prepares that assignment: it does not change how subagents run yet, and it does not alter the process-wide Claude Code subagent model (CLAUDE_CODE_SUBAGENT_MODEL). Every subagent still runs on the model picked under an upstream\'s Subagents role.'**
+  /// **'Models to hand to subagents launched together, in order. They are taken in turn (round-robin, wrapping around) when the call names no model, its definition names none, and no subagent model is configured; forced or explicit models still win. BaoCode\'s own core applies the pool; the Claude Code CLI does not.'**
   String get modelsSubagentPoolDescription;
 
   /// No description provided for @modelsSubagentPoolEmpty.

@@ -97,6 +97,8 @@ class DartCoreTransport implements ClaudeCodeTransport {
           : '${ClaudeLaunch.appendedSystemPrompt}\n\n$instructions',
       promptSuggestions: launch.promptSuggestions,
       environment: environment,
+      // Only this core routes the pool; the CLI is started without it.
+      subagentPool: launch.subagentPool,
     );
   }
 

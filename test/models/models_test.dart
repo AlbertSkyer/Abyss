@@ -1198,6 +1198,25 @@ void main() {
       expect(direct['CLAUDE_CODE_SUBAGENT_MODEL'], 'claude-haiku-4-5');
     });
 
+    test('a required proxy sends a direct upstream through it, for the '
+        'pool\'s other upstreams', () {
+      final env = launchEnvironment(
+        provider: const ModelProvider(
+          id: 'a',
+          name: 'A',
+          baseUrl: 'https://api.anthropic.com',
+        ),
+        model: 'm',
+        key: 'k',
+        proxy: (baseUrl: 'http://127.0.0.1:9/p/a', token: 't'),
+        requiresProxy: true,
+      );
+      expect(env['ANTHROPIC_BASE_URL'], 'http://127.0.0.1:9/p/a');
+      expect(env['ANTHROPIC_AUTH_TOKEN'], 't');
+      expect(env['ANTHROPIC_API_KEY'], '');
+      expect(env['NO_PROXY'], contains('127.0.0.1'));
+    });
+
     test('a directly-spoken upstream carries its own headers in Claude '
         'Code\'s variable, auth headers left out', () {
       final env = launchEnvironment(

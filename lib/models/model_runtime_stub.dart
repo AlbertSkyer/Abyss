@@ -14,6 +14,11 @@ Future<Map<String, String>> providerLaunchEnvironment(
   String model,
 ) async => throw const UpstreamException('Not available on the web.');
 
+Future<Map<String, String>> providerSessionLaunchEnvironment(
+  ModelProvider provider,
+  String model,
+) async => throw const UpstreamException('Not available on the web.');
+
 Future<List<GeneratedImage>> generateImages(
   ModelProvider provider,
   ProviderModel model,

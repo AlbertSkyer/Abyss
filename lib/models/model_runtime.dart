@@ -25,6 +25,14 @@ Future<Map<String, String>> providerLaunchEnvironment(
   String model,
 ) => platform.providerLaunchEnvironment(provider, model);
 
+/// [providerLaunchEnvironment] for a conversation: the subagent pool
+/// (Settings → Models), when it names another upstream's model, puts the
+/// session through the proxy, which alone sends `@<id>/<model>` there.
+Future<Map<String, String>> providerSessionLaunchEnvironment(
+  ModelProvider provider,
+  String model,
+) => platform.providerSessionLaunchEnvironment(provider, model);
+
 /// [request]'s pictures, made by [model] (an image model) of [provider]:
 /// the bytes of each (fetched where it answered with a link). Throws
 /// [UpstreamException].

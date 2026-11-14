@@ -6977,7 +6977,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsSubagentPoolDescription =>
-      '为将来的并行子 Agent 准备按顺序使用的模型。现在只做准备：尚不改变子 Agent 的运行方式，也不改变进程级的 Claude Code 子 Agent 模型（CLAUDE_CODE_SUBAGENT_MODEL）。每个子 Agent 仍运行在上游「子 Agent」角色所选的模型上。';
+      '为同时启动的子 Agent 按顺序准备的模型。当调用未指定模型、子 Agent 定义也未指定、且未配置子 Agent 模型时，按顺序轮流使用（循环使用）；强制或明确指定的模型仍然优先。BaoCode 自带内核会使用模型池，Claude Code CLI 不会。';
 
   @override
   String get modelsSubagentPoolEmpty => '还没有选择模型。';

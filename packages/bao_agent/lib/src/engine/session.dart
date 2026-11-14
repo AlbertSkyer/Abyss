@@ -28,6 +28,7 @@ import 'agent_run.dart';
 import 'checkpoints.dart';
 import 'context.dart';
 import 'session_store.dart';
+import 'subagent_models.dart';
 import 'tasks.dart';
 import 'toolbox.dart';
 
@@ -57,6 +58,7 @@ class EngineOptions {
     this.strictMcpConfig = false,
     this.slashCommands = true,
     this.canAsk = true,
+    this.subagentPool = const [],
   });
 
   factory EngineOptions.fromJson(Map<String, Object?> json) => EngineOptions(
@@ -88,6 +90,7 @@ class EngineOptions {
     strictMcpConfig: json['strictMcpConfig'] == true,
     slashCommands: json['slashCommands'] != false,
     canAsk: json['canAsk'] != false,
+    subagentPool: [...asList(json['subagentPool']).whereType<String>()],
   );
 
   final String cwd;
@@ -152,6 +155,14 @@ class EngineOptions {
   /// are not offered.
   final bool canAsk;
 
+  /// The models a subagent may run on when neither its call nor its
+  /// definition names one, and no scalar subagent model is set: model ids
+  /// or provider model refs (`@<provider>/<model>`), in the order they are
+  /// handed out. The host filters out those no longer configured; an
+  /// empty list turns the pool off. Only BaoCode's own core applies it:
+  /// the Claude Code CLI has no equivalent option.
+  final List<String> subagentPool;
+
   Map<String, Object?> toJson() => {
     'cwd': cwd,
     'resume': ?resume,
@@ -176,6 +187,7 @@ class EngineOptions {
     'strictMcpConfig': strictMcpConfig,
     'slashCommands': slashCommands,
     'canAsk': canAsk,
+    'subagentPool': subagentPool,
   };
 }
 
@@ -239,6 +251,12 @@ class AgentSession {
   late final PermissionEngine permissions;
   late final FileCheckpoints checkpoints;
   late final TaskManager tasks;
+
+  /// The models subagents may run on beyond the ones named for them: the
+  /// host's pool ([EngineOptions.subagentPool]), taken in turn.
+  late final SubagentModelSelector subagentModels = SubagentModelSelector(
+    options.subagentPool,
+  );
   late final HookRunner hooks;
   late final McpManager mcp = McpManager(this);
   late final AgentRun mainRun;

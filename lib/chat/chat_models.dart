@@ -279,6 +279,8 @@ class AgentItem extends ChatItem {
     this.startedAt,
     this.duration,
     this.model,
+    this.assignedModel,
+    this.requestedModel,
     this.children = const [],
     this.result,
     this.background = false,
@@ -310,7 +312,18 @@ class AgentItem extends ChatItem {
   /// How long it ran the times before, continued once it had ended (sent
   /// a message, SendMessage): null for none.
   final Duration? ranBefore;
+
+  /// The model its upstream answered with, once it has; until then, the
+  /// one it was assigned.
   final String? model;
+
+  /// The model it was assigned (one of the subagent pool's, say): what it
+  /// is asked with, as kept apart from [model], which is what the upstream
+  /// reported (it may differ, a provider naming its own snapshot).
+  final String? assignedModel;
+
+  /// The `model` its call asked for, if it asked for one.
+  final String? requestedModel;
   final List<ChatItem> children;
 
   /// Its final report.
@@ -330,6 +343,8 @@ class AgentItem extends ChatItem {
     String? activity,
     Duration? duration,
     String? model,
+    String? assignedModel,
+    String? requestedModel,
     List<ChatItem>? children,
     String? result,
     bool? background,
@@ -346,6 +361,8 @@ class AgentItem extends ChatItem {
     startedAt: startedAt,
     duration: duration ?? this.duration,
     model: model ?? this.model,
+    assignedModel: assignedModel ?? this.assignedModel,
+    requestedModel: requestedModel ?? this.requestedModel,
     children: children ?? this.children,
     result: result ?? this.result,
     background: background ?? this.background,
@@ -365,6 +382,8 @@ class AgentItem extends ChatItem {
     activity: activity,
     startedAt: at,
     model: model,
+    assignedModel: assignedModel,
+    requestedModel: requestedModel,
     children: children,
     result: result,
     background: background,

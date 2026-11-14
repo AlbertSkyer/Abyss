@@ -30,6 +30,9 @@ class BackgroundTask {
     this.toolUseId,
     this.command,
     this.agentType,
+    this.model,
+    this.requestedModel,
+    this.modelSource,
   }) : started = DateTime.now();
 
   final String id;
@@ -41,6 +44,12 @@ class BackgroundTask {
   final String? toolUseId;
   final String? command;
   final String? agentType;
+
+  /// A subagent's: the model it was assigned, the model its call asked
+  /// for, and where the assignment came from (`pool`, `requested`, …).
+  final String? model;
+  final String? requestedModel;
+  final String? modelSource;
   final DateTime started;
   final CancelToken cancel = CancelToken();
 
@@ -89,6 +98,9 @@ class BackgroundTask {
     'tool_use_id': ?toolUseId,
     'output_file': outputFile,
     'exit_code': ?exitCode,
+    'model': ?model,
+    'requested_model': ?requestedModel,
+    'model_source': ?modelSource,
   };
 }
 
@@ -127,6 +139,9 @@ class TaskManager {
     String? toolUseId,
     String? command,
     String? agentType,
+    String? model,
+    String? requestedModel,
+    String? modelSource,
     String? id,
   }) {
     final taskId = id ?? newId(type == 'local_bash' ? 'b' : 'a');
@@ -139,6 +154,9 @@ class TaskManager {
       toolUseId: toolUseId,
       command: command,
       agentType: agentType,
+      model: model,
+      requestedModel: requestedModel,
+      modelSource: modelSource,
     );
     File(task.outputFile).writeAsStringSync('');
     tasks[taskId] = task;
@@ -153,6 +171,9 @@ class TaskManager {
       'description': task.description,
       'is_backgrounded': task.backgrounded,
       'output_file': task.outputFile,
+      'model': ?task.model,
+      'requested_model': ?task.requestedModel,
+      'model_source': ?task.modelSource,
     });
   }
 
@@ -263,6 +284,9 @@ class TaskManager {
     required String agentId,
     String? toolUseId,
     String? agentType,
+    String? model,
+    String? requestedModel,
+    String? modelSource,
     bool background = true,
   }) {
     final task = _register(
@@ -270,6 +294,9 @@ class TaskManager {
       description: description,
       toolUseId: toolUseId,
       agentType: agentType,
+      model: model,
+      requestedModel: requestedModel,
+      modelSource: modelSource,
       id: agentId,
     );
     task.backgrounded = background;

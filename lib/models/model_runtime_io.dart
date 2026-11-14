@@ -173,12 +173,29 @@ class _Refused extends UpstreamException {
 Future<Map<String, String>> providerLaunchEnvironment(
   ModelProvider provider,
   String model,
-) async {
+) => _providerEnvironment(provider, model);
+
+/// [providerLaunchEnvironment] for a conversation, whose subagent pool may
+/// name another upstream's model: that needs the proxy, which alone sends
+/// `@<id>/<model>` to the upstream it points at. Auxiliary runs (titles,
+/// summaries) do not take the pool.
+Future<Map<String, String>> providerSessionLaunchEnvironment(
+  ModelProvider provider,
+  String model,
+) => _providerEnvironment(provider, model, subagentPool: true);
+
+Future<Map<String, String>> _providerEnvironment(
+  ModelProvider provider,
+  String model, {
+  bool subagentPool = false,
+}) async {
   final key = await ModelProviders.current.key(provider.id);
   // Its calls kept (Settings → Usage): through the proxy, which keeps
-  // them, whatever it speaks.
+  // them, whatever it speaks. A subagent pool with another upstream's
+  // model goes through it as well, for the same reason.
   final recordUsage = UsageLedger.current.enabled;
-  final proxy = provider.throughProxy || recordUsage
+  final routesPool = subagentPool && _poolNamesAnother(provider);
+  final proxy = provider.throughProxy || recordUsage || routesPool
       ? await _proxy.endpoint(provider.id)
       : null;
   // What the session's own NO_PROXY keeps out of the user's proxy, beside
@@ -191,7 +208,24 @@ Future<Map<String, String>> providerLaunchEnvironment(
     proxy: proxy,
     noProxy: route.direct ? null : route.noProxy,
     recordUsage: recordUsage,
+    requiresProxy: routesPool,
   );
+}
+
+/// Whether the subagent pool has a model of an upstream other than
+/// [provider] that a session could be handed: configured, turned on and
+/// connected.
+bool _poolNamesAnother(ModelProvider provider) {
+  for (final entry in ModelProviders.current.subagentPoolEntries) {
+    final upstream = entry.provider;
+    final model = entry.model;
+    if (upstream == null || model == null) continue;
+    if (upstream.id == provider.id) continue;
+    if (!upstream.enabled || !upstream.connected) continue;
+    if (!model.enabled || model.missing) continue;
+    return true;
+  }
+  return false;
 }
 
 Future<void> stopModelProxy() async {

@@ -33,6 +33,7 @@ class Harness {
     String? thinkingDisplay,
     bool strictMcpConfig = false,
     bool firstParty = true,
+    List<String> subagentPool = const [],
   }) async {
     final root =
         from?.root ??
@@ -66,6 +67,7 @@ class Harness {
         effort: effort,
         thinkingDisplay: thinkingDisplay,
         strictMcpConfig: strictMcpConfig,
+        subagentPool: subagentPool,
         environment: {
           'HOME': root,
           'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',

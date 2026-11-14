@@ -55,6 +55,12 @@ class ClaudeTranslator {
 
   String? _ownModelOf(String? model) => model == null ? null : _ownModel(model);
 
+  /// The model a subagent's result says it was assigned: `assignedModel`,
+  /// or the older `resolvedModel` when there is none.
+  String? _assignedOf(Map<String, Object?>? structured) => _ownModelOf(
+    _string(structured?['assignedModel'] ?? structured?['resolvedModel']),
+  );
+
   /// What the agent is busy with out of sight (see [ActivityReported]).
   KernelActivity? _activity;
 
@@ -1419,6 +1425,11 @@ class ClaudeTranslator {
             model: agent.item.model == null
                 ? _ownModelOf(_string(structured?['resolvedModel']))
                 : null,
+            // What it was assigned, kept apart from what it answered with.
+            assignedModel: agent.item.assignedModel == null
+                ? _assignedOf(structured)
+                : null,
+            requestedModel: _string(structured?['requestedModel']),
             background: true,
           );
           _putAgent(id);
@@ -1439,6 +1450,10 @@ class ClaudeTranslator {
           model: agent.item.model == null
               ? _ownModelOf(_string(structured?['resolvedModel']))
               : null,
+          assignedModel: agent.item.assignedModel == null
+              ? _assignedOf(structured)
+              : null,
+          requestedModel: _string(structured?['requestedModel']),
         );
         _putAgent(id);
         return;
@@ -1880,6 +1895,22 @@ class ClaudeTranslator {
             description: _string(message['description']),
           );
           _putAgent(card!);
+        }
+        // The model it was assigned, before its own messages say what its
+        // upstream answered with.
+        if (!workflow && card != null) {
+          if (_agents[card] case final run?) {
+            final assigned = _ownModelOf(_string(message['model']));
+            final requested = _string(message['requested_model']);
+            if ((assigned != null && run.item.assignedModel == null) ||
+                requested != null) {
+              run.item = run.item.copyWith(
+                assignedModel: run.item.assignedModel == null ? assigned : null,
+                requestedModel: requested,
+              );
+              _putAgent(card);
+            }
+          }
         }
         _tasks[taskId] = KernelTask(
           id: taskId,

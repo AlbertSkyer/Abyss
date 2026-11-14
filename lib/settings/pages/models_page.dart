@@ -352,9 +352,9 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     );
   }
 
-  /// The models set aside for subagents, in order: a future parallel
-  /// assignment's list, not what they run on yet (the scalar subagent role
-  /// still is, through `CLAUDE_CODE_SUBAGENT_MODEL`).
+  /// The models set aside for subagents, in order: those launched with no
+  /// model of their own, no definition model and no scalar subagent model
+  /// take them in turn (BaoCode's own core; the CLI has no equivalent).
   Widget _subagentPool(BuildContext context) {
     final l10n = context.l10n;
     final entries = _providers.subagentPoolEntries;
