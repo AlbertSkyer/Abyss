@@ -7414,6 +7414,50 @@ class AppLocalizationsEn extends AppLocalizations {
       'Claude Code Haiku (this machine\'s setup)';
 
   @override
+  String get modelsSubagentPool => 'Subagent Model Pool';
+
+  @override
+  String get modelsSubagentPoolDescription =>
+      'Models to hand to parallel subagents in a future update, in order. This only prepares that assignment: it does not change how subagents run yet, and it does not alter the process-wide Claude Code subagent model (CLAUDE_CODE_SUBAGENT_MODEL). Every subagent still runs on the model picked under an upstream\'s Subagents role.';
+
+  @override
+  String get modelsSubagentPoolEmpty => 'No models picked yet.';
+
+  @override
+  String get modelsSubagentPoolAdd => 'Add Models…';
+
+  @override
+  String get modelsSubagentPoolAddDescription =>
+      'Choose from the models configured in your upstreams.';
+
+  @override
+  String get modelsSubagentPoolMoveUp => 'Move Up';
+
+  @override
+  String get modelsSubagentPoolMoveDown => 'Move Down';
+
+  @override
+  String get modelsSubagentPoolRemove => 'Remove from Pool';
+
+  @override
+  String get modelsSubagentPoolMissing => 'Not configured';
+
+  @override
+  String get modelsSubagentPoolMissingTooltip =>
+      'This upstream or model is no longer configured. It stays in the pool until you remove it.';
+
+  @override
+  String get modelsSubagentPoolDialogTitle => 'Add Models to the Subagent Pool';
+
+  @override
+  String get modelsSubagentPoolDialogDescription =>
+      'Models are added in the order listed. Use Move Up and Move Down in the pool to change that order.';
+
+  @override
+  String get modelsSubagentPoolNoModels =>
+      'Every configured model is already in the pool.';
+
+  @override
   String get settingsSectionUpdates => 'Updates';
 
   @override

@@ -12039,6 +12039,84 @@ abstract class AppLocalizations {
   /// **'Claude Code Haiku (this machine\'s setup)'**
   String get modelsAuxiliaryBuiltin;
 
+  /// No description provided for @modelsSubagentPool.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent Model Pool'**
+  String get modelsSubagentPool;
+
+  /// No description provided for @modelsSubagentPoolDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Models to hand to parallel subagents in a future update, in order. This only prepares that assignment: it does not change how subagents run yet, and it does not alter the process-wide Claude Code subagent model (CLAUDE_CODE_SUBAGENT_MODEL). Every subagent still runs on the model picked under an upstream\'s Subagents role.'**
+  String get modelsSubagentPoolDescription;
+
+  /// No description provided for @modelsSubagentPoolEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models picked yet.'**
+  String get modelsSubagentPoolEmpty;
+
+  /// No description provided for @modelsSubagentPoolAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Models…'**
+  String get modelsSubagentPoolAdd;
+
+  /// No description provided for @modelsSubagentPoolAddDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from the models configured in your upstreams.'**
+  String get modelsSubagentPoolAddDescription;
+
+  /// No description provided for @modelsSubagentPoolMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Up'**
+  String get modelsSubagentPoolMoveUp;
+
+  /// No description provided for @modelsSubagentPoolMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Down'**
+  String get modelsSubagentPoolMoveDown;
+
+  /// No description provided for @modelsSubagentPoolRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Pool'**
+  String get modelsSubagentPoolRemove;
+
+  /// No description provided for @modelsSubagentPoolMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Not configured'**
+  String get modelsSubagentPoolMissing;
+
+  /// No description provided for @modelsSubagentPoolMissingTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'This upstream or model is no longer configured. It stays in the pool until you remove it.'**
+  String get modelsSubagentPoolMissingTooltip;
+
+  /// No description provided for @modelsSubagentPoolDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Models to the Subagent Pool'**
+  String get modelsSubagentPoolDialogTitle;
+
+  /// No description provided for @modelsSubagentPoolDialogDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Models are added in the order listed. Use Move Up and Move Down in the pool to change that order.'**
+  String get modelsSubagentPoolDialogDescription;
+
+  /// No description provided for @modelsSubagentPoolNoModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Every configured model is already in the pool.'**
+  String get modelsSubagentPoolNoModels;
+
   /// No description provided for @settingsSectionUpdates.
   ///
   /// In en, this message translates to:

@@ -6973,6 +6973,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String get modelsAuxiliaryBuiltin => 'Claude Code Haiku（本机配置）';
 
   @override
+  String get modelsSubagentPool => '子 Agent 模型池';
+
+  @override
+  String get modelsSubagentPoolDescription =>
+      '为将来的并行子 Agent 准备按顺序使用的模型。现在只做准备：尚不改变子 Agent 的运行方式，也不改变进程级的 Claude Code 子 Agent 模型（CLAUDE_CODE_SUBAGENT_MODEL）。每个子 Agent 仍运行在上游「子 Agent」角色所选的模型上。';
+
+  @override
+  String get modelsSubagentPoolEmpty => '还没有选择模型。';
+
+  @override
+  String get modelsSubagentPoolAdd => '添加模型…';
+
+  @override
+  String get modelsSubagentPoolAddDescription => '从已配置的上游模型中选择。';
+
+  @override
+  String get modelsSubagentPoolMoveUp => '上移';
+
+  @override
+  String get modelsSubagentPoolMoveDown => '下移';
+
+  @override
+  String get modelsSubagentPoolRemove => '从模型池移除';
+
+  @override
+  String get modelsSubagentPoolMissing => '未配置';
+
+  @override
+  String get modelsSubagentPoolMissingTooltip =>
+      '该上游或模型已不再配置。它会保留在模型池中，直到你移除它。';
+
+  @override
+  String get modelsSubagentPoolDialogTitle => '向子 Agent 模型池添加模型';
+
+  @override
+  String get modelsSubagentPoolDialogDescription =>
+      '模型按列表顺序添加。可在模型池中用「上移」和「下移」调整顺序。';
+
+  @override
+  String get modelsSubagentPoolNoModels => '已配置的模型都已加入模型池。';
+
+  @override
   String get settingsSectionUpdates => '更新';
 
   @override

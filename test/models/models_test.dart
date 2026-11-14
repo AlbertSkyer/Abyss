@@ -16,7 +16,9 @@ import 'package:baocode/models/secret_store_io.dart';
 import 'package:baocode/models/upstream.dart';
 import 'package:baocode/settings/pages/models_page.dart'
     show formatEnvironment, formatHeaders, parseEnvironment, parseHeaders;
+import 'package:baocode/settings/user_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 const _gateway = ModelProvider(
   id: 'gw',
@@ -1636,6 +1638,213 @@ void main() {
         ),
       );
       expect(asked, ['/anthropic/v1/models', '/v1/models']);
+    });
+  });
+
+  group('the subagent pool', () {
+    ModelProviders pool() {
+      return ModelProviders.memory(
+        providers: [
+          const ModelProvider(
+            id: 'a',
+            name: 'Alpha',
+            baseUrl: 'https://a.example',
+            models: [
+              ProviderModel(id: 'one', label: 'Alpha One'),
+              ProviderModel(id: 'two'),
+            ],
+            roles: ProviderRoles(subagent: 'one'),
+          ),
+          const ModelProvider(
+            id: 'b',
+            name: 'Beta',
+            baseUrl: 'https://b.example',
+            models: [ProviderModel(id: 'three', label: 'Beta Three')],
+          ),
+        ],
+      );
+    }
+
+    test('keeps only model refs, the first of each, in order', () async {
+      final providers = ModelProviders.memory(
+        providers: [
+          const ModelProvider(
+            id: 'a',
+            name: 'A',
+            models: [ProviderModel(id: 'one')],
+          ),
+        ],
+      );
+      await providers.setSubagentPool([
+        '@a/one',
+        'plain',
+        '@a/one',
+        '',
+        '@b/two',
+        '@a/one',
+      ]);
+      expect(providers.subagentPool, ['@a/one', '@b/two']);
+
+      // A file edited by hand is read the same way.
+      await providers.setSubagentPool(['@a/one']);
+      expect(providers.subagentPool, ['@a/one']);
+      await providers.setSubagentPool([]);
+      expect(providers.subagentPool, isEmpty);
+    });
+
+    test('adds at the end, deduping, and reports whether it changed', () async {
+      final providers = pool();
+      expect(providers.subagentPool, isEmpty);
+      expect(await providers.addSubagentModel('@a/one'), isTrue);
+      expect(await providers.addSubagentModel('@a/one'), isFalse);
+      expect(await providers.addSubagentModels(['@a/one', '@b/three']), isTrue);
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+      expect(await providers.addSubagentModels(['@a/one']), isFalse);
+      expect(await providers.addSubagentModel('nope'), isFalse);
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+    });
+
+    test('moves a ref, clamped to the ends', () async {
+      final providers = pool();
+      await providers.setSubagentPool(['@a/one', '@a/two', '@b/three']);
+      expect(await providers.moveSubagentModel('@a/one', 2), isTrue);
+      expect(providers.subagentPool, ['@a/two', '@b/three', '@a/one']);
+      expect(await providers.moveSubagentModel('@a/one', 9), isFalse);
+      expect(await providers.moveSubagentModel('@b/three', -5), isTrue);
+      expect(providers.subagentPool, ['@b/three', '@a/two', '@a/one']);
+      expect(await providers.moveSubagentModel('@b/gone', 0), isFalse);
+    });
+
+    test('removes a ref; the last one removes the setting', () async {
+      final providers = pool();
+      await providers.setSubagentPool(['@a/one', '@b/three']);
+      expect(await providers.removeSubagentModel('@a/one'), isTrue);
+      expect(providers.subagentPool, ['@b/three']);
+      expect(await providers.removeSubagentModel('@a/one'), isFalse);
+      expect(await providers.removeSubagentModel('@b/three'), isTrue);
+      expect(providers.subagentPool, isEmpty);
+    });
+
+    test('resolves refs across providers, and keeps a missing one', () async {
+      final providers = pool();
+      await providers.setSubagentPool([
+        '@a/one',
+        '@b/three',
+        '@b/not-listed',
+        '@gone/model',
+      ]);
+      final entries = providers.subagentPoolEntries;
+      expect(entries.map((entry) => entry.ref), [
+        '@a/one',
+        '@b/three',
+        '@b/not-listed',
+        '@gone/model',
+      ]);
+      expect(entries[0].provider!.name, 'Alpha');
+      expect(entries[0].modelName, 'Alpha One');
+      expect(entries[0].missing, isFalse);
+      expect(entries[1].provider!.name, 'Beta');
+      expect(entries[1].modelName, 'Beta Three');
+      // A model its upstream no longer lists is still there, marked.
+      expect(entries[2].missing, isTrue);
+      expect(entries[2].provider!.name, 'Beta');
+      expect(entries[2].modelName, 'not-listed');
+      // Its upstream gone too.
+      expect(entries[3].missing, isTrue);
+      expect(entries[3].provider, isNull);
+      expect(entries[3].providerName, 'gone');
+      expect(entries[3].modelId, 'model');
+    });
+
+    test('resolves any ref, whether in the pool or not', () async {
+      final providers = pool();
+      final entry = providers.resolveSubagentModel(' @a/one ')!;
+      expect(entry.ref, '@a/one');
+      expect(entry.provider!.name, 'Alpha');
+      expect(entry.modelName, 'Alpha One');
+      expect(providers.resolveSubagentModel('one'), isNull);
+      expect(providers.resolveSubagentModel('plain'), isNull);
+      expect(providers.subagentPool, isEmpty);
+    });
+
+    test('removing an upstream keeps its refs in the pool', () async {
+      final providers = pool();
+      await providers.setSubagentPool(['@a/one', '@b/three']);
+      await providers.remove('b');
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+      expect(providers.subagentPoolEntries.last.missing, isTrue);
+    });
+
+    test('goes to settings.json under models.subagentPool, and back', () async {
+      final dir = await Directory.systemTemp.createTemp('subagent-pool');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final settings = UserSettings(p.join(dir.path, 'settings.json'));
+      addTearDown(settings.dispose);
+      await settings.load();
+      final providers = ModelProviders.settings(
+        settings,
+        secrets: MemorySecretStore(),
+      );
+      await providers.save(
+        const ModelProvider(
+          id: 'a',
+          name: 'A',
+          models: [ProviderModel(id: 'one')],
+        ),
+      );
+      await providers.setSubagentPool(['@a/one', '@b/two']);
+
+      // The key is the pool's, a list of refs; roles are untouched.
+      expect(settings[ModelProviders.subagentPoolKey], ['@a/one', '@b/two']);
+
+      final again = UserSettings(settings.path);
+      addTearDown(again.dispose);
+      await again.load();
+      final back = ModelProviders.settings(again, secrets: MemorySecretStore());
+      expect(back.subagentPool, ['@a/one', '@b/two']);
+      expect(back.subagentPoolEntries.first.modelName, 'one');
+      expect(back.subagentPoolEntries.last.missing, isTrue);
+
+      // Removing the last ref removes the key itself.
+      await back.setSubagentPool([]);
+      expect(again[ModelProviders.subagentPoolKey], isNull);
+    });
+
+    test('a hand-edited setting keeps only what it can read', () async {
+      final dir = await Directory.systemTemp.createTemp('subagent-pool');
+      addTearDown(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+      final settings = UserSettings(p.join(dir.path, 'settings.json'));
+      addTearDown(settings.dispose);
+      await settings.load();
+      await settings.update(ModelProviders.subagentPoolKey, [
+        '@a/one',
+        3,
+        null,
+        '@a/one',
+        '@b/two',
+        'not-a-ref',
+      ]);
+      final providers = ModelProviders.settings(
+        settings,
+        secrets: MemorySecretStore(),
+      );
+      expect(providers.subagentPool, ['@a/one', '@b/two']);
+    });
+
+    test('leaves the scalar subagent role alone', () async {
+      final providers = pool();
+      const before = ProviderRoles(subagent: 'one');
+      expect(providers.provider('a')!.roles, before);
+      await providers.setSubagentPool(['@a/one', '@b/three']);
+      expect(providers.provider('a')!.roles, before);
+      // The pool is not a role: it does not go through ProviderRoles JSON.
+      expect(providers.provider('a')!.roles.toJson(), {'subagent': 'one'});
+      await providers.remove('a');
+      expect(providers.provider('a'), isNull);
     });
   });
 }

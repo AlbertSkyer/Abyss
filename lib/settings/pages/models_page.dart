@@ -42,6 +42,7 @@ import 'featured_upstreams_strip.dart';
 import 'model_dialogs.dart';
 import 'settings_dropdown.dart';
 import 'settings_widgets.dart';
+import 'subagent_pool_dialog.dart';
 import '../../ide/ide_back_button.dart';
 import '../../ide/ide_spinning.dart';
 
@@ -351,6 +352,49 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     );
   }
 
+  /// The models set aside for subagents, in order: a future parallel
+  /// assignment's list, not what they run on yet (the scalar subagent role
+  /// still is, through `CLAUDE_CODE_SUBAGENT_MODEL`).
+  Widget _subagentPool(BuildContext context) {
+    final l10n = context.l10n;
+    final entries = _providers.subagentPoolEntries;
+    return SettingsGroup(
+      title: l10n.modelsSubagentPool,
+      description: l10n.modelsSubagentPoolDescription,
+      children: [
+        if (entries.isEmpty)
+          SettingsRow(label: l10n.modelsSubagentPoolEmpty)
+        else
+          for (final (index, entry) in entries.indexed)
+            _SubagentPoolRow(
+              entry: entry,
+              index: index,
+              count: entries.length,
+              onMove: (to) =>
+                  unawaited(_providers.moveSubagentModel(entry.ref, to)),
+              onRemove: () =>
+                  unawaited(_providers.removeSubagentModel(entry.ref)),
+            ),
+        SettingsRow(
+          label: l10n.modelsSubagentPoolAdd,
+          description: l10n.modelsSubagentPoolAddDescription,
+          trailing: IdeButton(
+            label: l10n.modelsSubagentPoolAdd,
+            icon: Codicons.add,
+            secondary: true,
+            onPressed: () => unawaited(_addSubagentModels()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _addSubagentModels() async {
+    final refs = await showSubagentPoolDialog(context, providers: _providers);
+    if (refs == null || refs.isEmpty) return;
+    await _providers.addSubagentModels(refs);
+  }
+
   Widget _list(BuildContext context) {
     final l10n = context.l10n;
     // The newest such: one imported later takes the place of one before.
@@ -422,6 +466,7 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
             _imageRow(context),
           ],
         ),
+        _subagentPool(context),
         SettingsGroup(
           title: l10n.modelsProviders,
           children: [
@@ -522,6 +567,90 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// A model in the subagent pool: its name and upstream, a warning while
+/// either is no longer configured, and the buttons that move it or remove
+/// it from the pool.
+class _SubagentPoolRow extends StatelessWidget {
+  const _SubagentPoolRow({
+    required this.entry,
+    required this.index,
+    required this.count,
+    required this.onMove,
+    required this.onRemove,
+  });
+
+  final SubagentPoolEntry entry;
+  final int index;
+  final int count;
+
+  /// Moves it to that place in the pool: 0 first.
+  final ValueChanged<int> onMove;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SettingsRow(
+      label: entry.modelName,
+      description: entry.providerName,
+      below: [
+        if (entry.missing)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2, right: 4),
+                child: Icon(
+                  Codicons.warning,
+                  size: 13,
+                  color: AppColors.caution,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  l10n.modelsSubagentPoolMissingTooltip,
+                  style: SettingsText.description.copyWith(
+                    color: AppColors.caution,
+                  ),
+                ),
+              ),
+            ],
+          ),
+      ],
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (entry.missing) ...[
+            ModelBadge(
+              l10n.modelsSubagentPoolMissing,
+              color: AppColors.caution,
+              tooltip: l10n.modelsSubagentPoolMissingTooltip,
+            ),
+            const SizedBox(width: 10),
+          ],
+          IdeActionButton(
+            icon: Codicons.arrowUp,
+            tooltip: l10n.modelsSubagentPoolMoveUp,
+            onPressed: index == 0 ? null : () => onMove(index - 1),
+          ),
+          const SizedBox(width: 4),
+          IdeActionButton(
+            icon: Codicons.arrowDown,
+            tooltip: l10n.modelsSubagentPoolMoveDown,
+            onPressed: index == count - 1 ? null : () => onMove(index + 1),
+          ),
+          const SizedBox(width: 8),
+          IdeActionButton(
+            icon: Codicons.trash,
+            tooltip: l10n.modelsSubagentPoolRemove,
+            onPressed: onRemove,
+          ),
+        ],
+      ),
     );
   }
 }

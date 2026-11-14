@@ -8,6 +8,43 @@ import '../settings/user_settings.dart';
 import 'model_provider.dart';
 import 'secret_store.dart';
 
+/// A model of the subagent pool ([ModelProviders.subagentPool]), as
+/// resolved: the [ref] it is kept as ([modelRef]), and the [provider] and
+/// [model] it names while they are still configured. A ref whose provider
+/// or model is gone is kept in the settings all the same ([missing]), so
+/// it comes back if they do; the user may remove it.
+class SubagentPoolEntry {
+  const SubagentPoolEntry({
+    required this.ref,
+    required this.providerId,
+    required this.modelId,
+    this.provider,
+    this.model,
+  });
+
+  final String ref;
+
+  /// The parts [ref] names, as written, even when gone.
+  final String providerId;
+  final String modelId;
+
+  /// The upstream and model, when still configured.
+  final ModelProvider? provider;
+  final ProviderModel? model;
+
+  /// Whether the model (or its upstream) is no longer configured.
+  bool get missing => model == null;
+
+  /// The upstream's name, its id when it is gone.
+  String get providerName => provider?.name ?? providerId;
+
+  /// The model's name as its upstream labels it, its id when it is gone.
+  String get modelName => switch ((provider, model)) {
+    (final provider?, final model?) => provider.labelOf(model),
+    _ => modelId,
+  };
+}
+
 /// The upstreams Settings → Models keeps, read from settings.json and
 /// written back to it; their keys in the keychain ([SecretStore]).
 ///
@@ -67,6 +104,7 @@ class ModelProviders extends ChangeNotifier {
   static const auxiliaryKey = 'models.auxiliary';
   static const actionsKey = 'models.actions';
   static const imageKey = 'models.image';
+  static const subagentPoolKey = 'models.subagentPool';
 
   /// [actionsModel]'s value for the auxiliary model, whatever it is.
   static const followAuxiliary = 'auxiliary';
@@ -225,6 +263,119 @@ class ModelProviders extends ChangeNotifier {
     if (index <= 0) return all;
     return [all[index], ...all.take(index), ...all.skip(index + 1)];
   }
+
+  /// The ordered models set aside for subagents, as [modelRef]s kept in
+  /// [subagentPoolKey]: separate from the scalar subagent role
+  /// ([ProviderRoles.subagent], `CLAUDE_CODE_SUBAGENT_MODEL`), which is
+  /// what every subagent still runs on. Refs that no longer name a
+  /// configured model are kept here, not dropped ([subagentPoolEntries]
+  /// marks them); only [modelRef]s are read, duplicates left out (the
+  /// first kept, at its place), so a hand-edited file stays safe.
+  List<String> get subagentPool => _poolOf(_read(subagentPoolKey));
+
+  /// The pool's refs, each resolved ([SubagentPoolEntry]): the upstream
+  /// and model it names, or that they are gone, in the order kept.
+  List<SubagentPoolEntry> get subagentPoolEntries => [
+    for (final ref in subagentPool) resolveSubagentModel(ref)!,
+  ];
+
+  /// [ref] resolved as a pool entry, whether or not it is in the pool
+  /// (a gone model marked [SubagentPoolEntry.missing]); null when it is
+  /// not a [modelRef].
+  SubagentPoolEntry? resolveSubagentModel(String ref) {
+    final trimmed = ref.trim();
+    final parsed = parseModelRef(trimmed);
+    if (parsed == null) return null;
+    final provider = this.provider(parsed.provider);
+    return SubagentPoolEntry(
+      ref: trimmed,
+      providerId: parsed.provider,
+      modelId: parsed.model,
+      provider: provider,
+      model: provider?.model(parsed.model),
+    );
+  }
+
+  /// Whether [ref] is a [modelRef] in the pool.
+  bool hasSubagentModel(String ref) => subagentPool.contains(ref.trim());
+
+  /// Adds [ref] (a [modelRef]) at the end of the pool unless it is there
+  /// already; a ref that is not a [modelRef] changes nothing. Returns
+  /// whether it was added.
+  Future<bool> addSubagentModel(String ref) async => addSubagentModels([ref]);
+
+  /// Adds the [modelRef]s of [refs] at the end of the pool, in their
+  /// order, those already there (or repeated in [refs]) left out; refs
+  /// that are not [modelRef]s are not added. Returns whether any was.
+  Future<bool> addSubagentModels(Iterable<String> refs) async {
+    final pool = subagentPool;
+    final seen = pool.toSet();
+    final added = [
+      for (final ref in refs)
+        if (_poolRef(ref) case final ref? when seen.add(ref)) ref,
+    ];
+    if (added.isEmpty) return false;
+    await _write(subagentPoolKey, [...pool, ...added]);
+    return true;
+  }
+
+  /// Removes [ref] from the pool, a gone model's too. Returns whether it
+  /// was there.
+  Future<bool> removeSubagentModel(String ref) async {
+    final pool = subagentPool;
+    final trimmed = ref.trim();
+    final kept = [
+      for (final entry in pool)
+        if (entry != trimmed) entry,
+    ];
+    if (kept.length == pool.length) return false;
+    await _write(subagentPoolKey, kept.isEmpty ? null : kept);
+    return true;
+  }
+
+  /// Moves [ref] to [index] in the pool, 0 first (clamped to its ends); a
+  /// ref not in the pool changes nothing. Returns whether it moved.
+  Future<bool> moveSubagentModel(String ref, int index) async {
+    final pool = subagentPool;
+    final trimmed = ref.trim();
+    final from = pool.indexOf(trimmed);
+    if (from < 0) return false;
+    final to = index.clamp(0, pool.length - 1);
+    if (to == from) return false;
+    final moved = [...pool]..removeAt(from);
+    moved.insert(to, trimmed);
+    await _write(subagentPoolKey, moved);
+    return true;
+  }
+
+  /// Replaces the pool with [refs], in their order: [modelRef]s only,
+  /// duplicates left out (the first kept), an empty list removing the
+  /// setting.
+  Future<void> setSubagentPool(Iterable<String> refs) async {
+    final seen = <String>{};
+    final pool = [
+      for (final ref in refs)
+        if (_poolRef(ref) case final ref? when seen.add(ref)) ref,
+    ];
+    await _write(subagentPoolKey, pool.isEmpty ? null : pool);
+  }
+
+  static List<String> _poolOf(Object? stored) {
+    final seen = <String>{};
+    return [
+      for (final value in switch (stored) {
+        final List list => list,
+        _ => const [],
+      })
+        if (_poolRef(value) case final ref? when seen.add(ref)) ref,
+    ];
+  }
+
+  /// [value] as a pool ref: a [modelRef], trimmed; null otherwise.
+  static String? _poolRef(Object? value) => switch (value) {
+    final String ref when parseModelRef(ref.trim()) != null => ref.trim(),
+    _ => null,
+  };
 
   /// Adds [provider], or replaces the one of its id.
   Future<void> save(ModelProvider provider) async {
