@@ -800,11 +800,12 @@ class ClaudeCodeKernel
     );
   }
 
-  void _teardown() {
+  void _teardown({bool answering = true}) {
     _usage?.close();
     _usage = null;
     unawaited(_subscription?.cancel());
     _subscription = null;
+    _settleInteractions(answer: answering);
     _control?.failAll('Claude Code stopped');
     _control = null;
     if (_transport case final transport?) {
@@ -1162,13 +1163,7 @@ class ClaudeCodeKernel
         costUsd: usage?.costUsd,
       );
     }
-    for (final MapEntry(key: id, value: permission) in _permissions.entries) {
-      emit(InteractionResolved(nextSeq, id));
-      if (permission.sdk case final sdk? when !sdk.isCompleted) {
-        sdk.complete(null);
-      }
-    }
-    _permissions.clear();
+    _settleInteractions();
     // Stopped too: its work folds all the same (the session file tells it
     // was stopped).
     if (worked != null) {
@@ -1185,6 +1180,30 @@ class ClaudeCodeKernel
         usage: usage,
       ),
     );
+  }
+
+  /// No question outlives the turn or process it belongs to. A child-agent
+  /// request answered to a still-open transport is denied explicitly; an
+  /// already-closed one is settled locally, with nothing sent to a dead pipe.
+  /// In neither case may it be restored as if approval were still pending.
+  void _settleInteractions({bool answer = true}) {
+    if (_permissions.isEmpty) return;
+    final pending = [..._permissions.entries];
+    _permissions.clear();
+    for (final MapEntry(key: id, value: permission) in pending) {
+      emit(InteractionResolved(nextSeq, id));
+      if (answer && permission.agent && _control != null && _running) {
+        _control!.respond(id, const {
+          'behavior': 'deny',
+          'message':
+              'The approval was cancelled because the conversation stopped '
+              'or its window closed. The subagent was not started.',
+        });
+      }
+      if (permission.sdk case final sdk? when !sdk.isCompleted) {
+        sdk.complete(null);
+      }
+    }
   }
 
   @override
@@ -2952,7 +2971,7 @@ class ClaudeCodeKernel
 
   void _exited(int code, String stderr, {String? executable}) {
     final wasReady = _health.status == KernelHealthStatus.ready;
-    _teardown();
+    _teardown(answering: false);
     if (!wasReady &&
         _starting != null &&
         _rejectTooOld != null &&

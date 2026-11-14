@@ -117,6 +117,52 @@ void main() {
     kernel.dispose();
   });
 
+  test('closing denies an unanswered child and resolves its request', () async {
+    final cli = FakeCli();
+    final (:kernel, :transcript, events: _) = claude(cli);
+    kernel.prepare();
+    await pumpEventQueue();
+    ask(cli);
+    await pumpEventQueue();
+    expect(transcript.pendingInteraction, isA<AgentApprovalRequest>());
+
+    kernel.dispose();
+    await pumpEventQueue();
+
+    final response = responseTo(cli, 'ask-1');
+    expect(response['behavior'], 'deny');
+    expect(response['message'], contains('window closed'));
+    expect(response['model'], isNull);
+    expect(transcript.pendingInteraction, isNull);
+  });
+
+  test(
+    'an exited transport settles the question without a dead-pipe write',
+    () async {
+      final cli = FakeCli();
+      final (:kernel, :transcript, events: _) = claude(cli);
+      kernel.prepare();
+      await pumpEventQueue();
+      ask(cli);
+      await pumpEventQueue();
+      expect(transcript.pendingInteraction, isA<AgentApprovalRequest>());
+
+      cli.push({'type': 'transport_exit', 'code': 1, 'stderr': 'closed'});
+      await pumpEventQueue();
+
+      expect(transcript.pendingInteraction, isNull);
+      expect(
+        cli.written.where(
+          (message) =>
+              message['type'] == 'control_response' &&
+              (message['response'] as Map)['request_id'] == 'ask-1',
+        ),
+        isEmpty,
+      );
+      kernel.dispose();
+    },
+  );
+
   test('with no one there to ask (a bot), it is allowed as assigned', () async {
     final cli = FakeCli();
     final (:kernel, :transcript, events: _) = claude(
