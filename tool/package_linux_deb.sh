@@ -65,7 +65,7 @@ chmod 755 "$stage/usr/bin/baocode"
 
 cat > "$stage/usr/share/applications/baocode.desktop" << 'EOF'
 [Desktop Entry]
-Name=BaoCode
+Name=Abyss
 Comment=Desktop app for Claude Code
 Exec=baocode %U
 Icon=baocode
@@ -94,9 +94,9 @@ Section: devel
 Priority: optional
 Architecture: ${package_arch}
 Depends: libc6 (>= ${glibc}), libgtk-3-0, libblkid1, liblzma5${webkit}
-Maintainer: BaoCode <noreply@baocode.dev>
+Maintainer: Abyss <noreply@baocode.dev>
 Homepage: https://baocode.dev
-Description: BaoCode desktop for Linux
+Description: Abyss desktop for Linux
  A desktop UI for Claude Code, with a fast IDE built in.
 EOF
 

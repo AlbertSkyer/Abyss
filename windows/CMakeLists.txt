@@ -2,9 +2,9 @@
 cmake_minimum_required(VERSION 3.14)
 project(baocode LANGUAGES CXX)
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "baocode")
+# APP_EDITION in Flutter's dart-defines, or -DAPP_PRODUCT=Abyss for native
+# builds, selects the parallel product. The default remains BaoCode.
+include("edition.cmake")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -57,8 +57,10 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
-# The browsers' native messaging host; see BrowserBridge/CMakeLists.txt.
-add_subdirectory("BrowserBridge")
+# Only BaoCode's extension may use this host. Abyss has none of its own yet.
+if(APP_BUNDLE_BROWSER)
+  add_subdirectory("BrowserBridge")
+endif()
 
 # Windows Error Reporting's module for the app's fast fails; see
 # wer/CMakeLists.txt.
@@ -88,13 +90,15 @@ install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 # The browsers' native messaging host and its manifest, beside the app.
-install(TARGETS baocode-browser-host RUNTIME
-  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
-install(FILES "BrowserBridge/dev.baocode.browser.json"
-  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+if(APP_BUNDLE_BROWSER)
+  install(TARGETS baocode-browser-host RUNTIME
+    DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+  install(FILES "BrowserBridge/dev.baocode.browser.json"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+endif()
 
 # The module that writes down a fast fail, beside the app that registers it.
-install(TARGETS baocode_wer RUNTIME
+install(TARGETS ${APP_WER_NAME} RUNTIME
   DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

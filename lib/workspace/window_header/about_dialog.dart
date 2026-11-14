@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../chat/panels/interaction_panel.dart';
 import '../../l10n/l10n.dart';
+import '../../platform/app_edition.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
 import '../../update/version.dart';
@@ -59,7 +60,7 @@ class _AboutBaoCodeDialog extends StatelessWidget {
                 ),
                 SizedBox(width: 10),
                 Text(
-                  'BaoCode',
+                  AppEdition.name,
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 15,

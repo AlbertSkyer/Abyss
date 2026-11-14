@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "edition.h"
 #include "crash_report.h"
 #include "hang_watchdog.h"
 #include "utils.h"
@@ -14,7 +15,7 @@
 namespace log_folder {
 namespace {
 
-constexpr wchar_t kSettingsKey[] = L"Software\\BaoCode";
+constexpr wchar_t kSettingsKey[] = edition::kRegistryRoot;
 constexpr wchar_t kFolderValue[] = L"LogsFolder";
 
 // Windows' own lock, not std::mutex: built with MSVC 14.40 or later, a
@@ -64,7 +65,7 @@ std::wstring DefaultFolder() {
   if (length == 0 || length >= MAX_PATH) {
     return std::wstring();
   }
-  return std::wstring(app_data) + L"\\baocode\\logs";
+  return std::wstring(app_data) + L"\\" + edition::kDataFolder + L"\\logs";
 }
 
 // Whether |folder| is there, made if need be — with the folders above it:

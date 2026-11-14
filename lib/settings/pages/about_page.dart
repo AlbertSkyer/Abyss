@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../ide/ide_button.dart';
+import '../../platform/app_edition.dart';
 import '../../l10n/l10n.dart';
 import '../../link/link_host.dart';
 import '../../theme/app_theme.dart';
@@ -64,7 +65,7 @@ class AboutSettingsPage extends StatelessWidget {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        'BaoCode',
+                        AppEdition.name,
                         style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 17,

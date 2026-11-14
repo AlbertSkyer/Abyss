@@ -49,7 +49,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get languageSettingsDisplayLanguage => '显示语言';
 
   @override
-  String get languageSettingsDescription => 'BaoCode 的菜单、视图和消息所用的语言。更改立即生效。';
+  String get languageSettingsDescription => 'Abyss 的菜单、视图和消息所用的语言。更改立即生效。';
 
   @override
   String languageSettingsFollowSystemCurrent(String language) {
@@ -1423,7 +1423,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get menuContextPanel => '上下文面板';
 
   @override
-  String get menuAboutBaoCode => '关于 BaoCode';
+  String get menuAboutBaoCode => '关于 Abyss';
 
   @override
   String get windowShowSidebar => '显示侧边栏';
@@ -1462,14 +1462,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidePanelTerminal => '终端';
 
   @override
-  String get browserOtherApp => '另一个 BaoCode 已连接浏览器。';
+  String get browserOtherApp => '另一个 Abyss 已连接浏览器。';
 
   @override
   String get browserWatchTitle => '正在看你在浏览器里操作';
 
   @override
   String get browserWatchHint =>
-      '请在浏览器的 BaoCode 标签页里操作。完成后点这里的“完成”，或点浏览器工具栏上的 BaoCode 按钮。';
+      '请在浏览器的 Abyss 标签页里操作。完成后点这里的“完成”，或点浏览器工具栏上的 Abyss 按钮。';
 
   @override
   String browserWatchSteps(int count) {
@@ -3539,7 +3539,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get generalSettingsClaudeCoreDescription =>
-      'Claude Code CLI：Anthropic 官方程序，沿用本机的登录和配置，用 Claude 订阅请选它。内置：BaoCode 自带，只用 设置 → 模型 里添加的模型。默认：本机装有 Claude Code 时用 CLI，没有时用内置内核；选 CLI 而本机没有时会自动下载。改动对新开的会话生效。';
+      'Claude Code CLI：Anthropic 官方程序，沿用本机的登录和配置，用 Claude 订阅请选它。内置：Abyss 自带，只用 设置 → 模型 里添加的模型。默认：本机装有 Claude Code 时用 CLI，没有时用内置内核；选 CLI 而本机没有时会自动下载。改动对新开的会话生效。';
 
   @override
   String get generalSettingsClaudeCoreBuiltin => '内置';
@@ -3671,7 +3671,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '关闭窗口时隐藏到这里，Agent 继续在后台运行；它的菜单列出等待你回复的 Agent，也从这里退出应用。';
 
   @override
-  String get trayShow => '显示 BaoCode';
+  String get trayShow => '显示 Abyss';
 
   @override
   String get trayWaiting => '等待你回复';
@@ -3687,7 +3687,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get trayQuit => '退出 BaoCode';
+  String get trayQuit => '退出 Abyss';
 
   @override
   String get attentionNeedsInput => '需要你回复';
@@ -5084,7 +5084,7 @@ class AppLocalizationsZh extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'BaoCode 无法识别上下文键 $keys: 此快捷键永远不会生效。',
+      other: 'Abyss 无法识别上下文键 $keys: 此快捷键永远不会生效。',
     );
     return '$_temp0';
   }
@@ -5161,14 +5161,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String kbCannotReadKey(String key) {
-    return 'BaoCode 无法识别按键“$key”: 此快捷键永远不会生效。';
+    return 'Abyss 无法识别按键“$key”: 此快捷键永远不会生效。';
   }
 
   @override
   String get kbNotSupported => '不支持';
 
   @override
-  String get kbNotSupportedHover => 'BaoCode 没有此命令: 快捷键会保留，但不起作用。';
+  String get kbNotSupportedHover => 'Abyss 没有此命令: 快捷键会保留，但不起作用。';
 
   @override
   String get kbPressKeys => '先按所需的组合键，再按 Enter 键。';
@@ -5223,24 +5223,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dataDirChecking => '正在检查文件夹…';
 
   @override
-  String get dataDirAlreadyHolds => '该文件夹中已有 BaoCode 数据';
+  String get dataDirAlreadyHolds => '该文件夹中已有 Abyss 数据';
 
   @override
-  String get dataDirMoveBack => '将 BaoCode 的数据移回默认文件夹?';
+  String get dataDirMoveBack => '将 Abyss 的数据移回默认文件夹?';
 
   @override
-  String get dataDirMoveHere => '将 BaoCode 的数据移到此文件夹?';
+  String get dataDirMoveHere => '将 Abyss 的数据移到此文件夹?';
 
   @override
   String get dataDirUseAsIsDetail =>
-      '重启后 BaoCode 将直接使用那里的数据；不会复制任何内容，当前文件夹中的数据保持不变。';
+      '重启后 Abyss 将直接使用那里的数据；不会复制任何内容，当前文件夹中的数据保持不变。';
 
   @override
-  String get dataDirCopyDetail =>
-      'BaoCode 会将其设置、快捷键、语言服务器和状态复制到那里，并在重启后使用该文件夹。';
+  String get dataDirCopyDetail => 'Abyss 会将其设置、快捷键、语言服务器和状态复制到那里，并在重启后使用该文件夹。';
 
   @override
-  String get dataDirOtherFiles => '该文件夹中还有其他文件: 它们会保留，与 BaoCode 自己的文件并存。';
+  String get dataDirOtherFiles => '该文件夹中还有其他文件: 它们会保留，与 Abyss 自己的文件并存。';
 
   @override
   String get dataDirUseItsData => '使用其中的数据';
@@ -5267,18 +5266,18 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dataDirRestartTitle => '重启 BaoCode 以使用新的数据文件夹';
+  String get dataDirRestartTitle => '重启 Abyss 以使用新的数据文件夹';
 
   @override
   String dataDirRestartDetail(String current, String next) {
-    return 'BaoCode 在重启前会继续使用 $current。下次启动时将使用 $next，并询问是否移除旧文件夹中剩余的内容。';
+    return 'Abyss 在重启前会继续使用 $current。下次启动时将使用 $next，并询问是否移除旧文件夹中剩余的内容。';
   }
 
   @override
   String get dataDirTheNewFolder => '新文件夹';
 
   @override
-  String get quitConfirmMessage => '要退出 BaoCode 吗？';
+  String get quitConfirmMessage => '要退出 Abyss 吗？';
 
   @override
   String get quitConfirmDetail => '正在运行的 Agent 和终端会一并停止。';
@@ -5315,7 +5314,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dataDirDescription =>
-      'BaoCode 存放你的设置、快捷键、语言服务器及其自身状态的位置。其他程序也会在此存放文件(如网页视图的缓存)；BaoCode 从不移动或删除这些文件。';
+      'Abyss 存放你的设置、快捷键、语言服务器及其自身状态的位置。其他程序也会在此存放文件(如网页视图的缓存)；Abyss 从不移动或删除这些文件。';
 
   @override
   String get dataDirCurrentFolder => '当前文件夹';
@@ -5345,13 +5344,13 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dataDirSettingUnreadable => '无法读取 BaoCode 的数据文件夹设置';
+  String get dataDirSettingUnreadable => '无法读取 Abyss 的数据文件夹设置';
 
   @override
-  String get dataDirCannotWrite => 'BaoCode 无法写入其数据文件夹';
+  String get dataDirCannotWrite => 'Abyss 无法写入其数据文件夹';
 
   @override
-  String get dataDirUnavailable => 'BaoCode 的数据文件夹不可用';
+  String get dataDirUnavailable => 'Abyss 的数据文件夹不可用';
 
   @override
   String dataDirWhereEnv(String variable) {
@@ -5360,7 +5359,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dataDirWhereFixPointer(String file) {
-    return '请修复或删除 $file 后重试；只有在你选择其他文件夹时 BaoCode 才会更改它。';
+    return '请修复或删除 $file 后重试；只有在你选择其他文件夹时 Abyss 才会更改它。';
   }
 
   @override
@@ -5383,11 +5382,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dataDirChooseAnother => '选择其他文件夹…';
 
   @override
-  String get dataDirRemoveOldTitle => '是否移除 BaoCode 留在之前文件夹中的数据?';
+  String get dataDirRemoveOldTitle => '是否移除 Abyss 留在之前文件夹中的数据?';
 
   @override
   String dataDirRemoveOldDetail(String current, String items) {
-    return 'BaoCode 现在将数据存放在 $current。只会从之前的文件夹中移除它自己的项目($items)；该文件夹及其中的其他内容都会保留。';
+    return 'Abyss 现在将数据存放在 $current。只会从之前的文件夹中移除它自己的项目($items)；该文件夹及其中的其他内容都会保留。';
   }
 
   @override
@@ -5401,7 +5400,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dataDirRemoveOldInUseDetail(String items) {
-    return '$items 中有文件正在使用(可能被其他程序占用)。其余内容均已移除；BaoCode 下次启动时会再次询问是否移除剩下的部分。';
+    return '$items 中有文件正在使用(可能被其他程序占用)。其余内容均已移除；Abyss 下次启动时会再次询问是否移除剩下的部分。';
   }
 
   @override
@@ -5606,7 +5605,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String shellCommandOccupied(String path, String name) {
-    return '$path 已是其他应用的“$name”命令。要替换为 BaoCode 的吗?';
+    return '$path 已是其他应用的“$name”命令。要替换为 Abyss 的吗?';
   }
 
   @override
@@ -5627,7 +5626,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get generalSettingsMainWindowDescription =>
-      'BaoCode 启动时打开 Agent 还是 IDE 窗口（IDE 窗口按“恢复窗口”恢复），二者不会同时出现。默认是上次退出时所在的那个。';
+      'Abyss 启动时打开 Agent 还是 IDE 窗口（IDE 窗口按“恢复窗口”恢复），二者不会同时出现。默认是上次退出时所在的那个。';
 
   @override
   String generalSettingsMainWindowLabel(String name) {
@@ -5685,7 +5684,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String claudePathInUseDownloaded(String version) {
-    return '当前使用：BaoCode 下载的 Claude Code $version';
+    return '当前使用：Abyss 下载的 Claude Code $version';
   }
 
   @override
@@ -5838,7 +5837,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String generalSettingsShellCommandDescription(String location) {
-    return '在终端中用“code <路径>”在 BaoCode 中打开文件和文件夹。安装位置：$location。';
+    return '在终端中用“code <路径>”在 Abyss 中打开文件和文件夹。安装位置：$location。';
   }
 
   @override
@@ -6206,7 +6205,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsImportInvalidDetail =>
-      '链接里需要有 Base URL（http 或 https）和 BaoCode 支持的协议。请让站点重新生成链接，或在 设置 → 模型 中手动添加上游。';
+      '链接里需要有 Base URL（http 或 https）和 Abyss 支持的协议。请让站点重新生成链接，或在 设置 → 模型 中手动添加上游。';
 
   @override
   String get modelsAddProvider => '添加上游';
@@ -6292,7 +6291,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsAccountsImportConfirmDetail =>
-      'BaoCode 会安全保存凭据，不修改原文件，导入时也不会主动刷新令牌。但后续续期可能轮换刷新令牌，导致原工具需要重新登录。请只导入你有权使用的凭据。';
+      'Abyss 会安全保存凭据，不修改原文件，导入时也不会主动刷新令牌。但后续续期可能轮换刷新令牌，导致原工具需要重新登录。请只导入你有权使用的凭据。';
 
   @override
   String get modelsAccountsImportFailed => '无法读取或导入凭据。';
@@ -6665,7 +6664,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsRolesDescription =>
-      'Claude Code 在各类工作中使用的模型；未设置时使用当前所选模型。除主模型外，都可以选其他上游的模型，请求会经 BaoCode 的本地代理发过去。';
+      'Claude Code 在各类工作中使用的模型；未设置时使用当前所选模型。除主模型外，都可以选其他上游的模型，请求会经 Abyss 的本地代理发过去。';
 
   @override
   String get modelsRoleUnset => '未设置';
@@ -6979,7 +6978,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updatesSettingsTitle => '更新';
 
   @override
-  String get updatesSettingsDescription => 'BaoCode 会在 baocode.dev 上检查新版本。';
+  String get updatesSettingsDescription => 'Abyss 会在 baocode.dev 上检查新版本。';
 
   @override
   String get updateCurrentVersion => '当前版本';
@@ -6999,31 +6998,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateChecking => '正在检查更新…';
 
   @override
-  String get updateUpToDate => 'BaoCode 已是最新版本。';
+  String get updateUpToDate => 'Abyss 已是最新版本。';
 
   @override
   String updateAvailable(String version) {
-    return 'BaoCode $version 已发布。';
+    return 'Abyss $version 已发布。';
   }
 
   @override
   String updateReady(String version) {
-    return 'BaoCode $version 已下载，重启即可完成更新。';
+    return 'Abyss $version 已下载，重启即可完成更新。';
   }
 
   @override
   String updateDownloading(String version) {
-    return '正在下载 BaoCode $version…';
+    return '正在下载 Abyss $version…';
   }
 
   @override
   String updateDownloadingProgress(String version, int percent) {
-    return '正在下载 BaoCode $version… $percent%';
+    return '正在下载 Abyss $version… $percent%';
   }
 
   @override
   String updateMandatory(String version) {
-    return '当前版本的 BaoCode 已停止支持，请更新到 $version。';
+    return '当前版本的 Abyss 已停止支持，请更新到 $version。';
   }
 
   @override
@@ -7040,7 +7039,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String updateFailed(String error) {
-    return 'BaoCode 更新失败：$error';
+    return 'Abyss 更新失败：$error';
   }
 
   @override
@@ -7052,11 +7051,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateDisabled => '更新已关闭（update.mode 为 \"none\"）。';
 
   @override
-  String get updateUnsupported => '此版本的 BaoCode 不支持自动更新。';
+  String get updateUnsupported => '此版本的 Abyss 不支持自动更新。';
 
   @override
   String updateManual(String reason) {
-    return 'BaoCode 无法在当前位置自动更新（$reason），请从 baocode.dev 下载新版本。';
+    return 'Abyss 无法在当前位置自动更新（$reason），请从 baocode.dev 下载新版本。';
   }
 
   @override
@@ -7064,7 +7063,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String updateUnfinished(String version, String current) {
-    return 'BaoCode $version 没有装上，当前仍是 $current。可以在“设置 → 更新”里重试，或者从 baocode.dev 下载安装。';
+    return 'Abyss $version 没有装上，当前仍是 $current。可以在“设置 → 更新”里重试，或者从 baocode.dev 下载安装。';
   }
 
   @override
@@ -7082,7 +7081,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateMode => '更新方式';
 
   @override
-  String get updateModeDescription => 'BaoCode 是否自动检查新版本（设置项 update.mode）。';
+  String get updateModeDescription => 'Abyss 是否自动检查新版本（设置项 update.mode）。';
 
   @override
   String updateModeLabel(String name) {
@@ -7103,7 +7102,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get diagnosticsDescription =>
-      '把 BaoCode 的错误日志和系统记录的崩溃和卡死报告发给开发者，帮助排查问题。只有点击上传时才会发送。';
+      '把 Abyss 的错误日志和系统记录的崩溃和卡死报告发给开发者，帮助排查问题。只有点击上传时才会发送。';
 
   @override
   String get diagnosticsUpload => '上传…';
@@ -7144,7 +7143,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get diagnosticsUploaded => '已上传。报告编号：';
 
   @override
-  String get diagnosticsUploadedDetail => '把这个编号告诉 BaoCode 开发者，就能找到这份日志。';
+  String get diagnosticsUploadedDetail => '把这个编号告诉 Abyss 开发者，就能找到这份日志。';
 
   @override
   String diagnosticsOmittedDumps(int count) {
@@ -7514,11 +7513,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get generalSettingsContextMenuDescription =>
-      '在文件、文件夹及文件夹空白处的右键菜单中加入“用 BaoCode 打开”（新对话）和“用 Fast Ide 打开”（新 IDE 窗口）。';
+      '在文件、文件夹及文件夹空白处的右键菜单中加入“用 Abyss 打开”（新对话）和“用 Fast Ide 打开”（新 IDE 窗口）。';
 
   @override
   String get generalSettingsContextMenuMacNote =>
-      '访达的扩展开关在系统设置的“扩展”中，也可以在那里开启或关闭 BaoCode 扩展。';
+      '访达的扩展开关在系统设置的“扩展”中，也可以在那里开启或关闭 Abyss 扩展。';
 
   @override
   String get generalSettingsContextMenuOn => '已开启';
@@ -7747,7 +7746,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateButton => '更新';
 
   @override
-  String get tipsSetupTitle => '设置 BaoCode';
+  String get tipsSetupTitle => '设置 Abyss';
 
   @override
   String tipsSetupCount(int done, int total) {
@@ -7781,7 +7780,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String tipsUpdated(String version, String features) {
-    return 'BaoCode 已更新到 $version。新功能：$features。';
+    return 'Abyss 已更新到 $version。新功能：$features。';
   }
 
   @override
@@ -7795,7 +7794,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '尚未开启的功能。「显示设置向导」可重新打开设置清单；在 settings.json 中设置 \"workbench.tips.enabled\": false 可关闭所有推荐。';
 
   @override
-  String get tipContextMenuBody => '在右键菜单中直接用 BaoCode 打开文件和文件夹。';
+  String get tipContextMenuBody => '在右键菜单中直接用 Abyss 打开文件和文件夹。';
 
   @override
   String tipShellCommandTitle(String name) {
@@ -7804,7 +7803,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String tipShellCommandBody(String name) {
-    return '在终端里用 $name <路径> 在 BaoCode 中打开文件夹。';
+    return '在终端里用 $name <路径> 在 Abyss 中打开文件夹。';
   }
 
   @override
@@ -7820,14 +7819,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get cmdShowSetupGuide => '显示设置向导';
 
   @override
-  String get cmdStarOnGitHub => '在 GitHub 上为 BaoCode 点 Star';
+  String get cmdStarOnGitHub => '在 GitHub 上为 Abyss 点 Star';
 
   @override
-  String get starPromptMessage => 'BaoCode 用得还顺手吗？';
+  String get starPromptMessage => 'Abyss 用得还顺手吗？';
 
   @override
   String get starPromptDetail =>
-      'BaoCode 免费开源。如果它对你有帮助，欢迎在 GitHub 上点个 Star，让更多人发现它。';
+      'Abyss 免费开源。如果它对你有帮助，欢迎在 GitHub 上点个 Star，让更多人发现它。';
 
   @override
   String get starPromptStar => '去 GitHub 点 Star';
@@ -7999,14 +7998,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get networkSettingsTitle => '网络';
 
   @override
-  String get networkSettingsDescription => 'BaoCode 及其启动的 Claude Code 如何访问网络。';
+  String get networkSettingsDescription => 'Abyss 及其启动的 Claude Code 如何访问网络。';
 
   @override
   String get networkProxy => '代理';
 
   @override
   String get networkProxyDescription =>
-      'BaoCode 和 Claude Code 使用的代理（http.proxyMode）。跟随系统代理：使用系统设置里的代理，例如 Clash 开启的系统代理。更改对新会话生效，正在运行的会话需重新开始。';
+      'Abyss 和 Claude Code 使用的代理（http.proxyMode）。跟随系统代理：使用系统设置里的代理，例如 Clash 开启的系统代理。更改对新会话生效，正在运行的会话需重新开始。';
 
   @override
   String networkProxyLabel(String name) {
@@ -8066,7 +8065,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get networkProxyStatusAutoConfig =>
-      '直连：系统使用自动代理配置（PAC），BaoCode 暂不支持。请在 Clash 中开启系统代理，或手动填写代理地址。';
+      '直连：系统使用自动代理配置（PAC），Abyss 暂不支持。请在 Clash 中开启系统代理，或手动填写代理地址。';
 
   @override
   String get networkProxyRefresh => '重新检测';
@@ -8144,7 +8143,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get extsCapabilityPartial => '部分支持';
 
   @override
-  String get extsCapabilityPartialDetail => '主题可以使用；其余部分在 BaoCode 中不起作用。';
+  String get extsCapabilityPartialDetail => '主题可以使用；其余部分在 Abyss 中不起作用。';
 
   @override
   String extsEngineIncompatible(String current, String requested) {
@@ -8354,7 +8353,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get extsCapabilityUnsupportedDetail =>
-      '它没有颜色主题或文件图标主题：BaoCode 只使用扩展中的主题。';
+      '它没有颜色主题或文件图标主题：Abyss 只使用扩展中的主题。';
 
   @override
   String get extsFindingCode => '它的代码不会运行。';
@@ -8464,7 +8463,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mobileSettingsDescription =>
-      '在手机上的 BaoCode 里查看并操作这台电脑的智能体：同一网络里直接连；跨网时自动打洞直连；都不行时经 BaoCode 中继。两端之间的内容端到端加密，中继也看不到。';
+      '在手机上的 Abyss 里查看并操作这台电脑的智能体：同一网络里直接连；跨网时自动打洞直连；都不行时经 Abyss 中继。两端之间的内容端到端加密，中继也看不到。';
 
   @override
   String get mobileAllow => '允许手机连接';
@@ -8498,7 +8497,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mobilePairDescription =>
-      '在手机 BaoCode 上扫码（我的 → 已配对的电脑 → 配对新电脑），或在那里的「附近的电脑」中选择这台电脑。';
+      '在手机 Abyss 上扫码（我的 → 已配对的电脑 → 配对新电脑），或在那里的「附近的电脑」中选择这台电脑。';
 
   @override
   String get mobilePairShow => '显示二维码';
@@ -8641,14 +8640,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mobileRelayModeAuto => '自动';
 
   @override
-  String get mobileRelayModeAutoDescription => '使用 BaoCode 的中继，自动选最近的一台。';
+  String get mobileRelayModeAutoDescription => '使用 Abyss 的中继，自动选最近的一台。';
 
   @override
   String get mobileRelayModePinned => '手动指定';
 
   @override
-  String get mobileRelayModePinnedDescription =>
-      '只用你指定的一台：BaoCode 的某一台，或自定义地址。';
+  String get mobileRelayModePinnedDescription => '只用你指定的一台：Abyss 的某一台，或自定义地址。';
 
   @override
   String get mobileRelayModeDirect => '仅直连';
@@ -9160,7 +9158,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get stashImplement => '在 BaoCode 中实施';
+  String get stashImplement => '在 Abyss 中实施';
 
   @override
   String get stashImplementHow => '让 agent 怎样开发？';
@@ -9270,7 +9268,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get stashSettingsDirectoryReset => '恢复默认';
 
   @override
-  String get stashSettingsDirectoryRestart => '重启 BaoCode 后生效。';
+  String get stashSettingsDirectoryRestart => '重启 Abyss 后生效。';
 
   @override
   String get stashAll => '所有';
@@ -9408,7 +9406,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountsSignOutDetail(String forge) {
-    return '会删除本机保存的令牌。要彻底撤销 BaoCode 的访问权限，还需要到 $forge 的设置里撤销。';
+    return '会删除本机保存的令牌。要彻底撤销 Abyss 的访问权限，还需要到 $forge 的设置里撤销。';
   }
 
   @override
@@ -9461,7 +9459,7 @@ class AppLocalizationsZh extends AppLocalizations {
     String issuer,
     String fingerprint,
   ) {
-    return '$host 的证书无法验证（签发者：$issuer）。\n\nSHA-256 指纹：\n$fingerprint\n\n信任后 BaoCode 会连接这台服务器，并且只接受这个指纹的证书；证书更换后会再次询问。';
+    return '$host 的证书无法验证（签发者：$issuer）。\n\nSHA-256 指纹：\n$fingerprint\n\n信任后 Abyss 会连接这台服务器，并且只接受这个指纹的证书；证书更换后会再次询问。';
   }
 
   @override
@@ -9474,7 +9472,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountsBrowserDetail(String host) {
-    return '在 $host 上输入下面的代码，授权 BaoCode 访问你的账号：';
+    return '在 $host 上输入下面的代码，授权 Abyss 访问你的账号：';
   }
 
   @override
@@ -9688,7 +9686,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get stashWelcomeAgentTitle => '交给 agent';
 
   @override
-  String get stashWelcomeAgent => '点「在 BaoCode 中实施」，或在对话里 @ 它；对话和便签会自动关联。';
+  String get stashWelcomeAgent => '点「在 Abyss 中实施」，或在对话里 @ 它；对话和便签会自动关联。';
 
   @override
   String get stashWelcomeTrackTitle => '看清进展';
@@ -9756,15 +9754,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get browserSettingsNotRunning => '浏览器未连接';
 
   @override
-  String get browserSettingsNotRunningDescription =>
-      '打开装有 BaoCode 扩展的浏览器，会自动连接。';
+  String get browserSettingsNotRunningDescription => '打开装有 Abyss 扩展的浏览器，会自动连接。';
 
   @override
   String get browserSettingsSandboxed => 'Snap 和 Flatpak 装的浏览器连不上';
 
   @override
   String get browserSettingsSandboxedDescription =>
-      '它们的沙箱不让 BaoCode 的辅助程序运行。请改用浏览器官方的 .deb 或 .rpm 安装包，例如从 google.com/chrome 下载 Google Chrome。';
+      '它们的沙箱不让 Abyss 的辅助程序运行。请改用浏览器官方的 .deb 或 .rpm 安装包，例如从 google.com/chrome 下载 Google Chrome。';
 
   @override
   String browserSettingsConnected(String browser) {
@@ -9786,14 +9783,14 @@ class AppLocalizationsZh extends AppLocalizations {
       '扩展版本太旧，需要更新。商店版会自动更新，也可以在 chrome://extensions 里点「更新」；手动安装的请重新下载 zip，覆盖原来的文件夹后点刷新。';
 
   @override
-  String get browserSettingsAppOld => '扩展比当前的 BaoCode 新，请更新 BaoCode。';
+  String get browserSettingsAppOld => '扩展比当前的 Abyss 新，请更新 Abyss。';
 
   @override
   String get browserSettingsNoFileAccess => '没有开文件访问权限';
 
   @override
   String get browserSettingsNoFileAccessDescription =>
-      '打不开本地 HTML，也传不了文件。在 chrome://extensions 里点 BaoCode 的「详细信息」，打开「允许访问文件网址」。';
+      '打不开本地 HTML，也传不了文件。在 chrome://extensions 里点 Abyss 的「详细信息」，打开「允许访问文件网址」。';
 
   @override
   String get browserSettingsInstall => '安装扩展';
@@ -9826,7 +9823,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get browserHistoryDescription =>
-      '共享给 BaoCode 的标签页里打开过的页面、发出的请求、控制台的错误和警告会一直记下来，不用专门录制。你说“刚才保存时报错了”这类话时，agent 会自己翻看。记录只存在这台电脑上，不保存 Cookie 和令牌。';
+      '共享给 Abyss 的标签页里打开过的页面、发出的请求、控制台的错误和警告会一直记下来，不用专门录制。你说“刚才保存时报错了”这类话时，agent 会自己翻看。记录只存在这台电脑上，不保存 Cookie 和令牌。';
 
   @override
   String get browserHistoryDetailed => '详细记录';
@@ -9865,13 +9862,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get browserWelcomeLead =>
-      '装上 BaoCode 扩展，agent 就能在你自己的 Chrome 里打开网页、阅读、点击和输入，带着你的登录状态。';
+      '装上 Abyss 扩展，agent 就能在你自己的 Chrome 里打开网页、阅读、点击和输入，带着你的登录状态。';
 
   @override
   String get browserWelcomeSharedTitle => '只用你共享的标签页';
 
   @override
-  String get browserWelcomeShared => '它只在黄色的「BaoCode」标签页分组里工作，其他标签页仍然只属于你。';
+  String get browserWelcomeShared => '它只在黄色的「Abyss」标签页分组里工作，其他标签页仍然只属于你。';
 
   @override
   String get browserWelcomeWatchTitle => '看着它操作';
@@ -9923,7 +9920,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelWelcomeLead =>
-      'BaoCode 用你选的模型来运行 agent。添加一个上游（提供 API Key 的服务），它的模型就能直接用了。';
+      'Abyss 用你选的模型来运行 agent。添加一个上游（提供 API Key 的服务），它的模型就能直接用了。';
 
   @override
   String get modelWelcomeAnyTitle => '任意上游';
@@ -10113,7 +10110,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sshServerCoreAutoHint => '服务器上装了 Claude Code CLI 就用它，没装就用内置内核。';
 
   @override
-  String get sshServerCoreBuiltinHint => 'BaoCode 自带的内核，使用“设置 → 模型”里的上游。';
+  String get sshServerCoreBuiltinHint => 'Abyss 自带的内核，使用“设置 → 模型”里的上游。';
 
   @override
   String get sshServerCoreCliHint => '服务器上的 Claude Code CLI，没装会自动装上。';
@@ -10184,7 +10181,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get remoteFailWsl => 'WSL 无法启动这个发行版：请确认已安装 WSL，并且 wsl --list 里有这个发行版。';
 
   @override
-  String get channelSetupTitle => '欢迎使用 BaoCode';
+  String get channelSetupTitle => '欢迎使用 Abyss';
 
   @override
   String get channelSetupLead => '打开官网完成首次设置，大约 10 秒。';
@@ -10193,8 +10190,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get channelSetupStepTitle => '在浏览器中完成设置';
 
   @override
-  String get channelSetupStep =>
-      'BaoCode 会在浏览器里打开 baocode.dev，网页显示完成后，这里会自动继续。';
+  String get channelSetupStep => 'Abyss 会在浏览器里打开 baocode.dev，网页显示完成后，这里会自动继续。';
 
   @override
   String get channelSetupWaitingTitle => '正在等待浏览器完成…';
@@ -10239,7 +10235,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get channelSetupLinkInvalid => '这不是网页上的链接，请复制网页上显示的完整链接。';
 
   @override
-  String get channelSetupLinkOther => '这个链接属于另一个 BaoCode（别的电脑或重装前的），请用这里打开的网页。';
+  String get channelSetupLinkOther => '这个链接属于另一个 Abyss（别的电脑或重装前的），请用这里打开的网页。';
 
   @override
   String get channelSetupTrouble => '遇到问题？';
@@ -10254,7 +10250,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get channelSetupPrivateTitle => '不涉及个人信息';
 
   @override
-  String get channelSetupPrivate => '网页只告诉 BaoCode 你是从哪里知道它的，比如某个视频或网站。';
+  String get channelSetupPrivate => '网页只告诉 Abyss 你是从哪里知道它的，比如某个视频或网站。';
 
   @override
   String get channelSetupFindingTitle => '正在读取渠道信息…';
@@ -10319,7 +10315,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String channelAccountSignOutDetail(String channel) {
-    return '退出后，需要重新登录 $channel 才能继续使用 BaoCode。';
+    return '退出后，需要重新登录 $channel 才能继续使用 Abyss。';
   }
 
   @override
@@ -10566,7 +10562,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get stashFilterNotIssue => '仅本地';
 
   @override
-  String get stashImplementEmpty => '先写点内容，再在 BaoCode 中实施';
+  String get stashImplementEmpty => '先写点内容，再在 Abyss 中实施';
 
   @override
   String stashIssueDuplicateBanner(String issue, String stash) {
@@ -12486,7 +12482,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ustatConversationEmptyDetail =>
-      '只统计使用自定义上游的对话：官方 Claude 不经过 BaoCode 的代理。';
+      '只统计使用自定义上游的对话：官方 Claude 不经过 Abyss 的代理。';
 
   @override
   String get ustatRecordOff => '未开启调用统计';
@@ -12505,7 +12501,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ustatRecordDescription =>
-      'Claude Code 自带模型的调用从它的输出读取；使用自定义上游的会话经过 BaoCode 的本地代理记录。对之后启动的会话生效。';
+      'Claude Code 自带模型的调用从它的输出读取；使用自定义上游的会话经过 Abyss 的本地代理记录。对之后启动的会话生效。';
 
   @override
   String get ustatRecordOffDescription =>
@@ -12928,7 +12924,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get ustatPricesAgentHint =>
-      '可以让 BaoCode 帮你维护：在对话里说「查一下这些模型的最新价格并更新」，它会去上游官网的价格页核对后写到这里。';
+      '可以让 Abyss 帮你维护：在对话里说「查一下这些模型的最新价格并更新」，它会去上游官网的价格页核对后写到这里。';
 
   @override
   String get ustatPriceCurrency => '币种';
@@ -13210,7 +13206,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get generalSettingsRewindFilesDescription =>
-      '修改之前的消息并重新发送时，Agent 在那之后改过的文件怎么处理。命令（Bash）做的改动没有记录。仅支持 Claude Code 和 BaoCode Agent。';
+      '修改之前的消息并重新发送时，Agent 在那之后改过的文件怎么处理。命令（Bash）做的改动没有记录。仅支持 Claude Code 和 Abyss Agent。';
 
   @override
   String get generalSettingsRewindAsk => '每次询问';
@@ -13261,10 +13257,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '文件里的设置、快捷键和上游会替换现有的；文件里没有的设置保持不变。';
 
   @override
-  String get settingsTransferImported => '已导入。部分设置要重启 BaoCode 后生效。';
+  String get settingsTransferImported => '已导入。部分设置要重启 Abyss 后生效。';
 
   @override
-  String get settingsTransferNotAFile => '这不是 BaoCode 导出的设置文件。';
+  String get settingsTransferNotAFile => '这不是 Abyss 导出的设置文件。';
 
   @override
   String settingsTransferFailed(String error) {

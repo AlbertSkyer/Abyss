@@ -7,6 +7,7 @@
 
 #include <utility>
 
+#include "edition.h"
 #include "utils.h"
 
 namespace {
@@ -17,7 +18,7 @@ namespace {
 constexpr wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
 // The property MarkOpenRequestWindow puts on the window.
-constexpr wchar_t kOpenRequestProperty[] = L"BaoCode.OpenRequests";
+constexpr wchar_t kOpenRequestProperty[] = edition::kOpenRequestProperty;
 
 // How long a second copy of the app waits for the first's window while that
 // is still starting, and how often it looks.

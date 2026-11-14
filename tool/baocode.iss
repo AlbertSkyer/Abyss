@@ -48,13 +48,13 @@
 ; between versions, or an upgrade installs beside the old one instead of over
 ; it.
 AppId={{6fdd732b-95c6-4c37-af6f-ff574358deb5}
-AppName=BaoCode
+AppName=Abyss
 AppVersion={#VersionNumber}
-AppPublisher=BaoCode
-AppVerName=BaoCode {#VersionNumber}
+AppPublisher=Abyss
+AppVerName=Abyss {#VersionNumber}
 DefaultDirName={autopf}\BaoCode
-DefaultGroupName=BaoCode
-UninstallDisplayName=BaoCode
+DefaultGroupName=Abyss
+UninstallDisplayName=Abyss
 UninstallDisplayIcon={app}\baocode.exe
 OutputBaseFilename=BaoCode-{#VersionNumber}-setup{#ArchSuffix}{#Edition}
 OutputDir={#OutDir}
@@ -99,10 +99,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
   GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "addtopath"; Description: "Add BaoCode to the PATH"; \
+Name: "addtopath"; Description: "Add Abyss to the PATH"; \
   GroupDescription: "Other:"; Flags: unchecked
 Name: "contextmenu"; \
-  Description: "Add ""Open with BaoCode"" and ""Open with Fast Ide"" to Explorer's context menu"; \
+  Description: "Add ""Open with Abyss"" and ""Open with Fast Ide"" to Explorer's context menu"; \
   GroupDescription: "Other:"
 
 [Files]
@@ -127,9 +127,9 @@ Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
 Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
 
 [Icons]
-Name: "{group}\BaoCode"; Filename: "{app}\baocode.exe"
-Name: "{group}\{cm:UninstallProgram,BaoCode}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\BaoCode"; Filename: "{app}\baocode.exe"; Tasks: desktopicon
+Name: "{group}\Abyss"; Filename: "{app}\baocode.exe"
+Name: "{group}\{cm:UninstallProgram,Abyss}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Abyss"; Filename: "{app}\baocode.exe"; Tasks: desktopicon
 
 [Registry]
 ; Only when asked for. Which hive follows the install mode: a per-machine
@@ -160,7 +160,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\Windows Error Reporting\RuntimeE
 ; reinstall, they go. Settings → General writes the same keys under HKCU
 ; (lib/platform/context_menu_io.dart), for the user alone.
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode"; ValueType: string; \
-  ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; Tasks: contextmenu; \
+  ValueName: ""; ValueData: "{code:MenuLabel|Abyss}"; Tasks: contextmenu; \
   Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode"; ValueType: string; \
   ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; Tasks: contextmenu
@@ -168,7 +168,7 @@ Root: HKA; Subkey: "Software\Classes\*\shell\BaoCode\command"; \
   ValueType: string; ValueName: ""; \
   ValueData: """{app}\baocode.exe"" --baocode-agent ""%1"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode"; \
-  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; \
+  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Abyss}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode"; \
   ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
@@ -177,7 +177,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\shell\BaoCode\command"; \
   ValueType: string; ValueName: ""; \
   ValueData: """{app}\baocode.exe"" --baocode-agent ""%V"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCode"; \
-  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|BaoCode}"; \
+  ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Abyss}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCode"; \
   ValueType: string; ValueName: "Icon"; ValueData: """{app}\baocode.exe"""; \
@@ -275,7 +275,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\BaoCodeFastIde";
   ValueType: none; Tasks: not contextmenu; Flags: deletekey
 
 [Run]
-Filename: "{app}\baocode.exe"; Description: "{cm:LaunchProgram,BaoCode}"; \
+Filename: "{app}\baocode.exe"; Description: "{cm:LaunchProgram,Abyss}"; \
   Flags: nowait postinstall skipifsilent
 ; An update the app ran (lib/update/installer_io.dart) is silent, which
 ; skips the entry above: /RELAUNCH opens the app again once it is in place,

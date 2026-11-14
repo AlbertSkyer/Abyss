@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../platform/app_edition.dart';
 import '../platform/data_dir.dart';
 
 /// The user's own browsers, reached through BaoCode's extension in them
@@ -91,7 +92,9 @@ class BrowserBridge extends ChangeNotifier {
   static String? get _home => home ?? Platform.environment['HOME'];
 
   bool get supported =>
-      !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+      AppEdition.hasBrowserExtension &&
+      !kIsWeb &&
+      (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   /// Whether the user lets the agents use the browsers: off, nothing
   /// listens for them, and the browsers find no host to start (it is

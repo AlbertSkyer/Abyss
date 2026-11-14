@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'app_edition.dart';
 import 'app_paths.dart';
 
 /// Where [DataDirectory.current] was found.
@@ -170,10 +171,10 @@ class DataDirectory {
   /// `~/Library/Application Support/baocode` on macOS, `~/.config/baocode`
   /// elsewhere.
   static String defaultPath(Map<String, String> environment) =>
-      AppPaths.dataDir(environment);
+      AppEdition.defaultDataPath(environment);
 
   /// The environment variable that overrides everything else.
-  static const environmentVariable = 'BAOCODE_DATA_DIR';
+  static const environmentVariable = AppEdition.environmentVariable;
 
   @override
   bool operator ==(Object other) =>
@@ -199,7 +200,7 @@ class DataDirectoryPointer {
 
   /// Where it is, under [home].
   static String fileIn(String home) =>
-      p.join(home, '.baocode', 'config-dir.json');
+      p.join(home, AppEdition.pointerFolder, 'config-dir.json');
 
   /// What [file] says; null when there is no such file. Throws a
   /// [FormatException] when it is not a pointer (or cannot be read).

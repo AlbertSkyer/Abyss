@@ -13,7 +13,7 @@
   "commonSelectAll": "Select All",
   "languageSettingsTitle": "Region & Language",
   "languageSettingsDisplayLanguage": "Display Language",
-  "languageSettingsDescription": "The language of BaoCode's menus, views and messages. Changes apply at once.",
+  "languageSettingsDescription": "The language of Abyss's menus, views and messages. Changes apply at once.",
   "languageSettingsFollowSystemCurrent": "Follow System ({language})",
   "@languageSettingsFollowSystemCurrent": {
     "description": "Follow System, with the language the system's resolves to, named in its own language.",
@@ -640,7 +640,7 @@
   "menuHideSidebar": "Hide Sidebar",
   "menuKeepOnTop": "Keep on Top",
   "menuContextPanel": "Context Panel",
-  "menuAboutBaoCode": "About BaoCode",
+  "menuAboutBaoCode": "About Abyss",
   "windowShowSidebar": "Show sidebar",
   "@windowShowSidebar": {
     "description": "Tooltip."
@@ -665,10 +665,10 @@
   "cmdSidePanelCloseTab": "Close Side Panel Tab",
   "sidePanelFiles": "Files",
   "sidePanelTerminal": "Terminal",
-  "browserOtherApp": "Another BaoCode is connected to the browser.",
+  "browserOtherApp": "Another Abyss is connected to the browser.",
   "browserWatchTitle": "Watching you in the browser",
   "@browserWatchTitle": {"description": "The card in the conversation while an agent watches the user do something in their browser (browser_watch), recording it."},
-  "browserWatchHint": "Do it in the BaoCode tab of your browser. When you're done, click Done here or the BaoCode button in the browser's toolbar.",
+  "browserWatchHint": "Do it in the Abyss tab of your browser. When you're done, click Done here or the Abyss button in the browser's toolbar.",
   "browserWatchSteps": "{count, plural, =0{Nothing recorded yet} =1{1 step recorded} other{{count} steps recorded}}",
   "@browserWatchSteps": {"placeholders": {"count": {"type": "int"}}},
   "browserWatchCancel": "Cancel",
@@ -2500,12 +2500,12 @@
   "generalSettingsCommitAttributionDescription": "Who the commits and pull requests an agent writes credit. Applies to agents started after a change; Claude Code only for now.",
   "generalSettingsClaudeCore": "Core",
   "@generalSettingsClaudeCore": {
-    "description": "Settings → General → Claude Code row: what runs Claude Code sessions, BaoCode's built-in core (written in Dart) or the Claude Code CLI."
+    "description": "Settings → General → Claude Code row: what runs Claude Code sessions, Abyss's built-in core (written in Dart) or the Claude Code CLI."
   },
-  "generalSettingsClaudeCoreDescription": "Claude Code CLI: Anthropic's own program, with this machine's sign-in and setup; pick it to use a Claude subscription. Built-in: comes with BaoCode, and uses only the models added in Settings → Models. By default, the CLI where this machine has Claude Code, else the built-in core; the CLI, picked where there is none, is downloaded for you. Changes apply to new sessions.",
+  "generalSettingsClaudeCoreDescription": "Claude Code CLI: Anthropic's own program, with this machine's sign-in and setup; pick it to use a Claude subscription. Built-in: comes with Abyss, and uses only the models added in Settings → Models. By default, the CLI where this machine has Claude Code, else the built-in core; the CLI, picked where there is none, is downloaded for you. Changes apply to new sessions.",
   "generalSettingsClaudeCoreBuiltin": "Built-in",
   "@generalSettingsClaudeCoreBuiltin": {
-    "description": "Claude Code core choice: BaoCode's own agent core, written in Dart and run inside the app."
+    "description": "Claude Code core choice: Abyss's own agent core, written in Dart and run inside the app."
   },
   "generalSettingsClaudeCoreCli": "Claude Code CLI",
   "@generalSettingsClaudeCoreCli": {
@@ -2611,7 +2611,7 @@
   "trayEnabledMacOS": "Show the icon in the menu bar",
   "trayEnabledWindows": "Show the icon in the system tray",
   "trayEnabledDescription": "Closing the window hides it there and the agents keep running; its menu shows the agents waiting on you, and quits the app.",
-  "trayShow": "Show BaoCode",
+  "trayShow": "Show Abyss",
   "trayWaiting": "Waiting for You",
   "@trayWaiting": {
     "description": "Tray menu header over the agents waiting on the user."
@@ -2634,7 +2634,7 @@
     },
     "description": "Tray menu: how many agents are running."
   },
-  "trayQuit": "Quit BaoCode",
+  "trayQuit": "Quit Abyss",
   "attentionNeedsInput": "Needs your input",
   "@attentionNeedsInput": {
     "description": "Notification: the agent waits on the user."
@@ -3895,7 +3895,7 @@
       }
     }
   },
-  "kbUnknownContextKeys": "{count, plural, =1{BaoCode does not know the context key {keys}: this keybinding never applies.} other{BaoCode does not know the context keys {keys}: this keybinding never applies.}}",
+  "kbUnknownContextKeys": "{count, plural, =1{Abyss does not know the context key {keys}: this keybinding never applies.} other{Abyss does not know the context keys {keys}: this keybinding never applies.}}",
   "@kbUnknownContextKeys": {
     "placeholders": {
       "count": {
@@ -3942,7 +3942,7 @@
   "kbColumnSource": "Source",
   "kbWhenLabel": "When expression",
   "kbNoneFound": "No keybindings found",
-  "kbCannotReadKey": "BaoCode cannot read the key “{key}”: this keybinding never applies.",
+  "kbCannotReadKey": "Abyss cannot read the key “{key}”: this keybinding never applies.",
   "@kbCannotReadKey": {
     "placeholders": {
       "key": {
@@ -3951,7 +3951,7 @@
     }
   },
   "kbNotSupported": "Not supported",
-  "kbNotSupportedHover": "BaoCode does not have this command: the keybinding is kept, but does nothing.",
+  "kbNotSupportedHover": "Abyss does not have this command: the keybinding is kept, but does nothing.",
   "kbPressKeys": "Press desired key combination and then press Enter.",
   "kbChordTo": "chord to",
   "kbExistingCommands": "{count, plural, =1{1 existing command has this keybinding} other{{count} existing commands have this keybinding}}",
@@ -4001,12 +4001,12 @@
   "dataDirRevealInFileExplorer": "Reveal in File Explorer",
   "dataDirRevealInFileManager": "Reveal in File Manager",
   "dataDirChecking": "Checking the folder…",
-  "dataDirAlreadyHolds": "The folder already holds BaoCode data",
-  "dataDirMoveBack": "Move BaoCode's data back to the default folder?",
-  "dataDirMoveHere": "Move BaoCode's data to this folder?",
-  "dataDirUseAsIsDetail": "After a restart BaoCode uses the data there as it is; nothing is copied, and the current folder keeps yours.",
-  "dataDirCopyDetail": "BaoCode copies its settings, keybindings, language servers and state there, and uses that folder after a restart.",
-  "dataDirOtherFiles": "The folder holds other files: they stay, beside BaoCode's own.",
+  "dataDirAlreadyHolds": "The folder already holds Abyss data",
+  "dataDirMoveBack": "Move Abyss's data back to the default folder?",
+  "dataDirMoveHere": "Move Abyss's data to this folder?",
+  "dataDirUseAsIsDetail": "After a restart Abyss uses the data there as it is; nothing is copied, and the current folder keeps yours.",
+  "dataDirCopyDetail": "Abyss copies its settings, keybindings, language servers and state there, and uses that folder after a restart.",
+  "dataDirOtherFiles": "The folder holds other files: they stay, beside Abyss's own.",
   "dataDirUseItsData": "Use Its Data",
   "dataDirCopyAndSwitch": "Copy and Switch",
   "dataDirCopying": "Copying…",
@@ -4037,8 +4037,8 @@
       }
     }
   },
-  "dataDirRestartTitle": "Restart BaoCode to use the new data folder",
-  "dataDirRestartDetail": "BaoCode keeps using {current} until it restarts. The next start uses {next}, and offers to remove what is left in the old one.",
+  "dataDirRestartTitle": "Restart Abyss to use the new data folder",
+  "dataDirRestartDetail": "Abyss keeps using {current} until it restarts. The next start uses {next}, and offers to remove what is left in the old one.",
   "@dataDirRestartDetail": {
     "placeholders": {
       "current": {
@@ -4050,7 +4050,7 @@
     }
   },
   "dataDirTheNewFolder": "the new folder",
-  "quitConfirmMessage": "Quit BaoCode?",
+  "quitConfirmMessage": "Quit Abyss?",
   "quitConfirmDetail": "Running agents and terminals will be stopped.",
   "quitConfirmQuit": "Quit",
   "dataDirQuitNow": "Quit Now",
@@ -4081,7 +4081,7 @@
     }
   },
   "dataDirTitle": "Data Folder",
-  "dataDirDescription": "Where BaoCode keeps your settings, keybindings, language servers and its own state. Other programs keep files there too (the web view's caches); BaoCode never moves or removes those.",
+  "dataDirDescription": "Where Abyss keeps your settings, keybindings, language servers and its own state. Other programs keep files there too (the web view's caches); Abyss never moves or removes those.",
   "dataDirCurrentFolder": "Current folder",
   "dataDirNewFolder": "New folder",
   "dataDirAfterRestart": "After a restart: {path}",
@@ -4113,9 +4113,9 @@
       }
     }
   },
-  "dataDirSettingUnreadable": "BaoCode's data folder setting cannot be read",
-  "dataDirCannotWrite": "BaoCode cannot write to its data folder",
-  "dataDirUnavailable": "BaoCode's data folder is not available",
+  "dataDirSettingUnreadable": "Abyss's data folder setting cannot be read",
+  "dataDirCannotWrite": "Abyss cannot write to its data folder",
+  "dataDirUnavailable": "Abyss's data folder is not available",
   "dataDirWhereEnv": "It is set by the {variable} environment variable.",
   "@dataDirWhereEnv": {
     "placeholders": {
@@ -4124,7 +4124,7 @@
       }
     }
   },
-  "dataDirWhereFixPointer": "Fix or delete {file} and try again; BaoCode changes it only if you choose another folder.",
+  "dataDirWhereFixPointer": "Fix or delete {file} and try again; Abyss changes it only if you choose another folder.",
   "@dataDirWhereFixPointer": {
     "placeholders": {
       "file": {
@@ -4151,8 +4151,8 @@
   "dataDirRetry": "Retry",
   "dataDirUseDefaultOnce": "Use the Default Folder This Time",
   "dataDirChooseAnother": "Choose Another Folder…",
-  "dataDirRemoveOldTitle": "Remove the data BaoCode left in its previous folder?",
-  "dataDirRemoveOldDetail": "BaoCode now keeps its data in {current}. Only its own items are removed from the previous folder ({items}); the folder and everything else in it stay.",
+  "dataDirRemoveOldTitle": "Remove the data Abyss left in its previous folder?",
+  "dataDirRemoveOldDetail": "Abyss now keeps its data in {current}. Only its own items are removed from the previous folder ({items}); the folder and everything else in it stay.",
   "@dataDirRemoveOldDetail": {
     "placeholders": {
       "current": {
@@ -4166,7 +4166,7 @@
   "dataDirRemove": "Remove",
   "dataDirKeep": "Keep",
   "dataDirRemoveOldInUse": "Some of the old data could not be removed",
-  "dataDirRemoveOldInUseDetail": "Files in {items} are in use, perhaps by another program. Everything else was removed; BaoCode offers to remove the rest the next time it starts.",
+  "dataDirRemoveOldInUseDetail": "Files in {items} are in use, perhaps by another program. Everything else was removed; Abyss offers to remove the rest the next time it starts.",
   "@dataDirRemoveOldInUseDetail": {
     "placeholders": {
       "items": {
@@ -4369,7 +4369,7 @@
       }
     }
   },
-  "shellCommandOccupied": "{path} already runs another app's '{name}' command. Replace it with BaoCode's?",
+  "shellCommandOccupied": "{path} already runs another app's '{name}' command. Replace it with Abyss's?",
   "@shellCommandOccupied": {
     "placeholders": {
       "path": {
@@ -4404,7 +4404,7 @@
     }
   },
   "generalSettingsMainWindow": "Open at Launch",
-  "generalSettingsMainWindowDescription": "What BaoCode opens to: the agents, or the IDE windows (as Restore Windows says), never both. By default, wherever it was left when it last quit.",
+  "generalSettingsMainWindowDescription": "What Abyss opens to: the agents, or the IDE windows (as Restore Windows says), never both. By default, wherever it was left when it last quit.",
   "generalSettingsMainWindowLabel": "Open at Launch: {name}",
   "@generalSettingsMainWindowLabel": {
     "placeholders": {
@@ -4446,7 +4446,7 @@
       }
     }
   },
-  "claudePathInUseDownloaded": "In use: Claude Code {version}, downloaded by BaoCode",
+  "claudePathInUseDownloaded": "In use: Claude Code {version}, downloaded by Abyss",
   "@claudePathInUseDownloaded": {
     "placeholders": {
       "version": {
@@ -4517,7 +4517,7 @@
   "windowMenuWindows": "Windows",
   "windowOpened": "Opened",
   "generalSettingsShellCommand": "Shell Command",
-  "generalSettingsShellCommandDescription": "Open files and folders in BaoCode from a terminal: 'code <path>'. Installed at {location}.",
+  "generalSettingsShellCommandDescription": "Open files and folders in Abyss from a terminal: 'code <path>'. Installed at {location}.",
   "@generalSettingsShellCommandDescription": {
     "placeholders": {
       "location": {
@@ -4689,7 +4689,7 @@
     }
   },
   "modelsFeaturedWhy": "Why am I seeing this?",
-  "modelsFeaturedNote": "These sites are officially listed by BaoCode",
+  "modelsFeaturedNote": "These sites are officially listed by Abyss",
   "modelsFeaturedNoteHow": "Add the one-click import to be listed too, for free",
   "modelsFeaturedNoteLink": "List My Site Too",
   "modelsImportTitle": "Import an upstream from {host}",
@@ -4736,7 +4736,7 @@
   },
   "modelsImportAsNew": "Add as New Upstream",
   "modelsImportInvalid": "This import link can't be used",
-  "modelsImportInvalidDetail": "It needs a base URL (http or https) and a protocol BaoCode knows. Ask the site for a new link, or add the upstream by hand in Settings → Models.",
+  "modelsImportInvalidDetail": "It needs a base URL (http or https) and a protocol Abyss knows. Ask the site for a new link, or add the upstream by hand in Settings → Models.",
   "modelsAddProvider": "Add Upstream",
   "modelsMagpieJoin": "Connect magpie",
   "modelsMagpieBadge": "Follows magpie",
@@ -4776,7 +4776,7 @@
   "modelsAccountsPaste": "Enter JSON…",
   "modelsAccountsPastePlaceholder": "Type or paste your JSON credentials here.",
   "modelsAccountsImportConfirm": "Import these ChatGPT credentials?",
-  "modelsAccountsImportConfirmDetail": "BaoCode will keep the credentials securely without changing the original file or actively refreshing tokens during import. Renewing them later may rotate the refresh token and require the original tool to sign in again. Only import credentials you are authorized to use.",
+  "modelsAccountsImportConfirmDetail": "Abyss will keep the credentials securely without changing the original file or actively refreshing tokens during import. Renewing them later may rotate the refresh token and require the original tool to sign in again. Only import credentials you are authorized to use.",
   "modelsAccountsImportFailed": "The credentials could not be read or imported.",
   "modelsAccountsImportSummary": "Accounts imported: {count}",
   "@modelsAccountsImportSummary": {
@@ -5089,7 +5089,7 @@
     }
   },
   "modelsRoles": "Roles",
-  "modelsRolesDescription": "Which model Claude Code uses for each part of its work. Unset, the model picked stands in. All but the main model may be another upstream's: BaoCode's local proxy sends their requests there.",
+  "modelsRolesDescription": "Which model Claude Code uses for each part of its work. Unset, the model picked stands in. All but the main model may be another upstream's: Abyss's local proxy sends their requests there.",
   "modelsRoleUnset": "Unset",
   "modelsRoleMain": "Main Model",
   "modelsRoleMainDescription": "Used when the model a session picked of this upstream is gone.",
@@ -5246,7 +5246,7 @@
   "modelsAuxiliaryBuiltin": "Claude Code Haiku (this machine's setup)",
   "settingsSectionUpdates": "Updates",
   "updatesSettingsTitle": "Updates",
-  "updatesSettingsDescription": "BaoCode looks for new versions on baocode.dev.",
+  "updatesSettingsDescription": "Abyss looks for new versions on baocode.dev.",
   "updateCurrentVersion": "Current Version",
   "updateLastChecked": "Last checked {time}",
   "@updateLastChecked": {
@@ -5262,8 +5262,8 @@
     "description": "The settings page's button."
   },
   "updateChecking": "Checking for updates…",
-  "updateUpToDate": "BaoCode is up to date.",
-  "updateAvailable": "BaoCode {version} is available.",
+  "updateUpToDate": "Abyss is up to date.",
+  "updateAvailable": "Abyss {version} is available.",
   "@updateAvailable": {
     "placeholders": {
       "version": {
@@ -5271,7 +5271,7 @@
       }
     }
   },
-  "updateReady": "BaoCode {version} has been downloaded. Restart to update.",
+  "updateReady": "Abyss {version} has been downloaded. Restart to update.",
   "@updateReady": {
     "placeholders": {
       "version": {
@@ -5279,7 +5279,7 @@
       }
     }
   },
-  "updateDownloading": "Downloading BaoCode {version}…",
+  "updateDownloading": "Downloading Abyss {version}…",
   "@updateDownloading": {
     "placeholders": {
       "version": {
@@ -5287,7 +5287,7 @@
       }
     }
   },
-  "updateDownloadingProgress": "Downloading BaoCode {version}… {percent}%",
+  "updateDownloadingProgress": "Downloading Abyss {version}… {percent}%",
   "@updateDownloadingProgress": {
     "placeholders": {
       "version": {
@@ -5298,7 +5298,7 @@
       }
     }
   },
-  "updateMandatory": "This version of BaoCode is no longer supported. Update to {version} to keep using it.",
+  "updateMandatory": "This version of Abyss is no longer supported. Update to {version} to keep using it.",
   "@updateMandatory": {
     "placeholders": {
       "version": {
@@ -5310,7 +5310,7 @@
   "updateLater": "Later",
   "updateSkip": "Skip This Version",
   "updateSkippedNote": "You skipped this version: it is not offered again, but can still be installed here.",
-  "updateFailed": "Couldn't update BaoCode: {error}",
+  "updateFailed": "Couldn't update Abyss: {error}",
   "@updateFailed": {
     "placeholders": {
       "error": {
@@ -5327,8 +5327,8 @@
     }
   },
   "updateDisabled": "Updates are turned off (update.mode is \"none\").",
-  "updateUnsupported": "This build of BaoCode doesn't update itself.",
-  "updateManual": "BaoCode can't update itself here ({reason}). Download the new version from baocode.dev.",
+  "updateUnsupported": "This build of Abyss doesn't update itself.",
+  "updateManual": "Abyss can't update itself here ({reason}). Download the new version from baocode.dev.",
   "@updateManual": {
     "placeholders": {
       "reason": {
@@ -5337,7 +5337,7 @@
     }
   },
   "updateOpenDownloadPage": "Open Download Page",
-  "updateUnfinished": "BaoCode {version} wasn't installed: this is still {current}. Try again from Settings > Updates, or download it from baocode.dev.",
+  "updateUnfinished": "Abyss {version} wasn't installed: this is still {current}. Try again from Settings > Updates, or download it from baocode.dev.",
   "@updateUnfinished": {
     "placeholders": {
       "version": {
@@ -5359,7 +5359,7 @@
     }
   },
   "updateMode": "Update Mode",
-  "updateModeDescription": "Whether BaoCode looks for new versions by itself (update.mode).",
+  "updateModeDescription": "Whether Abyss looks for new versions by itself (update.mode).",
   "updateModeLabel": "Update Mode: {name}",
   "@updateModeLabel": {
     "description": "The update mode dropdown, as read out.",
@@ -5382,7 +5382,7 @@
     "description": "Update mode: never checks."
   },
   "diagnosticsTitle": "Diagnostic Logs",
-  "diagnosticsDescription": "Send BaoCode's error logs and the crash and hang reports the system kept of it to its developers to help track down a problem. Nothing is sent until you upload.",
+  "diagnosticsDescription": "Send Abyss's error logs and the crash and hang reports the system kept of it to its developers to help track down a problem. Nothing is sent until you upload.",
   "diagnosticsUpload": "Upload…",
   "diagnosticsDialogTitle": "Upload Diagnostic Logs",
   "diagnosticsNotePlaceholder": "Note (optional): what went wrong, and how to make it happen again",
@@ -5415,7 +5415,7 @@
   "diagnosticsSend": "Upload",
   "diagnosticsUploading": "Uploading…",
   "diagnosticsUploaded": "Uploaded. Report ID:",
-  "diagnosticsUploadedDetail": "Give this ID to BaoCode's developers so they can find these logs.",
+  "diagnosticsUploadedDetail": "Give this ID to Abyss's developers so they can find these logs.",
   "diagnosticsOmittedDumps": "{count, plural, =1{1 older memory dump was} other{{count} older memory dumps were}} left out: over 10 MB.",
   "@diagnosticsOmittedDumps": {
     "placeholders": {
@@ -5655,8 +5655,8 @@
   },
   "generalSettingsContextMenuFinder": "Finder Context Menu",
   "generalSettingsContextMenuExplorer": "File Explorer Context Menu",
-  "generalSettingsContextMenuDescription": "Adds \"Open with BaoCode\" (a new agent) and \"Open with Fast Ide\" (a new IDE window) to the context menu of files, folders and a folder's background.",
-  "generalSettingsContextMenuMacNote": "Finder's own setting is in System Settings' extensions, where the BaoCode extension can also be turned on and off.",
+  "generalSettingsContextMenuDescription": "Adds \"Open with Abyss\" (a new agent) and \"Open with Fast Ide\" (a new IDE window) to the context menu of files, folders and a folder's background.",
+  "generalSettingsContextMenuMacNote": "Finder's own setting is in System Settings' extensions, where the Abyss extension can also be turned on and off.",
   "generalSettingsContextMenuOn": "On",
   "generalSettingsContextMenuOff": "Off",
   "generalSettingsContextMenuUnsupported": "This build of the app has no Finder extension.",
@@ -5898,7 +5898,7 @@
   },
   "localDownloadingClaude": "Downloading Claude Code… {percent}%",
   "@localDownloadingClaude": {
-    "description": "Shown over the chat while Claude Code is downloaded into BaoCode's data folder, the user having none that runs (or only one too old), before the agent starts.",
+    "description": "Shown over the chat while Claude Code is downloaded into Abyss's data folder, the user having none that runs (or only one too old), before the agent starts.",
     "placeholders": {
       "percent": {
         "type": "int"
@@ -5979,7 +5979,7 @@
   "@updateButton": {
     "description": "The sidebar's button while an update waits to be installed: restarts into it."
   },
-  "tipsSetupTitle": "Set Up BaoCode",
+  "tipsSetupTitle": "Set Up Abyss",
   "tipsSetupCount": "{done}/{total}",
   "@tipsSetupCount": {
     "placeholders": {
@@ -6018,7 +6018,7 @@
       }
     }
   },
-  "tipsUpdated": "BaoCode was updated to {version}. New: {features}.",
+  "tipsUpdated": "Abyss was updated to {version}. New: {features}.",
   "@tipsUpdated": {
     "placeholders": {
       "version": {
@@ -6032,7 +6032,7 @@
   "tipsListSeparator": ", ",
   "tipsSettingsTitle": "Recommended",
   "tipsSettingsDescription": "Features not turned on yet. Show Setup Guide brings back the setup checklist; \"workbench.tips.enabled\": false in settings.json turns tips off.",
-  "tipContextMenuBody": "Open files and folders in BaoCode from their context menu.",
+  "tipContextMenuBody": "Open files and folders in Abyss from their context menu.",
   "tipShellCommandTitle": "'{name}' Command",
   "@tipShellCommandTitle": {
     "placeholders": {
@@ -6041,7 +6041,7 @@
       }
     }
   },
-  "tipShellCommandBody": "Open folders in BaoCode from a terminal: {name} <path>.",
+  "tipShellCommandBody": "Open folders in Abyss from a terminal: {name} <path>.",
   "@tipShellCommandBody": {
     "placeholders": {
       "name": {
@@ -6053,9 +6053,9 @@
   "tipImportKeybindingsBody": "Bring your keybindings over from VS Code or Cursor.",
   "tipColorThemeBody": "Pick the colors of the chat, the IDE and the terminal.",
   "cmdShowSetupGuide": "Show Setup Guide",
-  "cmdStarOnGitHub": "Star BaoCode on GitHub",
-  "starPromptMessage": "Enjoying BaoCode?",
-  "starPromptDetail": "BaoCode is free and open source. If it helps you, a star on GitHub helps other people find it.",
+  "cmdStarOnGitHub": "Star Abyss on GitHub",
+  "starPromptMessage": "Enjoying Abyss?",
+  "starPromptDetail": "Abyss is free and open source. If it helps you, a star on GitHub helps other people find it.",
   "starPromptStar": "Star on GitHub",
   "starPromptLater": "Maybe Later",
   "cmdResetFeatureTips": "Reset Feature Tips",
@@ -6232,9 +6232,9 @@
   "settingsSectionNetwork": "Network",
   "settingsNetworkKeywords": "proxy http https clash vpn network",
   "networkSettingsTitle": "Network",
-  "networkSettingsDescription": "How BaoCode and the Claude Code it starts reach the internet.",
+  "networkSettingsDescription": "How Abyss and the Claude Code it starts reach the internet.",
   "networkProxy": "Proxy",
-  "networkProxyDescription": "The proxy for BaoCode and Claude Code (http.proxyMode). System Proxy follows the system's settings, such as Clash's system proxy. New sessions take a change; restart a running one for it.",
+  "networkProxyDescription": "The proxy for Abyss and Claude Code (http.proxyMode). System Proxy follows the system's settings, such as Clash's system proxy. New sessions take a change; restart a running one for it.",
   "networkProxyLabel": "Proxy: {name}",
   "@networkProxyLabel": {
     "description": "The proxy dropdown, as read out.",
@@ -6295,7 +6295,7 @@
   "networkProxyStatusManualMissing": "Enter the proxy's address.",
   "networkProxyStatusNone": "Direct: the system has no proxy set.",
   "networkProxyStatusOff": "Direct.",
-  "networkProxyStatusAutoConfig": "Direct: the system sets its proxy with an auto-config (PAC) file, which BaoCode doesn't follow. Turn on Clash's system proxy, or enter the address manually.",
+  "networkProxyStatusAutoConfig": "Direct: the system sets its proxy with an auto-config (PAC) file, which Abyss doesn't follow. Turn on Clash's system proxy, or enter the address manually.",
   "networkProxyRefresh": "Detect Again",
   "networkTest": "Connection Test",
   "networkTestDescription": "Reaches these sites through the proxy in use: whether each answers, and how quickly (a new connection's time, until the answer starts).",
@@ -6337,7 +6337,7 @@
   "extsCapabilityFull": "Fully supported",
   "extsCapabilityFullDetail": "Its color or file icon themes all apply.",
   "extsCapabilityPartial": "Partly supported",
-  "extsCapabilityPartialDetail": "Its themes apply; the rest of it does nothing in BaoCode.",
+  "extsCapabilityPartialDetail": "Its themes apply; the rest of it does nothing in Abyss.",
   "extsEngineIncompatible": "Needs VS Code {requested}; this is {current}.",
   "@extsEngineIncompatible": {
     "placeholders": {
@@ -6498,7 +6498,7 @@
   "themeSelectIconThemePlaceholder": "Select File Icon Theme (Up/Down Keys to Preview)",
   "themeIconThemeBuiltIn": "Built-in",
   "extsCapabilityUnsupported": "Not supported",
-  "extsCapabilityUnsupportedDetail": "It has no color or file icon theme: BaoCode only uses themes from extensions.",
+  "extsCapabilityUnsupportedDetail": "It has no color or file icon theme: Abyss only uses themes from extensions.",
   "extsFindingCode": "Its code does not run.",
   "extsFindingContribution": "Not used: {name}",
   "@extsFindingContribution": {
@@ -6577,7 +6577,7 @@
   },
   "settingsSectionMobile": "Mobile",
   "settingsMobileKeywords": "phone iphone android ios pair qr code remote lan",
-  "mobileSettingsDescription": "Follow and drive this computer's agents from BaoCode on your phone: directly on the same network, across the internet through a hole punched in the routers between them, or through BaoCode's relay when neither works. What goes between them is end-to-end encrypted; a relay cannot read it.",
+  "mobileSettingsDescription": "Follow and drive this computer's agents from Abyss on your phone: directly on the same network, across the internet through a hole punched in the routers between them, or through Abyss's relay when neither works. What goes between them is end-to-end encrypted; a relay cannot read it.",
   "mobileAllow": "Allow Phones to Connect",
   "mobileAllowDescription": "Phones paired with this computer can connect to it, wherever they are.",
   "mobileStatus": "Status",
@@ -6594,7 +6594,7 @@
   "mobileRelay": "Relays",
   "mobileRelayDescription": "Phones that cannot reach this computer directly go through one. It only passes along what is sealed between the two. Nothing to set on the phone: it learns them when paired, and again each time it connects.",
   "mobilePair": "Pair a Phone",
-  "mobilePairDescription": "Scan the code with BaoCode on the phone (Me → Paired computers → Pair a computer), or pick this computer under Nearby Computers there.",
+  "mobilePairDescription": "Scan the code with Abyss on the phone (Me → Paired computers → Pair a computer), or pick this computer under Nearby Computers there.",
   "mobilePairShow": "Show QR Code",
   "mobilePairCancel": "Cancel",
   "mobilePairNewCode": "New Code",
@@ -6678,9 +6678,9 @@
   "mobileRelayCustomDescription": "The address of a relay you run yourself (baocode-relay).",
   "mobileRelayMode": "How",
   "mobileRelayModeAuto": "Automatic",
-  "mobileRelayModeAutoDescription": "BaoCode's relays, the nearest that answers.",
+  "mobileRelayModeAutoDescription": "Abyss's relays, the nearest that answers.",
   "mobileRelayModePinned": "Pick One",
-  "mobileRelayModePinnedDescription": "Only the one picked: one of BaoCode's, or a custom address.",
+  "mobileRelayModePinnedDescription": "Only the one picked: one of Abyss's, or a custom address.",
   "mobileRelayModeDirect": "Direct Only",
   "mobileRelayModeDirectDescription": "No relay: phones connect straight to this computer. It needs a public address, or the port below forwarded to it.",
   "mobileDirectPort": "Direct Port",
@@ -6949,7 +6949,7 @@
       }
     }
   },
-  "stashImplement": "Implement in BaoCode",
+  "stashImplement": "Implement in Abyss",
   "stashImplementHow": "How should the agent work on it?",
   "stashImplementHowDetail": "In a new git worktree (a branch of its own, your working copy untouched), or directly in the project as it is.",
   "stashImplementWorktree": "New Worktree",
@@ -7010,7 +7010,7 @@
   "stashSettingsDirectory": "Location",
   "stashSettingsDirectoryChange": "Change…",
   "stashSettingsDirectoryReset": "Default",
-  "stashSettingsDirectoryRestart": "Takes effect after BaoCode restarts.",
+  "stashSettingsDirectoryRestart": "Takes effect after Abyss restarts.",
   "stashAll": "All",
   "@stashAll": {
     "description": "Opens the list of every stash beside the one written in, in the stash panel."
@@ -7153,7 +7153,7 @@
       }
     }
   },
-  "accountsSignOutDetail": "The token is deleted from this computer. To revoke BaoCode's access altogether, revoke it in your {forge} settings too.",
+  "accountsSignOutDetail": "The token is deleted from this computer. To revoke Abyss's access altogether, revoke it in your {forge} settings too.",
   "@accountsSignOutDetail": {
     "placeholders": {
       "forge": {
@@ -7197,7 +7197,7 @@
   "@accountsCertificateTitle": {
     "description": "Title of the dialog asking whether to trust a forge server's certificate."
   },
-  "accountsCertificateDetail": "The certificate of {host} cannot be verified ({issuer}).\n\nSHA-256 fingerprint:\n{fingerprint}\n\nTrusting it lets BaoCode reach this server, and only the certificate with this fingerprint is accepted. You are asked again if the certificate changes.",
+  "accountsCertificateDetail": "The certificate of {host} cannot be verified ({issuer}).\n\nSHA-256 fingerprint:\n{fingerprint}\n\nTrusting it lets Abyss reach this server, and only the certificate with this fingerprint is accepted. You are asked again if the certificate changes.",
   "@accountsCertificateDetail": {
     "description": "What a self-signed or privately issued forge certificate is, before the user confirms it.",
     "placeholders": {
@@ -7224,7 +7224,7 @@
       }
     }
   },
-  "accountsBrowserDetail": "Enter this code on {host} to let BaoCode access your account:",
+  "accountsBrowserDetail": "Enter this code on {host} to let Abyss access your account:",
   "@accountsBrowserDetail": {
     "placeholders": {
       "host": {
@@ -7387,7 +7387,7 @@
   "stashWelcomeLead": "Note things down the moment they come to you, hand them to an agent when you are ready, and see how each one is going.",
   "stashWelcomeNoteTitle": "Note it down",
   "stashWelcomeAgentTitle": "Hand it to an agent",
-  "stashWelcomeAgent": "Click Implement in BaoCode, or mention it in a conversation; the conversation and the stash stay linked.",
+  "stashWelcomeAgent": "Click Implement in Abyss, or mention it in a conversation; the conversation and the stash stay linked.",
   "stashWelcomeTrackTitle": "See how it goes",
   "stashWelcomeTrack": "Cards show their conversations live, and the GitHub, GitLab and Gitee issues and pull requests they link to stay in sync.",
   "stashWelcomeStart": "Get Started",
@@ -7414,19 +7414,19 @@
   "browserSettingsNotInstalled": "No browser has connected yet",
   "browserSettingsNotInstalledDescription": "Install the extension either way below, then open the browser: it connects automatically.",
   "browserSettingsNotRunning": "No browser connected",
-  "browserSettingsNotRunningDescription": "Open a browser with BaoCode's extension: it connects automatically.",
+  "browserSettingsNotRunningDescription": "Open a browser with Abyss's extension: it connects automatically.",
   "browserSettingsSandboxed": "Snap and Flatpak browsers can't connect",
-  "browserSettingsSandboxedDescription": "Their sandbox keeps BaoCode's helper from running. Install the browser from its own .deb or .rpm package instead, such as Google Chrome from google.com/chrome.",
+  "browserSettingsSandboxedDescription": "Their sandbox keeps Abyss's helper from running. Install the browser from its own .deb or .rpm package instead, such as Google Chrome from google.com/chrome.",
   "browserSettingsConnected": "{browser} connected",
   "@browserSettingsConnected": {"description": "A browser connected, by its name (Google Chrome, Microsoft Edge…).", "placeholders": {"browser": {"type": "String"}}},
   "browserSettingsIncompatible": "{browser}: extension version doesn't match",
-  "@browserSettingsIncompatible": {"description": "A browser connected whose extension BaoCode cannot use: one too old, or newer than the app.", "placeholders": {"browser": {"type": "String"}}},
+  "@browserSettingsIncompatible": {"description": "A browser connected whose extension Abyss cannot use: one too old, or newer than the app.", "placeholders": {"browser": {"type": "String"}}},
   "browserSettingsExtensionVersion": "Extension {version}",
-  "@browserSettingsExtensionVersion": {"description": "The version of BaoCode's extension in a connected browser.", "placeholders": {"version": {"type": "String"}}},
+  "@browserSettingsExtensionVersion": {"description": "The version of Abyss's extension in a connected browser.", "placeholders": {"version": {"type": "String"}}},
   "browserSettingsExtensionOld": "The extension is out of date. From the store, it updates automatically, or click Update in chrome://extensions; installed manually, download the zip again, replace the folder's contents and click reload.",
-  "browserSettingsAppOld": "The extension is newer than this BaoCode. Update BaoCode.",
+  "browserSettingsAppOld": "The extension is newer than this Abyss. Update Abyss.",
   "browserSettingsNoFileAccess": "File access is off",
-  "browserSettingsNoFileAccessDescription": "Agents can't open local HTML files or upload files. In chrome://extensions, click Details on BaoCode and turn on Allow access to file URLs.",
+  "browserSettingsNoFileAccessDescription": "Agents can't open local HTML files or upload files. In chrome://extensions, click Details on Abyss and turn on Allow access to file URLs.",
   "browserSettingsInstall": "Get the Extension",
   "browserSettingsStore": "Chrome Web Store",
   "browserSettingsStoreDescription": "Recommended. Updates automatically; works in Chrome, Edge, Brave, Arc and other Chromium browsers.",
@@ -7436,7 +7436,7 @@
   "browserSettingsUnpackedDownload": "Download Zip",
   "browserSettingsOpen": "Browser Settings",
   "browserHistoryTitle": "Debugging history",
-  "browserHistoryDescription": "What the tabs shared with BaoCode do is kept as it happens, no recording needed: the pages, the requests, console errors and warnings. Agents look back at it when you ask (“it failed when I saved”). Kept on this computer; cookies and tokens are not.",
+  "browserHistoryDescription": "What the tabs shared with Abyss do is kept as it happens, no recording needed: the pages, the requests, console errors and warnings. Agents look back at it when you ask (“it failed when I saved”). Kept on this computer; cookies and tokens are not.",
   "browserHistoryDetailed": "Detailed history",
   "browserHistoryDetailedDescription": "Also keeps the request and response bodies, what you do (clicks and typing, never passwords) and every console message. Takes more space.",
   "browserHistorySize": "Using {size}",
@@ -7449,9 +7449,9 @@
   "browserHistoryTooLargeDetail": "Clear it, or look at it in Settings → Browser.",
   "browserHistoryOpenSettings": "Browser settings",
   "browserWelcomeTitle": "Agents can use your browser now",
-  "browserWelcomeLead": "With BaoCode's extension, agents open pages, read them, click and type in your own Chrome, signed in as you are.",
+  "browserWelcomeLead": "With Abyss's extension, agents open pages, read them, click and type in your own Chrome, signed in as you are.",
   "browserWelcomeSharedTitle": "Only the tabs you share",
-  "browserWelcomeShared": "They work in the yellow BaoCode tab group alone; your other tabs stay yours.",
+  "browserWelcomeShared": "They work in the yellow Abyss tab group alone; your other tabs stay yours.",
   "browserWelcomeWatchTitle": "Watch it work",
   "browserWelcomeWatch": "The side panel shows the page live as the agent uses it. Take over any time.",
   "browserWelcomeShowTitle": "Show it once",
@@ -7468,7 +7468,7 @@
   "cmdStashWelcome": "Meet Stash...",
   "cmdModelWelcome": "Set Up a Model...",
   "modelWelcomeTitle": "Pick a Model to Start",
-  "modelWelcomeLead": "BaoCode runs your agents on a model of your choosing. Add an upstream, a service with an API key, and its models are ready to use.",
+  "modelWelcomeLead": "Abyss runs your agents on a model of your choosing. Add an upstream, a service with an API key, and its models are ready to use.",
   "modelWelcomeAnyTitle": "Any upstream",
   "modelWelcomeAny": "Anthropic's API, OpenAI's Chat Completions or Responses, or a service that speaks one of them, such as OpenRouter or DeepSeek.",
   "modelWelcomeKeysTitle": "Your keys stay with you",
@@ -7544,7 +7544,7 @@
   "sshServerCore": "Core",
   "sshServerCoreAuto": "Automatic",
   "sshServerCoreAutoHint": "The server's Claude Code CLI if it has one, else the built-in core.",
-  "sshServerCoreBuiltinHint": "BaoCode's own core: it runs on the upstreams of Settings → Models.",
+  "sshServerCoreBuiltinHint": "Abyss's own core: it runs on the upstreams of Settings → Models.",
   "sshServerCoreCliHint": "The server's Claude Code CLI, installed there if it has none.",
   "sshServerJump": "Jump Host (optional)",
   "sshServerNoJump": "None: connect directly",
@@ -7573,14 +7573,14 @@
   "remoteFailHostKeyChanged": "The server's key changed since the last connection: it was reinstalled, or someone is in between.",
   "remoteFailUnreachable": "The server could not be reached: check the address, port and network.",
   "remoteFailWsl": "WSL could not start this distribution: check that WSL is installed and that the distribution is listed by wsl --list.",
-  "channelSetupTitle": "Welcome to BaoCode",
+  "channelSetupTitle": "Welcome to Abyss",
   "channelSetupLead": "Finish your first-time setup on baocode.dev. It takes about 10 seconds.",
   "channelSetupStepTitle": "Finish setup in your browser",
-  "channelSetupStep": "BaoCode opens baocode.dev in your browser. Once the page says it's done, BaoCode continues on its own.",
+  "channelSetupStep": "Abyss opens baocode.dev in your browser. Once the page says it's done, Abyss continues on its own.",
   "channelSetupWaitingTitle": "Waiting for your browser…",
-  "channelSetupWaiting": "Once the page says it's done, BaoCode continues on its own. Closed the page by mistake? Open it again.",
+  "channelSetupWaiting": "Once the page says it's done, Abyss continues on its own. Closed the page by mistake? Open it again.",
   "channelSetupOpenFailedTitle": "Your browser didn't open",
-  "channelSetupOpenFailed": "Copy this address and open it in your browser. Once the page says it's done, BaoCode continues on its own.",
+  "channelSetupOpenFailed": "Copy this address and open it in your browser. Once the page says it's done, Abyss continues on its own.",
   "channelSetupAddressCopied": "Copied",
   "channelSetupOffline": "Can't reach baocode.dev. You need to be online to finish setup.",
   "channelSetupRetry": "Retry",
@@ -7591,16 +7591,16 @@
   "channelSetupPasteLead": "If the page shows a link, copy it and paste it here:",
   "channelSetupPasteConfirm": "OK",
   "channelSetupLinkInvalid": "That isn't the link from the page. Copy the whole link shown there.",
-  "channelSetupLinkOther": "That link is for another BaoCode install. Use the page this BaoCode opened.",
+  "channelSetupLinkOther": "That link is for another Abyss install. Use the page this Abyss opened.",
   "channelSetupTrouble": "Having trouble?",
   "channelSetupOnceTitle": "Only once",
   "channelSetupOnce": "Once it's done, this won't show again, not even after an update.",
   "channelSetupPrivateTitle": "Nothing personal",
-  "channelSetupPrivate": "The page only tells BaoCode where you heard of it, like a video or a website.",
+  "channelSetupPrivate": "The page only tells Abyss where you heard of it, like a video or a website.",
   "channelSetupFindingTitle": "Getting your channel ready…",
   "channelSetupFinding": "Just a moment.",
   "channelSetupSiteOfflineTitle": "Can't reach baocode.dev",
-  "channelSetupSiteOffline": "BaoCode needs to be online to read your channel. Check your connection and retry.",
+  "channelSetupSiteOffline": "Abyss needs to be online to read your channel. Check your connection and retry.",
   "channelSetupUnavailableTitle": "This channel isn't available",
   "channelSetupUnavailable": "The channel this installer came from doesn't have accounts set up yet. If you downloaded it through another channel, confirm where you came from in your browser; otherwise contact whoever gave you the installer, or download the standard edition from baocode.dev.",
   "channelSetupConfirmAgain": "Confirm in Browser",
@@ -7618,7 +7618,7 @@
   "channelAccountRefresh": "Refresh",
   "channelAccountSignOut": "Sign Out",
   "channelAccountSignOutTitle": "Sign out?",
-  "channelAccountSignOutDetail": "You'll need to sign in to {channel} again to keep using BaoCode.",
+  "channelAccountSignOutDetail": "You'll need to sign in to {channel} again to keep using Abyss.",
   "@channelAccountSignOutDetail": {"placeholders": {"channel": {"type": "String"}}},
   "channelAccountOpenSite": "Open Website",
   "channelAccountDefaultModel": "Default model for new chats",
@@ -7794,7 +7794,7 @@
   "stashFilterAnyIssue": "Any source",
   "stashFilterIssue": "Issues",
   "stashFilterNotIssue": "Local only",
-  "stashImplementEmpty": "Write something first, then implement it in BaoCode",
+  "stashImplementEmpty": "Write something first, then implement it in Abyss",
   "stashIssueDuplicateBanner": "{issue}, of stash {stash} merged into this one, is still open. Close it as a duplicate?",
   "@stashIssueDuplicateBanner": {
     "placeholders": {
@@ -8605,13 +8605,13 @@
   "ustatEmptyFiltered": "Nothing matches these filters",
   "ustatConversationNew": "Usage shows once the conversation starts",
   "ustatConversationEmpty": "No calls kept for this conversation",
-  "ustatConversationEmptyDetail": "Only conversations on a custom upstream are counted: Claude's official service does not go through BaoCode's proxy.",
+  "ustatConversationEmptyDetail": "Only conversations on a custom upstream are counted: Claude's official service does not go through Abyss's proxy.",
   "ustatRecordOff": "Usage is not being recorded",
   "ustatTurnOn": "Turn on",
   "ustatDataTitle": "Data",
   "ustatDataDescription": "Detailed records take room: keep them as long as you like, and clear what you no longer need.",
   "ustatRecord": "Record usage",
-  "ustatRecordDescription": "Claude Code's own calls are read from what it prints; sessions on a custom upstream go through BaoCode's local proxy, which keeps each call. Applies to agents started from now on.",
+  "ustatRecordDescription": "Claude Code's own calls are read from what it prints; sessions on a custom upstream go through Abyss's local proxy, which keeps each call. Applies to agents started from now on.",
   "ustatRecordOffDescription": "Turn it on to keep each call to a model: tokens, the cache, time, by conversation, subagent and tool.",
   "ustatDetailed": "Detailed records",
   "ustatDetailedDescription": "Also keeps what filled each request's context and the tools' share. Takes more room.",
@@ -8759,7 +8759,7 @@
   "ustatCostNoPrices": "No prices set",
   "ustatPrices": "Model prices",
   "ustatPricesDetail": "A million tokens each. Costs are worked out at the prices as they are now, the calls before a change included, unless a price is set from a date on.",
-  "ustatPricesAgentHint": "BaoCode can keep these for you: ask it in a chat to look up the current prices of these models and update them. It checks the upstream's own pricing page and writes them here.",
+  "ustatPricesAgentHint": "Abyss can keep these for you: ask it in a chat to look up the current prices of these models and update them. It checks the upstream's own pricing page and writes them here.",
   "ustatPriceCurrency": "Currency",
   "ustatPriceAnyUpstream": "any upstream",
   "ustatPriceSource": "Where the price was read",
@@ -8905,7 +8905,7 @@
   "rewindFilesKeep": "Keep and Send",
   "rewindFilesRemember": "Remember my choice",
   "generalSettingsRewindFiles": "Edited Messages",
-  "generalSettingsRewindFilesDescription": "When you edit an earlier message and send it again, what happens to the files the agent changed after it. Commands' (Bash) changes are not tracked. Claude Code and BaoCode agent only.",
+  "generalSettingsRewindFilesDescription": "When you edit an earlier message and send it again, what happens to the files the agent changed after it. Commands' (Bash) changes are not tracked. Claude Code and Abyss agent only.",
   "generalSettingsRewindAsk": "Ask Each Time",
   "generalSettingsRewindRevert": "Undo the Changes",
   "generalSettingsRewindKeep": "Keep the Changes",
@@ -8922,8 +8922,8 @@
   "settingsTransferImportQuestion": "Import the settings in {file}?",
   "@settingsTransferImportQuestion": {"placeholders": {"file": {"type": "String"}}},
   "settingsTransferImportDetail": "Its settings, keybindings and upstreams replace yours; settings it does not have stay as they are.",
-  "settingsTransferImported": "Imported. Some settings take effect once BaoCode restarts.",
-  "settingsTransferNotAFile": "This is not a settings file BaoCode exported.",
+  "settingsTransferImported": "Imported. Some settings take effect once Abyss restarts.",
+  "settingsTransferNotAFile": "This is not a settings file Abyss exported.",
   "settingsTransferFailed": "Not done: {error}",
   "@settingsTransferFailed": {"placeholders": {"error": {"type": "String"}}},
   "generalSettingsSessionTools": "Agents can coordinate other conversations",

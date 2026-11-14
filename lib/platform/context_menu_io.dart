@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../window/code_args.dart';
+import 'app_edition.dart';
 import 'app_platform.dart';
 import 'context_menu.dart';
 import 'shell_command_io.dart'
@@ -118,12 +119,14 @@ class WindowsContextMenu implements ContextMenuInstaller {
   final ShellCommandRunner _run;
 
   /// The key whose command tells the menu is there.
-  static const _probeKey = r'Software\Classes\Directory\shell\BaoCode\command';
+  static final _probeKey =
+      'Software\\Classes\\Directory\\shell\\${AppEdition.windowsContextMenu}\\command';
 
   /// The keys, named [labels]: a file's item takes the file (`%1`), a
   /// folder's and its background's the folder (`%V`).
   List<WindowsContextMenuEntry> entries(ContextMenuLabels labels) {
     final app = '"$executable"';
+    final key = AppEdition.windowsContextMenu;
     return [
       for (final (kind, target) in [
         ('*', '%1'),
@@ -131,12 +134,12 @@ class WindowsContextMenu implements ContextMenuInstaller {
         (r'Directory\Background', '%V'),
       ]) ...[
         (
-          key: 'Software\\Classes\\$kind\\shell\\BaoCode',
+          key: 'Software\\Classes\\$kind\\shell\\$key',
           label: labels.agent,
           command: '$app ${CodeArgs.windowsAgentFlag} "$target"',
         ),
         (
-          key: 'Software\\Classes\\$kind\\shell\\BaoCodeFastIde',
+          key: 'Software\\Classes\\$kind\\shell\\${key}FastIde',
           label: labels.ide,
           command: '$app ${CodeArgs.windowsRequestFlag} "$target" -n "$target"',
         ),

@@ -10,6 +10,7 @@
 #include <cwchar>
 #include <string>
 
+#include "edition.h"
 #include "crash_report.h"
 #include "log_folder.h"
 
@@ -75,7 +76,7 @@ void RegisterFastFailModule() {
   }
   std::wstring module = executable;
   module = module.substr(0, module.find_last_of(L'\\') + 1) +
-           L"baocode_wer.dll";
+           edition::kWerModule;
   if (::GetFileAttributesW(module.c_str()) == INVALID_FILE_ATTRIBUTES) {
     return;
   }

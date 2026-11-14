@@ -85,6 +85,7 @@ import 'notifications/attention_settings.dart';
 import 'platform/memory_budget.dart';
 import 'platform/native_md_clipboard.dart';
 import 'platform/app_binding.dart';
+import 'platform/app_edition.dart';
 import 'platform/app_platform.dart';
 import 'platform/data_dir.dart';
 import 'platform/error_log.dart';
@@ -672,7 +673,7 @@ UpdateController? _startUpdates(SettingsFiles files) {
   final platform = platformUpdates(
     updatesDirectory: DataDirectory.current.updatesDir,
   );
-  if (platform == null) return null;
+  if (platform == null || !AppEdition.hasUpdateFeed) return null;
   final service = UpdateService(
     current: currentAppVersion,
     platform: platform.platform,
@@ -1056,7 +1057,7 @@ class _BaoCodeAppState extends State<BaoCodeApp>
   /// it shows built anew as its folder changes.
   Widget _app(AppWindow window) => _withoutSemantics(
     MaterialApp(
-      title: 'BaoCode',
+      title: AppEdition.name,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       themeAnimationDuration: Duration.zero,

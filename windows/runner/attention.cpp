@@ -546,7 +546,7 @@ void Attention::ShowIcon() {
   data.uCallbackMessage = kTrayMessage;
   data.hIcon = icon;
   const std::wstring tooltip =
-      tray_ && !tray_->tooltip.empty() ? tray_->tooltip : L"BaoCode";
+      tray_ && !tray_->tooltip.empty() ? tray_->tooltip : L"Abyss";
   wcsncpy_s(data.szTip, tooltip.c_str(), _TRUNCATE);
   bool shown = icon_added_ && ::Shell_NotifyIconW(NIM_MODIFY, &data);
   if (!shown) {
