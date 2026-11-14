@@ -12,12 +12,14 @@ import 'session.dart';
 
 /// Where a task stands.
 enum TaskStatus {
+  queued,
   running,
   completed,
   failed,
-  killed;
+  killed,
+  interrupted;
 
-  bool get done => this != running;
+  bool get done => this != queued && this != running;
 }
 
 /// Work going on beside the conversation: a command run in the background,
@@ -34,7 +36,8 @@ class BackgroundTask {
     this.model,
     this.requestedModel,
     this.modelSource,
-  }) : started = DateTime.now();
+    this.parentId,
+  }) : queuedAt = DateTime.now();
 
   final String id;
 
@@ -51,7 +54,11 @@ class BackgroundTask {
   String? model;
   String? requestedModel;
   String? modelSource;
-  final DateTime started;
+  final String? parentId;
+
+  /// When this attempt was queued, and when it actually started.
+  DateTime queuedAt;
+  DateTime? started;
   CancelToken cancel = CancelToken();
 
   TaskStatus status = TaskStatus.running;
@@ -78,6 +85,9 @@ class BackgroundTask {
   final Completer<void> _done = Completer<void>();
   Completer<void> _attemptDone = Completer<void>();
 
+  /// Set by AgentTool: called once a queue place has been assigned.
+  void Function()? admit;
+
   /// Completes once it has ended.
   Future<void> get done => _attemptDone.future;
 
@@ -92,17 +102,30 @@ class BackgroundTask {
     }
   }
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson({bool readOnly = false}) => {
     'task_id': id,
     'task_type': type,
     'description': description,
     'status': status.name,
+    'queue_state': status == TaskStatus.queued ? 'queued' : 'admitted',
     'tool_use_id': ?toolUseId,
     'output_file': outputFile,
     'exit_code': ?exitCode,
     'model': ?model,
     'requested_model': ?requestedModel,
     'model_source': ?modelSource,
+    'parent_id': ?parentId,
+    'agent_type': ?agentType,
+    'command': ?command,
+    'is_backgrounded': backgrounded,
+    'queued_at': queuedAt.toUtc().toIso8601String(),
+    'started_at': ?started?.toUtc().toIso8601String(),
+    'ended_at': ?ended?.toUtc().toIso8601String(),
+    'result': ?result,
+    'error': ?error,
+    'tokens': tokens,
+    'tool_uses': toolUses,
+    'read_only': readOnly,
   };
 }
 
@@ -110,11 +133,28 @@ class BackgroundTask {
 /// end told the model (a `<task-notification>` it takes up as a turn of
 /// its own) and the host (`task_notification`).
 class TaskManager {
-  TaskManager(this.session);
+  TaskManager(this.session, {this.agentLimit = 2});
+
+  /// How many children one supervisor may have actually running at once.
+  /// Others are registered as queued only after their user approval.
+  final int agentLimit;
 
   final AgentSession session;
 
   final Map<String, BackgroundTask> tasks = {};
+  final Map<String, List<BackgroundTask>> _agentQueues = {};
+  final Map<String, int> _activeAgents = {};
+
+  /// Live queue counts for the host, never a license to start queued work.
+  Map<String, Object?> agentQueueStatus(String parentId) => {
+    'parent_id': parentId,
+    'limit': agentLimit,
+    'running': _activeAgents[parentId] ?? 0,
+    'queued': _agentQueues[parentId]?.length ?? 0,
+    'task_ids': [
+      for (final task in _agentQueues[parentId] ?? const []) task.id,
+    ],
+  };
 
   /// Commands run in the foreground, by their call: one may be sent to the
   /// background (`background_tasks`).
@@ -144,10 +184,14 @@ class TaskManager {
     String? model,
     String? requestedModel,
     String? modelSource,
+    String? parentId,
     String? id,
+    void Function()? admit,
   }) {
     final taskId = id ?? newId(type == 'local_bash' ? 'b' : 'a');
-    Directory(outputDir).createSync(recursive: true);
+    if (session.options.persist) {
+      Directory(outputDir).createSync(recursive: true);
+    }
     final task = BackgroundTask(
       id: taskId,
       type: type,
@@ -159,19 +203,57 @@ class TaskManager {
       model: model,
       requestedModel: requestedModel,
       modelSource: modelSource,
+      parentId: parentId,
     );
-    File(task.outputFile).writeAsStringSync('');
+    if (session.options.persist) {
+      File(task.outputFile).writeAsStringSync('');
+    }
+    task.admit = admit;
     tasks[taskId] = task;
     return task;
   }
 
-  void _started(BackgroundTask task) {
+  void _started(BackgroundTask task, {bool admission = false}) {
+    task.started = DateTime.now();
+    _persist(task);
+    if (admission) {
+      session.emitSystem('task_updated', {
+        'task_id': task.id,
+        'patch': {
+          'status': 'running',
+          'queue_state': 'running',
+          'queue': task.parentId == null
+              ? null
+              : agentQueueStatus(task.parentId!),
+        },
+      });
+      return;
+    }
     session.emitSystem('task_started', {
       'task_id': task.id,
       'task_type': task.type,
       'tool_use_id': ?task.toolUseId,
       'description': task.description,
       'is_backgrounded': task.backgrounded,
+      'queue_state': 'running',
+      'queue': task.parentId == null ? null : agentQueueStatus(task.parentId!),
+      'output_file': task.outputFile,
+      'model': ?task.model,
+      'requested_model': ?task.requestedModel,
+      'model_source': ?task.modelSource,
+    });
+  }
+
+  void _queued(BackgroundTask task) {
+    _persist(task);
+    session.emitSystem('task_started', {
+      'task_id': task.id,
+      'task_type': task.type,
+      'tool_use_id': ?task.toolUseId,
+      'description': task.description,
+      'is_backgrounded': task.backgrounded,
+      'queue_state': 'queued',
+      'queue': task.parentId == null ? null : agentQueueStatus(task.parentId!),
       'output_file': task.outputFile,
       'model': ?task.model,
       'requested_model': ?task.requestedModel,
@@ -285,14 +367,50 @@ class TaskManager {
     if (!task.status.done) throw StateError('The agent is still running.');
     task
       ..backgrounded = true
-      ..status = TaskStatus.running
+      ..status = TaskStatus.queued
+      ..queuedAt = DateTime.now()
+      ..started = null
       ..ended = null
       ..error = null
       ..result = null
       ..exitCode = null
       ..cancel = CancelToken()
       .._attemptDone = Completer<void>();
-    _started(task);
+    final parent = task.parentId;
+    if (parent == null) {
+      task.status = TaskStatus.running;
+      _started(task);
+      return;
+    }
+    (_agentQueues[parent] ??= []).add(task);
+    _queued(task);
+    _admitAgents(parent);
+  }
+
+  void _admitAgents(String parentId) {
+    final queue = _agentQueues[parentId];
+    if (queue == null) return;
+    while ((_activeAgents[parentId] ?? 0) < agentLimit && queue.isNotEmpty) {
+      final task = queue.removeAt(0);
+      if (task.status != TaskStatus.queued) continue;
+      _activeAgents[parentId] = (_activeAgents[parentId] ?? 0) + 1;
+      task.status = TaskStatus.running;
+      _started(task, admission: true);
+      task.admit?.call();
+    }
+    if (queue.isEmpty) _agentQueues.remove(parentId);
+  }
+
+  void _releaseAgent(BackgroundTask task) {
+    final parent = task.parentId;
+    if (parent == null || task.started == null) return;
+    final active = _activeAgents[parent] ?? 0;
+    if (active <= 1) {
+      _activeAgents.remove(parent);
+    } else {
+      _activeAgents[parent] = active - 1;
+    }
+    _admitAgents(parent);
   }
 
   /// A subagent working in the background.
@@ -304,7 +422,9 @@ class TaskManager {
     String? model,
     String? requestedModel,
     String? modelSource,
+    String? parentId,
     bool background = true,
+    void Function()? admit,
   }) {
     final task = _register(
       type: 'local_agent',
@@ -314,10 +434,19 @@ class TaskManager {
       model: model,
       requestedModel: requestedModel,
       modelSource: modelSource,
+      parentId: parentId,
       id: agentId,
+      admit: admit,
     );
     task.backgrounded = background;
-    _started(task);
+    if (parentId == null) {
+      _started(task);
+    } else {
+      task.status = TaskStatus.queued;
+      (_agentQueues[parentId] ??= []).add(task);
+      _queued(task);
+      _admitAgents(parentId);
+    }
     return task;
   }
 
@@ -332,7 +461,9 @@ class TaskManager {
       'usage': {
         'total_tokens': task.tokens,
         'tool_uses': task.toolUses,
-        'duration_ms': DateTime.now().difference(task.started).inMilliseconds,
+        'duration_ms': task.started == null
+            ? 0
+            : DateTime.now().difference(task.started!).inMilliseconds,
       },
     });
   }
@@ -345,9 +476,13 @@ class TaskManager {
     String? result,
     SubagentResult? envelope,
   }) {
-    if (task.status.done && task._attemptDone.isCompleted) return;
-    task.status = status;
+    if (task.ended != null) return;
     task.ended = DateTime.now();
+    _releaseAgent(task);
+    task.started = null;
+    if (task.parentId case final parent?) _agentQueues[parent]?.remove(task);
+    task.status = status;
+    _persist(task);
     if (result != null) task.result = result;
     if (!task._attemptDone.isCompleted) task._attemptDone.complete();
     if (!task._done.isCompleted) task._done.complete();
@@ -361,18 +496,98 @@ class TaskManager {
       if (envelope case final report?)
         'result': report.toJson(
           prompt: session.subagents[task.id]?.prompt,
-          durationMs: task.ended!.difference(task.started).inMilliseconds,
+          durationMs: task.ended!
+              .difference(task.started ?? task.queuedAt)
+              .inMilliseconds,
         ),
       'usage': {
         'total_tokens': task.tokens,
         'tool_uses': task.toolUses,
-        'duration_ms': task.ended!.difference(task.started).inMilliseconds,
+        'duration_ms': task.ended!
+            .difference(task.started ?? task.queuedAt)
+            .inMilliseconds,
       },
     });
     // A subagent in the foreground answers its call; one stopped on
     // purpose needs no telling.
     if (task.backgrounded && status != TaskStatus.killed) {
       session.taskEnded(task, notification(task, summary));
+    }
+  }
+
+  void _persist(BackgroundTask task) {
+    if (!session.options.persist) return;
+    session.store.note({'type': 'task_index', 'task': task.toJson()});
+  }
+
+  /// Restores the read-only index of the previous process. Its processes
+  /// and model calls are gone: no unfinished task is automatically rerun.
+  void restore(Iterable<Map<String, Object?>> records) {
+    for (final entry in records) {
+      if (entry['type'] != 'task_index' || entry['task'] is! Map) continue;
+      final record = (entry['task'] as Map).cast<String, Object?>();
+      final id = record['task_id'];
+      final type = record['task_type'];
+      if (id is! String || type is! String || tasks.containsKey(id)) continue;
+      final status = TaskStatus.values
+          .where((s) => s.name == record['status'])
+          .firstOrNull;
+      if (status == null) continue;
+      final recovered = !status.done;
+      final task =
+          BackgroundTask(
+              id: id,
+              type: type,
+              description: '${record['description'] ?? ''}',
+              outputFile: '${record['output_file'] ?? ''}',
+              toolUseId: record['tool_use_id'] as String?,
+              command: record['command'] as String?,
+              agentType: record['agent_type'] as String?,
+              model: record['model'] as String?,
+              requestedModel: record['requested_model'] as String?,
+              modelSource: record['model_source'] as String?,
+              parentId: record['parent_id'] as String?,
+            )
+            ..status = recovered ? TaskStatus.interrupted : status
+            ..backgrounded = record['is_backgrounded'] != false
+            ..started = DateTime.tryParse('${record['started_at'] ?? ''}')
+            ..ended = DateTime.tryParse('${record['ended_at'] ?? ''}')
+            ..result = record['result'] as String?
+            ..error = record['error'] as String?
+            ..tokens = record['tokens'] is int ? record['tokens'] as int : 0
+            ..toolUses = record['tool_uses'] is int
+                ? record['tool_uses'] as int
+                : 0;
+      task.queuedAt =
+          DateTime.tryParse('${record['queued_at'] ?? ''}') ?? task.queuedAt;
+      if (recovered) task.ended ??= DateTime.now();
+      task.cancel.cancel('interrupted');
+      if (!task._done.isCompleted) task._done.complete();
+      if (!task._attemptDone.isCompleted) task._attemptDone.complete();
+      tasks[id] = task;
+    }
+    for (final task in tasks.values) {
+      task.backgrounded = true;
+      session.emitSystem('task_started', {
+        ...task.toJson(readOnly: true),
+        'is_backgrounded': task.backgrounded,
+        'queue_state': task.status == TaskStatus.queued ? 'queued' : 'admitted',
+        'queue': task.parentId == null
+            ? null
+            : agentQueueStatus(task.parentId!),
+      });
+      if (task.status == TaskStatus.interrupted) {
+        session.emitSystem('task_notification', {
+          'task_id': task.id,
+          'tool_use_id': ?task.toolUseId,
+          'status': task.status.name,
+          'summary': _summary(task),
+          'output_file': task.outputFile,
+          'read_only': true,
+          'usage': {'total_tokens': task.tokens, 'tool_uses': task.toolUses},
+        });
+      }
+      if (task.status == TaskStatus.interrupted) _persist(task);
     }
   }
 
@@ -392,6 +607,8 @@ class TaskManager {
                   : '$what failed with exit code ${task.exitCode}'
             : '$what failed: ${task.error ?? 'unknown error'}',
       TaskStatus.killed => '$what was stopped',
+      TaskStatus.interrupted => '$what was interrupted with its session',
+      TaskStatus.queued => '$what is queued for a concurrency slot',
       TaskStatus.running => '$what is running',
     };
   }
@@ -421,8 +638,10 @@ class TaskManager {
   Future<bool> stop(String id) async {
     final task = tasks[id];
     if (task == null || task.status.done) return false;
-    task.status = TaskStatus.killed;
     task.cancel.cancel('stopped');
+    if (task.parentId case final parent?) {
+      _agentQueues[parent]?.remove(task);
+    }
     if (task.process case final process?) {
       await killTree(process.pid);
     }
@@ -437,7 +656,7 @@ class TaskManager {
 
   /// Stops them all: the session is ending.
   Future<void> stopAll() async {
-    for (final task in [...running]) {
+    for (final task in [...tasks.values.where((task) => !task.status.done)]) {
       await stop(task.id);
     }
     for (final command in [...foreground.values]) {

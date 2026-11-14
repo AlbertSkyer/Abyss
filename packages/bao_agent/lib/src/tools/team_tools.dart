@@ -115,6 +115,13 @@ What you write as text is not seen by other agents: to tell one something, call 
   /// only one has it.
   static SubagentJob? find(AgentSession session, String to) {
     if (session.subagents[to] case final job?) return job;
+    final task = session.tasks[to];
+    if (task != null && !task.isShell) {
+      throw StateError(
+        'This agent is only a read-only record from a previous session. '
+        'It cannot be continued or restarted automatically.',
+      );
+    }
     final named = [
       for (final job in session.subagents.values)
         if (job.description.toLowerCase() == to.toLowerCase()) job,

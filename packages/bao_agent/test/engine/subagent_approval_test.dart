@@ -249,49 +249,46 @@ void main() {
     expect(h.of('system', 'task_started'), hasLength(1));
   });
 
-  test(
-    'a child confirmed to the background reports its result when done',
-    () async {
-      h = await Harness.start(model: 'opus');
-      final seen = subagents();
-      h.onAgentApproval = (_) async => {'behavior': 'allow'};
-      final done = h.messages.firstWhere(
-        (message) =>
-            message['type'] == 'system' &&
-            message['subtype'] == 'task_notification',
-        orElse: () => const {},
-      );
-      h.model.script.addAll([
-        Reply.tool('Agent', {
-          'description': 'One',
-          'prompt': 'SUB:one',
-          'run_in_background': true,
-        }),
-        Reply.text('done'),
-      ]);
+  test('a child confirmed to the background reports its result when done', () async {
+    h = await Harness.start(model: 'opus');
+    final seen = subagents();
+    h.onAgentApproval = (_) async => {'behavior': 'allow'};
+    final done = h.messages.firstWhere(
+      (message) =>
+          message['type'] == 'system' &&
+          message['subtype'] == 'task_notification',
+      orElse: () => const {},
+    );
+    h.model.script.addAll([
+      Reply.tool('Agent', {
+        'description': 'One',
+        'prompt': 'SUB:one',
+        'run_in_background': true,
+      }),
+      Reply.text('done'),
+    ]);
 
-      await h.turn('go');
+    await h.turn('go');
 
-      expect(seen['SUB:one'], isNotNull);
-      expect(h.of('system', 'task_started').single['is_backgrounded'], isTrue);
-      final notification = await done.timeout(const Duration(seconds: 10));
-      expect(notification['status'], 'completed');
-      expect(notification['summary'], contains('One'));
-      final envelope = (notification['result'] as Map).cast<String, Object?>();
-      expect(envelope['status'], 'completed');
-      expect(envelope['agentId'], notification['task_id']);
-      expect(envelope['agentType'], 'general-purpose');
-      expect(envelope['content'], [
-        {'type': 'text', 'text': 'SUB:one done'},
-      ]);
-      expect(envelope['assignedModel'], isNotEmpty);
-      expect(envelope['actualModel'], seen['SUB:one']!.model);
-      // The transcript stays in its sidechain; the parent receives only the
-      // child's last text, not its messages or its tools' outputs.
-      expect(jsonEncode(envelope), isNot(contains('tool_use')));
-      expect(jsonEncode(envelope), isNot(contains('messages')));
-    },
-  );
+    expect(seen['SUB:one'], isNotNull);
+    expect(h.of('system', 'task_started').single['is_backgrounded'], isTrue);
+    final notification = await done.timeout(const Duration(seconds: 10));
+    expect(notification['status'], 'completed');
+    expect(notification['summary'], contains('One'));
+    final envelope = (notification['result'] as Map).cast<String, Object?>();
+    expect(envelope['status'], 'completed');
+    expect(envelope['agentId'], notification['task_id']);
+    expect(envelope['agentType'], 'general-purpose');
+    expect(envelope['content'], [
+      {'type': 'text', 'text': 'SUB:one done'},
+    ]);
+    expect(envelope['assignedModel'], isNotEmpty);
+    expect(envelope['actualModel'], seen['SUB:one']!.model);
+    // The transcript stays in its sidechain; the parent receives only the
+    // child's last text, not its messages or its tools' outputs.
+    expect(jsonEncode(envelope), isNot(contains('tool_use')));
+    expect(jsonEncode(envelope), isNot(contains('messages')));
+  });
 
   test('failure and cancellation are distinct, compact outcomes', () async {
     h = await Harness.start(model: 'opus');

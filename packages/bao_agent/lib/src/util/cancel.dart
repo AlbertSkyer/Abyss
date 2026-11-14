@@ -42,16 +42,21 @@ class CancelToken {
   Future<T> guard<T>(Future<T> future) {
     if (isCancelled) return Future.error(Cancelled(_reason));
     final result = Completer<T>();
+    var settled = false;
     future.then(
       (value) {
+        settled = true;
         if (!result.isCompleted) result.complete(value);
       },
       onError: (Object error, StackTrace stack) {
+        settled = true;
         if (!result.isCompleted) result.completeError(error, stack);
       },
     );
     whenCancelled.then((_) {
-      if (!result.isCompleted) result.completeError(Cancelled(_reason));
+      if (!settled && !result.isCompleted) {
+        result.completeError(Cancelled(_reason));
+      }
     });
     return result.future;
   }

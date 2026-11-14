@@ -5498,6 +5498,18 @@ abstract class AppLocalizations {
   /// **'Running'**
   String get sidePanelAgentRunning;
 
+  /// No description provided for @sidePanelAgentQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get sidePanelAgentQueued;
+
+  /// No description provided for @sidePanelAgentInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupted'**
+  String get sidePanelAgentInterrupted;
+
   /// No description provided for @sidePanelAgentCancelled.
   ///
   /// In en, this message translates to:

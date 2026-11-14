@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -383,6 +384,15 @@ void main() {
         token.guard(Future.value(1)),
         throwsA(isA<Cancelled>()),
       );
+    });
+
+    test('a completed future wins when cancellation follows', () async {
+      final token = CancelToken();
+      final done = Completer<int>();
+      final result = token.guard(done.future);
+      done.complete(1);
+      token.cancel('too late');
+      expect(await result, 1);
     });
   });
 

@@ -258,6 +258,7 @@ class AgentEngine {
       );
       session.checkpoints.load(session.store.extras);
       _titled = session.store.title != null;
+      session.tasks.restore(session.store.extras);
       _restoreGoal();
     } else {
       session.store = SessionStore(

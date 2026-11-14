@@ -78,7 +78,10 @@ class AgentTasksPage extends StatelessWidget {
                         ? () => panel.toggleAgentGroup(entry.agent.id!)
                         : null,
                     onOpen: () => session.openAgentPath(entry.path),
-                    onStop: entry.agent.status == CommandStatus.running
+                    onStop:
+                        entry.agent.status == CommandStatus.running &&
+                            !entry.agent.queued &&
+                            !entry.agent.readOnly
                         ? session.stopOf(entry.agent.id)
                         : null,
                     onRetry: entry.agent.status == CommandStatus.running
@@ -226,7 +229,11 @@ class _AgentRow extends StatelessWidget {
       providers: ModelProviders.current,
     );
     final model = agent.assignedModel ?? agent.model;
-    final status = agent.outcome == 'cancelled'
+    final status = agent.queued
+        ? l10n.sidePanelAgentQueued
+        : agent.readOnly && agent.status == CommandStatus.failed
+        ? l10n.sidePanelAgentInterrupted
+        : agent.outcome == 'cancelled'
         ? l10n.sidePanelAgentCancelled
         : _status(l10n, agent);
     // What it did last, or, ended, the start of its report.
@@ -271,7 +278,8 @@ class _AgentRow extends StatelessWidget {
                     const SizedBox(width: 20),
                   SizedBox.square(
                     dimension: 14,
-                    child: agent.status == CommandStatus.running
+                    child:
+                        agent.status == CommandStatus.running && !agent.queued
                         ? const PixelLoader.subagent()
                         : Icon(
                             Codicons.hubot,

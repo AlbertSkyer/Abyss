@@ -296,19 +296,8 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         assignment = assignmentFor(session, agent, picked);
       }
     }
+    // Waiting children have no side effects beyond their task index entry.
     Worktree? worktree;
-    if (isolation == 'worktree') {
-      try {
-        worktree = await Worktrees.create(
-          context.cwd,
-          session.commandEnvironment,
-          name: 'agent-${randomId(8)}',
-          baseRef: Worktrees.baseRefSetting(session.settings['worktree']),
-        );
-      } on WorktreeError catch (error) {
-        return ToolOutput.error('No worktree for the agent: $error');
-      }
-    }
     final job = SubagentJob(
       session: session,
       agent: agent,
@@ -318,9 +307,11 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       assignment: assignment,
       effort: asText(input['effort']) ?? agent.effort,
       toolUseId: context.toolUseId,
+      parentId: context.run.agentId ?? '',
       parentReads: context.run.readFiles,
-      worktree: worktree,
+      worktree: null,
     );
+    final admitted = Completer<void>();
     final task = session.tasks.registerAgent(
       description: description,
       agentId: job.agentId,
@@ -329,7 +320,11 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       model: assignment.model,
       requestedModel: assignment.requested,
       modelSource: assignment.source.name,
+      parentId: job.parentId,
       background: background,
+      admit: () {
+        if (!admitted.isCompleted) admitted.complete();
+      },
     );
     // In the foreground it stops with the turn; sent to the background,
     // it goes on.
@@ -338,7 +333,53 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         if (!task.backgrounded) task.cancel.cancel('interrupted');
       }),
     );
-    final done = job.start(task, job.prompt);
+    Future<SubagentOutcome> run() async {
+      try {
+        await context.cancel.guard(
+          Future.any([admitted.future, task.cancel.whenCancelled]),
+        );
+        if (task.cancel.isCancelled) {
+          throw const Cancelled('stopped');
+        }
+        if (isolation == 'worktree') {
+          worktree = await Worktrees.create(
+            context.cwd,
+            session.commandEnvironment,
+            name: 'agent-${randomId(8)}',
+            baseRef: Worktrees.baseRefSetting(session.settings['worktree']),
+          );
+          job.worktree = worktree;
+        }
+        return await job.start(task, job.prompt);
+      } on WorktreeError catch (error) {
+        session.tasks.finish(task, TaskStatus.failed);
+        return SubagentOutcome(
+          LoopResult(
+            reason: 'error',
+            lastText: '',
+            requests: 0,
+            usage: const {},
+            apiDuration: Duration.zero,
+            error: 'No worktree for the agent: $error',
+          ),
+          Duration.zero,
+        );
+      } on Cancelled {
+        session.tasks.finish(task, TaskStatus.killed);
+        return SubagentOutcome(
+          const LoopResult(
+            reason: 'interrupted',
+            lastText: '',
+            requests: 0,
+            usage: {},
+            apiDuration: Duration.zero,
+          ),
+          Duration.zero,
+        );
+      }
+    }
+
+    final done = run();
     if (!background) {
       final outcome = await Future.any<Object?>([
         done,
@@ -347,6 +388,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       if (outcome is SubagentOutcome) return outcome.output(job);
       // Sent to the background: it tells of itself once done.
     }
+    unawaited(done);
     return launched(job, task);
   }
 
@@ -503,6 +545,7 @@ class SubagentJob {
     required this.prompt,
     required this.assignment,
     required this.toolUseId,
+    this.parentId = '',
     required this.parentReads,
     this.effort,
     this.worktree,
@@ -527,6 +570,9 @@ class SubagentJob {
 
   final String? effort;
   final String toolUseId;
+
+  /// The supervisor's own agent id; empty for the main conversation.
+  final String parentId;
   final ReadFileState parentReads;
 
   /// The tool call the retry is displayed under, distinct from the first.
@@ -546,8 +592,15 @@ class SubagentJob {
       ..model = next.model
       ..requestedModel = next.requested
       ..modelSource = next.source.name;
+    final admitted = Completer<void>();
+    task.admit = () {
+      if (!admitted.isCompleted) admitted.complete();
+    };
     session.tasks.startRetry(task);
-    unawaited(start(task, retryPrompt));
+    unawaited(() async {
+      await admitted.future;
+      if (!task.cancel.isCancelled) await start(task, retryPrompt);
+    }());
     return task;
   }
 
@@ -562,6 +615,7 @@ class SubagentJob {
         prompt: prompt,
         assignment: next,
         toolUseId: toolUseId,
+        parentId: parentId,
         parentReads: parentReads,
         effort: effort,
       );

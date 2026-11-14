@@ -30,6 +30,9 @@ void main() {
       Reply.text('done'),
     ]);
     await h.turn('go');
+    await h.engine.session.tasks.tasks.values.single.done.timeout(
+      const Duration(seconds: 10),
+    );
     h.approvalRequests.clear();
   }
 

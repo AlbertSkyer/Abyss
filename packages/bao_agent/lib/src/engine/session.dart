@@ -229,7 +229,13 @@ class AgentSession {
     effort = options.effort;
     permissions = PermissionEngine(this);
     checkpoints = FileCheckpoints(this);
-    tasks = TaskManager(this);
+    final limit = int.tryParse(
+      environment['BAOCODE_SUBAGENT_CONCURRENCY'] ?? '',
+    );
+    tasks = TaskManager(
+      this,
+      agentLimit: limit == null ? 2 : limit.clamp(1, 16),
+    );
     hooks = HookRunner(this);
     mainRun = AgentRun(session: this);
   }

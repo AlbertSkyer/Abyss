@@ -286,6 +286,8 @@ class AgentItem extends ChatItem {
     this.children = const [],
     this.result,
     this.background = false,
+    this.queued = false,
+    this.readOnly = false,
     this.ranBefore,
   });
 
@@ -341,6 +343,11 @@ class AgentItem extends ChatItem {
   /// Left to run on its own while the agent goes on: it reports when done.
   final bool background;
 
+  /// Waiting for its parent's concurrency slot, or restored without its
+  /// live process after the session's previous window closed.
+  final bool queued;
+  final bool readOnly;
+
   AgentItem copyWith({
     String? description,
     String? agentType,
@@ -359,6 +366,8 @@ class AgentItem extends ChatItem {
     List<ChatItem>? children,
     String? result,
     bool? background,
+    bool? queued,
+    bool? readOnly,
   }) => AgentItem(
     description: description ?? this.description,
     id: id,
@@ -379,6 +388,8 @@ class AgentItem extends ChatItem {
     children: children ?? this.children,
     result: result ?? this.result,
     background: background ?? this.background,
+    queued: queued ?? this.queued,
+    readOnly: readOnly ?? this.readOnly,
     ranBefore: ranBefore,
   );
 

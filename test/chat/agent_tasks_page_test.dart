@@ -169,6 +169,60 @@ void main() {
     expect(AgentSidePanel(state: panel.toJson()).agentsAllFolded, isFalse);
   });
 
+  testWidgets('queued and restored interrupted states are not running', (
+    tester,
+  ) async {
+    final (:session, :cli) = await scripted(tester);
+    final panel = AgentSidePanel();
+    cli.push({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 't1',
+      'tool_use_id': 'toolu_a',
+      'description': 'Compare the games',
+      'task_type': 'local_agent',
+      'is_backgrounded': true,
+      'queue_state': 'queued',
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Queued'), findsOneWidget);
+    expect(find.byIcon(Icons.stop_rounded), findsNothing);
+
+    cli.push({
+      'type': 'system',
+      'subtype': 'task_notification',
+      'task_id': 't1',
+      'tool_use_id': 'toolu_a',
+      'status': 'interrupted',
+      'summary': 'The previous session closed',
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Queued'), findsNothing);
+    expect(find.text('Failed'), findsOneWidget);
+
+    cli.push({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 'stale-completed',
+      'description': 'Finished before close',
+      'task_type': 'local_agent',
+      'status': 'completed',
+      'read_only': true,
+      'is_backgrounded': true,
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Finished before close'), findsOneWidget);
+    expect(
+      find.text('Done'),
+      findsOneWidget,
+      reason:
+          '${session.agentTree.map((e) => '${e.agent.description}:${e.agent.status}:${e.agent.readOnly}').toList()}',
+    );
+  });
+
   testWidgets('with no child, it says so', (tester) async {
     final session = ChatSession(historyCount: 0);
     addTearDown(session.dispose);

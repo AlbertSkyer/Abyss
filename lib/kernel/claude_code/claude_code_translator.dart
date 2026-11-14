@@ -1925,6 +1925,35 @@ class ClaudeTranslator {
             }
           }
         }
+        final restored = message['read_only'] == true;
+        final queued = message['queue_state'] == 'queued';
+        final restoredCard = restored && agent && _agents[card] == null;
+        final taskCard = restoredCard ? taskId : card;
+        if (restoredCard) {
+          _agents[taskId] = _Agent(
+            AgentItem(
+              description: _string(message['description']) ?? '',
+              id: taskId,
+              agentType: _string(message['agent_type']),
+              background: message['is_backgrounded'] != false,
+              readOnly: true,
+            ),
+          );
+          _agentCalls[taskId] = taskId;
+        }
+        if (_agents[taskCard] case final agent?) {
+          agent.item = agent.item.copyWith(
+            status: _taskStatus(message['status']),
+            queued: queued,
+            readOnly: restored,
+            activity: restored
+                ? 'Restored read-only from the previous session; not restarted'
+                : queued
+                ? 'Queued for a concurrency slot'
+                : null,
+          );
+          _putAgent(taskCard!);
+        }
         _tasks[taskId] = KernelTask(
           id: taskId,
           description: _string(message['description']) ?? '',
@@ -1933,23 +1962,24 @@ class ClaudeTranslator {
               : message['task_type'] == 'local_bash'
               ? KernelTaskKind.command
               : KernelTaskKind.other,
-          status: CommandStatus.running,
+          status: _taskStatus(message['status']) ?? CommandStatus.running,
           startedAt: DateTime.now(),
-          toolUseId: card ?? call,
+          toolUseId: taskCard ?? call,
           // A workflow runs in the background, whatever it says.
           background: workflow || message['is_backgrounded'] == true,
           outputFile: _string(message['output_file']) ?? _taskOutputs[taskId],
         );
         _reportTasks();
         // Continued: at work again, in its card.
-        if (_agents[card] case final continued? when card != call) {
+        if (_agents[taskCard] case final continued?
+            when !restored && taskCard != call) {
           continued.item = continued.item.status == CommandStatus.running
               ? continued.item
               : continued.item.continuedAt(DateTime.now());
-          _putAgent(card!);
+          _putAgent(taskCard!);
         }
         if (message['is_backgrounded'] == true) {
-          _agentToBackground(card ?? call);
+          _agentToBackground(taskCard ?? call);
         }
       case 'task_progress' when !replaying:
         final taskId = message['task_id'] as String;
@@ -1985,6 +2015,12 @@ class ClaudeTranslator {
             summary: _string(patch['error']),
           );
           _reportTasks();
+          if (patch['queue_state'] == 'running') {
+            if (_agents[task.toolUseId] case final agent?) {
+              agent.item = agent.item.copyWith(queued: false);
+              _putAgent(task.toolUseId!);
+            }
+          }
           if (patch['is_backgrounded'] == true) {
             _agentToBackground(task.toolUseId);
           }
@@ -2091,6 +2127,7 @@ class ClaudeTranslator {
       }
       agent.item = agent.item.copyWith(
         status: status,
+        queued: false,
         outcome: _string(result?['outcome'] ?? result?['status']),
         model: agent.item.model == null
             ? _ownModelOf(_string(result?['actualModel']))
@@ -2380,7 +2417,7 @@ class ClaudeTranslator {
   static CommandStatus? _taskStatus(Object? status) => switch (status) {
     'running' || 'pending' => CommandStatus.running,
     'completed' => CommandStatus.succeeded,
-    'failed' || 'killed' || 'stopped' => CommandStatus.failed,
+    'failed' || 'killed' || 'stopped' || 'interrupted' => CommandStatus.failed,
     _ => null,
   };
 
