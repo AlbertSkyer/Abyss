@@ -80,6 +80,10 @@ enum SidePanelSection {
 
   /// An SSH project's ports forwarded (see PortsView).
   ports,
+
+  /// The conversation's child agents (Agent/Task), read-only: their
+  /// status, and to open one (see AgentTasksPage).
+  agents,
 }
 
 /// How the agent window lays out, from its left: the sidebar (the
@@ -161,7 +165,8 @@ class SidePanelTabs {
     SidePanelSection.changes => activeDiff,
     SidePanelSection.terminal ||
     SidePanelSection.usage ||
-    SidePanelSection.ports => null,
+    SidePanelSection.ports ||
+    SidePanelSection.agents => null,
     SidePanelSection.plan => plan,
   };
 }
@@ -199,6 +204,14 @@ class AgentSidePanel extends ChangeNotifier {
     }
     if (state?['listShown'] case final bool shown) _listShown = shown;
     if (state?['changesAsTree'] case final bool tree) _changesAsTree = tree;
+    if (state?['agentsAllFolded'] case final bool folded) {
+      _agentsAllFolded = folded;
+    }
+    if (state?['foldedAgentGroups'] case final List<Object?> folded) {
+      _foldedAgentGroups
+        ..clear()
+        ..addAll(folded.whereType<String>());
+    }
     if (state?['atLeft'] case final bool left) {
       _layout = ChatLayout.of(sidebarAtRight: false, panelAtLeft: left);
     }
@@ -304,6 +317,60 @@ class AgentSidePanel extends ChangeNotifier {
   /// View as Tree), or as a list.
   bool get changesAsTree => _changesAsTree;
   bool _changesAsTree = true;
+
+  /// Whether every group of the task board's child agents is folded (its
+  /// header alone shows), kept between runs.
+  bool get agentsAllFolded => _agentsAllFolded;
+  bool _agentsAllFolded = false;
+
+  /// The task board's groups folded one by one, by the root agent's id:
+  /// kept between runs.
+  final Set<String> _foldedAgentGroups = {};
+
+  bool agentGroupFolded(String id) =>
+      _agentsAllFolded || _foldedAgentGroups.contains(id);
+
+  /// Folds or unfolds the group of the root agent [id]: folding only it
+  /// where all were, so that it is the one open.
+  void toggleAgentGroup(String id) {
+    if (_agentsAllFolded) {
+      _agentsAllFolded = false;
+      _foldedAgentGroups
+        ..clear()
+        ..addAll(_openAgentGroups.where((open) => open != id));
+    } else if (!_foldedAgentGroups.remove(id)) {
+      _foldedAgentGroups.add(id);
+    }
+    _changed = true;
+    notifyListeners();
+    onSave?.call();
+  }
+
+  /// The groups open when all were folded one by one: every other id the
+  /// view last showed.
+  final Set<String> _openAgentGroups = {};
+
+  /// Notes the root agents [ids] shown on the task board, for
+  /// [toggleAgentGroup] to open all but one.
+  void noteAgentGroups(Iterable<String> ids) {
+    _openAgentGroups
+      ..clear()
+      ..addAll(ids);
+  }
+
+  /// Folds every group of the task board, or unfolds them all when every
+  /// one is folded.
+  void toggleAllAgents() {
+    if (_agentsAllFolded) {
+      _agentsAllFolded = false;
+      _foldedAgentGroups.clear();
+    } else {
+      _agentsAllFolded = true;
+    }
+    _changed = true;
+    notifyListeners();
+    onSave?.call();
+  }
 
   /// Where it, the sidebar and the conversations are in the window.
   ChatLayout get layout => _layout;
@@ -857,7 +924,8 @@ class AgentSidePanel extends ChangeNotifier {
       // Its tabs are the terminals themselves, killed by their own Close.
       case SidePanelSection.terminal ||
           SidePanelSection.usage ||
-          SidePanelSection.ports:
+          SidePanelSection.ports ||
+          SidePanelSection.agents:
         break;
     }
     hide();
@@ -869,6 +937,9 @@ class AgentSidePanel extends ChangeNotifier {
     'listWidth': _listWidth,
     'listShown': _listShown,
     'changesAsTree': _changesAsTree,
+    if (_agentsAllFolded) 'agentsAllFolded': true,
+    if (_foldedAgentGroups.isNotEmpty)
+      'foldedAgentGroups': [..._foldedAgentGroups],
     if (_layout != ChatLayout.sidebarChatPanel) 'layout': _layout.name,
     if (_keptSearches.isNotEmpty) 'searches': {..._keptSearches},
     if (_viewStates.toJson((_) => true) case final states

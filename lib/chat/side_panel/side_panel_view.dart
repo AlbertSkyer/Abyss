@@ -63,6 +63,7 @@ import '../widgets/plan_start.dart';
 import '../chat_column.dart';
 import '../composer/composer_files.dart';
 import '../composer/file_drag.dart';
+import 'agent_tasks_page.dart';
 import 'file_link.dart';
 import 'file_open.dart';
 import 'file_preview.dart';
@@ -635,6 +636,10 @@ class AgentSidePanelView extends StatelessWidget {
             session: session,
           ),
           SidePanelSection.plan => _planPage(context, tabs.plan!),
+          SidePanelSection.agents => AgentTasksPage(
+            panel: panel,
+            session: session,
+          ),
           SidePanelSection.ports => switch (_portsHost(session)) {
             final host? => PortsView(
               key: ValueKey(('page', SidePanelSection.ports, host)),
@@ -1397,6 +1402,7 @@ extension SidePanelSectionUi on SidePanelSection {
     SidePanelSection.usage => SvgIcons.usage,
     SidePanelSection.plan => Codicons.checklist,
     SidePanelSection.ports => Codicons.plug,
+    SidePanelSection.agents => Codicons.hubot,
   };
 
   /// The command that shows it; none for the plan's, there only at times.
@@ -1405,7 +1411,9 @@ extension SidePanelSectionUi on SidePanelSection {
     SidePanelSection.changes => ChatCommandIds.sidePanelChanges,
     SidePanelSection.terminal => ChatCommandIds.sidePanelTerminal,
     SidePanelSection.usage => ChatCommandIds.sidePanelUsage,
-    SidePanelSection.plan || SidePanelSection.ports => null,
+    SidePanelSection.plan ||
+    SidePanelSection.ports ||
+    SidePanelSection.agents => null,
   };
 
   String label(BuildContext context) => switch (this) {
@@ -1415,6 +1423,7 @@ extension SidePanelSectionUi on SidePanelSection {
     SidePanelSection.usage => context.l10n.sidePanelUsage,
     SidePanelSection.plan => context.l10n.sidePanelPlan,
     SidePanelSection.ports => context.l10n.sidePanelPorts,
+    SidePanelSection.agents => context.l10n.sidePanelAgents,
   };
 }
 
@@ -1466,6 +1475,13 @@ class SidePanelRail extends StatelessWidget {
               .where((task) => task.status == CommandStatus.running)
               .length ??
           0,
+    SidePanelSection.agents =>
+      session == null
+          ? 0
+          : [
+              for (final entry in session!.agentTree)
+                if (session!.agentUnread(entry.agent)) entry,
+            ].length,
     SidePanelSection.files ||
     SidePanelSection.usage ||
     SidePanelSection.plan ||
@@ -1498,6 +1514,7 @@ class SidePanelRail extends StatelessWidget {
             for (final section in alwaysShownSections)
               if (section != SidePanelSection.usage || _usageOffered(session))
                 section,
+            if (session?.agentTree.isNotEmpty ?? false) SidePanelSection.agents,
             if (_portsHost(session) != null) SidePanelSection.ports,
           ].indexed) ...[
             if (i > 0) const SizedBox(height: _gap),
@@ -1576,6 +1593,9 @@ class _SectionBar extends StatelessWidget {
       if (section != SidePanelSection.usage ||
           _usageOffered(session, picked: tabs.section))
         section,
+    // Only while the conversation has child agents (or it was picked).
+    if (session.agentTree.isNotEmpty || tabs.section == SidePanelSection.agents)
+      SidePanelSection.agents,
     if (tabs.plan != null) SidePanelSection.plan,
     if (_portsHost(session) != null) SidePanelSection.ports,
   ];
@@ -1631,6 +1651,10 @@ class _SectionBar extends StatelessWidget {
     final running = session.terminalTasks
         .where((task) => task.status == CommandStatus.running)
         .length;
+    final unreadAgents = [
+      for (final entry in session.agentTree)
+        if (session.agentUnread(entry.agent)) entry,
+    ].length;
     // On macOS it is part of the window's top, as the conversation's title
     // bar beside it: its empty part drags the window, and a double click
     // there does what one on the system's title bar does.
@@ -1645,6 +1669,7 @@ class _SectionBar extends StatelessWidget {
               _fullWidth(context, sections, {
                     SidePanelSection.changes: changes,
                     SidePanelSection.terminal: running,
+                    SidePanelSection.agents: unreadAgents,
                   }) +
                   _actionsWidth +
                   inset +
@@ -1678,6 +1703,10 @@ class _SectionBar extends StatelessWidget {
                     SidePanelSection.ports => 0,
                     SidePanelSection.changes => changes,
                     SidePanelSection.terminal => running,
+                    SidePanelSection.agents => [
+                      for (final entry in session.agentTree)
+                        if (session.agentUnread(entry.agent)) entry,
+                    ].length,
                   },
                   onTap: () => panel.showSection(session, section),
                 ),

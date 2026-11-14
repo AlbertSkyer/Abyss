@@ -3040,6 +3040,59 @@ class AppLocalizationsZh extends AppLocalizations {
   String get interactionExpand => '展开';
 
   @override
+  String get agentApprovalTitle => '运行子智能体？';
+
+  @override
+  String get agentApprovalDescription => '任务';
+
+  @override
+  String get agentApprovalPrompt => '给它的说明';
+
+  @override
+  String get agentApprovalModel => '模型';
+
+  @override
+  String get agentApprovalConfirm => '启动智能体';
+
+  @override
+  String get agentApprovalBackground => '它会在后台运行。';
+
+  @override
+  String agentApprovalForced(String model) {
+    return '所有子智能体都使用 $model，由 CLAUDE_CODE_SUBAGENT_MODEL_FORCE 指定。';
+  }
+
+  @override
+  String get sidePanelAgents => '智能体';
+
+  @override
+  String get sidePanelAgentsEmpty => '还没有子智能体。';
+
+  @override
+  String get sidePanelAgentTasks => '子智能体任务';
+
+  @override
+  String get sidePanelAgentRunning => '运行中';
+
+  @override
+  String get sidePanelAgentDone => '已完成';
+
+  @override
+  String get sidePanelAgentFailed => '失败';
+
+  @override
+  String get sidePanelAgentUnread => '未读';
+
+  @override
+  String get sidePanelAgentPrompt => '任务';
+
+  @override
+  String get sidePanelAgentModel => '模型';
+
+  @override
+  String get sidePanelAgentResult => '报告';
+
+  @override
   String interactionMoreLines(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

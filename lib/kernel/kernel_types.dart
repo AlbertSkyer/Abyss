@@ -778,6 +778,52 @@ class ApprovalRequest extends InteractionRequest {
   final String? alwaysAllowLabel;
 }
 
+/// The agent asks leave to start a child agent (Agent/Task), and which
+/// model it runs on. Shown before the child exists: cancelled, none is
+/// made.
+class AgentApprovalRequest extends InteractionRequest {
+  const AgentApprovalRequest({
+    required super.id,
+    required super.title,
+    required this.description,
+    required this.prompt,
+    required this.agentType,
+    required this.model,
+    required this.models,
+    this.modelSource = '',
+    this.forced = false,
+    this.background = false,
+    this.toolName = 'Agent',
+  });
+
+  /// What it is to do, in a few words.
+  final String description;
+
+  /// The task it is given: all it needs to know.
+  final String prompt;
+
+  /// The kind of agent (e.g. `Explore`).
+  final String agentType;
+
+  /// The model it would run on as assigned: the selected choice.
+  final String model;
+
+  /// The models the user may pick, [model] first; empty when [forced].
+  final List<String> models;
+
+  /// Where [model] was chosen from (`pool`, `definition`, `session`, …).
+  final String modelSource;
+
+  /// Whether every agent's model is fixed
+  /// (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`): there is none to pick.
+  final bool forced;
+
+  /// Whether it would run in the background.
+  final bool background;
+
+  final String toolName;
+}
+
 sealed class InteractionAnswer {
   const InteractionAnswer();
 }
@@ -801,12 +847,16 @@ class QuestionAnswer extends InteractionAnswer {
 enum ApprovalDecision { allowOnce, allowAlways, deny }
 
 class ApprovalAnswer extends InteractionAnswer {
-  const ApprovalAnswer(this.decision, {this.message});
+  const ApprovalAnswer(this.decision, {this.message, this.model});
 
   final ApprovalDecision decision;
 
   /// With a denial: what to do instead.
   final String? message;
+
+  /// For an [AgentApprovalRequest]: the model picked for the child; null
+  /// to keep the one it was assigned (or when none may be picked).
+  final String? model;
 }
 
 /// One message to send, with the settings it runs under.

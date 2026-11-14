@@ -67,7 +67,7 @@ void main() {
             QuestionRequest(:final questions) => QuestionAnswer([
               for (final q in questions) [q.options.last.label],
             ]),
-            ApprovalRequest() => const ApprovalAnswer(
+            ApprovalRequest() || AgentApprovalRequest() => const ApprovalAnswer(
               ApprovalDecision.allowOnce,
             ),
           }),

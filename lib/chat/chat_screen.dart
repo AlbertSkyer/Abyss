@@ -390,8 +390,26 @@ class _ChatScreenState extends State<ChatScreen>
     final id = agent.id;
     if (id == null) return;
     path ??= [...?_agentShown?.feed.path, id];
+    _session.markAgentSeen(id);
     // Elsewhere than the way back came from: forward goes nowhere.
     if (!_startsWith(_leftAgents ?? const [], path)) _leftAgents = null;
+    _enter(SubagentFeed(_session, path));
+  }
+
+  /// [agentOpener] as this view gives it: one closure, so that it is
+  /// known again to be this view's (see [dispose]).
+  late final void Function(List<String>) _opener = _openAgentPath;
+
+  /// Opens the subagent at [path] from anywhere (the task board): the
+  /// layers shown go, and this one comes in at once, where it is.
+  void _openAgentPath(List<String> path) {
+    if (path.isEmpty) return;
+    if (_startsWith(_agentShown?.feed.path ?? const [], path)) return;
+    for (final layer in _layers) {
+      layer.dispose();
+    }
+    _layers.clear();
+    _leftAgents = null;
     _enter(SubagentFeed(_session, path));
   }
 
@@ -492,6 +510,8 @@ class _ChatScreenState extends State<ChatScreen>
     _planShown = _session.plan?.seq;
     _session.addListener(_followPlan);
     _session.addListener(_welcomeToModels);
+    // The task board (side panel) opens a subagent here, in this view.
+    _session.agentOpener = _opener;
     _restoreAgents();
     ChatWidth.current.addListener(_widthChanged);
     ChatMinimap.enabled.addListener(_widthChanged);
@@ -521,6 +541,9 @@ class _ChatScreenState extends State<ChatScreen>
     _keyScope.dispose();
     for (final layer in _layers) {
       layer.dispose();
+    }
+    if (identical(_session.agentOpener, _opener)) {
+      _session.agentOpener = null;
     }
     _session.detach();
     if (widget.session == null) _session.dispose();

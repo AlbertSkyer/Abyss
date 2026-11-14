@@ -3153,6 +3153,59 @@ class AppLocalizationsEn extends AppLocalizations {
   String get interactionExpand => 'Expand';
 
   @override
+  String get agentApprovalTitle => 'Run a subagent?';
+
+  @override
+  String get agentApprovalDescription => 'Task';
+
+  @override
+  String get agentApprovalPrompt => 'Instructions';
+
+  @override
+  String get agentApprovalModel => 'Model';
+
+  @override
+  String get agentApprovalConfirm => 'Start agent';
+
+  @override
+  String get agentApprovalBackground => 'It runs in the background.';
+
+  @override
+  String agentApprovalForced(String model) {
+    return 'Every subagent runs on $model, set by CLAUDE_CODE_SUBAGENT_MODEL_FORCE.';
+  }
+
+  @override
+  String get sidePanelAgents => 'Agents';
+
+  @override
+  String get sidePanelAgentsEmpty => 'No subagents yet.';
+
+  @override
+  String get sidePanelAgentTasks => 'Subagent tasks';
+
+  @override
+  String get sidePanelAgentRunning => 'Running';
+
+  @override
+  String get sidePanelAgentDone => 'Done';
+
+  @override
+  String get sidePanelAgentFailed => 'Failed';
+
+  @override
+  String get sidePanelAgentUnread => 'Unread';
+
+  @override
+  String get sidePanelAgentPrompt => 'Asked';
+
+  @override
+  String get sidePanelAgentModel => 'Model';
+
+  @override
+  String get sidePanelAgentResult => 'Report';
+
+  @override
   String interactionMoreLines(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

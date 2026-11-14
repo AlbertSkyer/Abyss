@@ -5316,7 +5316,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       SidePanelSection.terminal ||
       SidePanelSection.usage ||
       SidePanelSection.ports ||
-      SidePanelSection.plan => null,
+      SidePanelSection.plan ||
+      SidePanelSection.agents => null,
     };
   }
 

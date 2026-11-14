@@ -5,10 +5,12 @@ import '../../ide/ide_hover.dart';
 import '../../kernel/kernel_types.dart';
 import '../../keybindings/chat_keybindings.dart';
 import '../../l10n/l10n.dart';
+import '../../models/model_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
 import '../chat_keys.dart';
 import '../chat_models.dart';
+import '../widgets/agent_step.dart';
 import '../widgets/code_citation.dart';
 import '../widgets/hover_builder.dart';
 import 'panel_card.dart';
@@ -143,6 +145,8 @@ class _InteractionPanelState extends State<InteractionPanel>
         ],
       ),
     ],
+    // Shown by its own card (see [_AgentApprovalCard]).
+    AgentApprovalRequest() => const [],
   };
 
   InteractionAnswer _answer({required bool dismissed}) {
@@ -174,6 +178,9 @@ class _InteractionPanelState extends State<InteractionPanel>
               ? ApprovalDecision.allowAlways
               : ApprovalDecision.allowOnce,
         );
+      case AgentApprovalRequest():
+        // A child agent's own card (see [_AgentApprovalCard]).
+        return const ApprovalAnswer(ApprovalDecision.deny);
     }
   }
 
@@ -299,6 +306,10 @@ class _InteractionPanelState extends State<InteractionPanel>
       Icons.shield_outlined,
       themeColors['list.warningForeground'],
     ),
+    AgentApprovalRequest() => (
+      Icons.hub_outlined,
+      themeColors['list.warningForeground'],
+    ),
   };
 
   /// The context keys where the options' keys apply: they have the focus.
@@ -343,12 +354,20 @@ class _InteractionPanelState extends State<InteractionPanel>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.request case final AgentApprovalRequest request) {
+      return _AgentApprovalCard(
+        key: ObjectKey(request),
+        request: request,
+        onAnswer: widget.onAnswer,
+      );
+    }
     final step = _current;
     final total = _steps.length;
     final (icon, color) = _icon;
     final dismiss = switch (widget.request) {
       QuestionRequest() => context.l10n.interactionSkip,
       ApprovalRequest() => context.l10n.interactionDeny,
+      AgentApprovalRequest() => context.l10n.commonCancel,
     };
     final submit = _isLast
         ? context.l10n.interactionSubmit
@@ -578,6 +597,248 @@ class _InteractionPanelState extends State<InteractionPanel>
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A child agent about to start: what it is to do, the task it is given,
+/// and the model it runs on, picked here. Cancelled, the core never makes
+/// the child.
+class _AgentApprovalCard extends StatefulWidget {
+  const _AgentApprovalCard({
+    super.key,
+    required this.request,
+    required this.onAnswer,
+  });
+
+  final AgentApprovalRequest request;
+  final ValueChanged<InteractionAnswer> onAnswer;
+
+  @override
+  State<_AgentApprovalCard> createState() => _AgentApprovalCardState();
+}
+
+class _AgentApprovalCardState extends State<_AgentApprovalCard> {
+  String? _model;
+
+  List<String> get _models {
+    final request = widget.request;
+    if (request.forced) return const [];
+    final models = <String>[];
+    for (final model in [request.model, ...request.models]) {
+      if (model.isNotEmpty && !models.contains(model)) models.add(model);
+    }
+    return models;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final models = _models;
+    _model = models.isEmpty ? null : models.first;
+  }
+
+  void _allow() => widget.onAnswer(
+    ApprovalAnswer(ApprovalDecision.allowOnce, model: _model),
+  );
+
+  void _deny() => widget.onAnswer(const ApprovalAnswer(ApprovalDecision.deny));
+
+  static String _label(String model) {
+    final (:label, :upstream) = AgentStep.modelName(
+      model,
+      providers: ModelProviders.current,
+    );
+    return upstream == null ? label : '$label · $upstream';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final request = widget.request;
+    final models = _models;
+    final selected = models.contains(_model) ? _model : models.firstOrNull;
+    return Focus(
+      autofocus: true,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): _deny,
+          const SingleActivator(LogicalKeyboardKey.enter): _allow,
+        },
+        child: PanelCard(
+          highlighted: true,
+          maxBodyHeight: 420,
+          header: Row(
+            children: [
+              Icon(
+                Icons.hub_outlined,
+                size: 14,
+                color: themeColors['list.warningForeground'],
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  l10n.agentApprovalTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (request.description.isNotEmpty)
+                Flexible(
+                  child: Text(
+                    request.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (request.description.isNotEmpty)
+                _AgentApprovalField(
+                  label: l10n.agentApprovalDescription,
+                  child: Text(
+                    request.description,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              if (request.prompt.trim().isNotEmpty)
+                _AgentApprovalField(
+                  label: l10n.agentApprovalPrompt,
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 150),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.code,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.borderStrong),
+                    ),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        request.prompt,
+                        style: AppFonts.uiCodeStyle(
+                          12,
+                        ).copyWith(height: 1.45, color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ),
+                ),
+              _AgentApprovalField(
+                label: l10n.agentApprovalModel,
+                child: request.forced
+                    ? Text(
+                        l10n.agentApprovalForced(_label(request.model)),
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: themeColors['input.background'],
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.borderStrong),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: selected,
+                            isExpanded: true,
+                            dropdownColor: AppColors.surface,
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                            ),
+                            items: [
+                              for (final model in models)
+                                DropdownMenuItem(
+                                  value: model,
+                                  child: Text(
+                                    _label(model),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: (model) =>
+                                setState(() => _model = model),
+                          ),
+                        ),
+                      ),
+              ),
+              if (request.background)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 2, 4, 6),
+                  child: Text(
+                    l10n.agentApprovalBackground,
+                    style: TextStyle(color: AppColors.textFaint, fontSize: 11),
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  PanelButton(label: l10n.commonCancel, onTap: _deny),
+                  const SizedBox(width: 6),
+                  PanelButton(
+                    label: l10n.agentApprovalConfirm,
+                    primary: true,
+                    onTap: _allow,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A labeled block of the agent approval card.
+class _AgentApprovalField extends StatelessWidget {
+  const _AgentApprovalField({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textFaint,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          child,
         ],
       ),
     );

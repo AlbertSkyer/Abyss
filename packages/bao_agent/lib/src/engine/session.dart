@@ -24,6 +24,7 @@ import '../util/cancel.dart';
 import '../util/ids.dart';
 import '../util/json.dart';
 import '../util/processes.dart';
+import 'agent_approvals.dart';
 import 'agent_run.dart';
 import 'checkpoints.dart';
 import 'context.dart';
@@ -251,6 +252,10 @@ class AgentSession {
   late final PermissionEngine permissions;
   late final FileCheckpoints checkpoints;
   late final TaskManager tasks;
+
+  /// Puts each Agent/Task call to the host for leave before it starts,
+  /// one at a time.
+  late final AgentApprovals agentApprovals = AgentApprovals(this);
 
   /// The models subagents may run on beyond the ones named for them: the
   /// host's pool ([EngineOptions.subagentPool]), taken in turn.

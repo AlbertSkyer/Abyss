@@ -1659,6 +1659,24 @@ class ClaudeCodeKernel
     final control = _control;
     if (permission == null || control == null) return;
     emit(InteractionResolved(nextSeq, requestId));
+    // A child agent's start: the model picked goes with the leave; a denial
+    // leaves the child unstarted.
+    if (permission.agent) {
+      final allowed =
+          answer is ApprovalAnswer && answer.decision != ApprovalDecision.deny;
+      final picked = answer is ApprovalAnswer ? answer.model : null;
+      final message = switch (answer) {
+        ApprovalAnswer(:final message?) when message.trim().isNotEmpty =>
+          message,
+        _ => 'The user did not approve this subagent.',
+      };
+      control.respond(requestId, {
+        'behavior': allowed ? 'allow' : 'deny',
+        'model': ?(allowed ? picked : null),
+        if (!allowed) 'message': message,
+      });
+      return;
+    }
     if (permission.elicitation case (:final fields, :final url)?) {
       control.respond(requestId, switch (answer) {
         QuestionAnswer() => elicitationResult(fields, answer),
@@ -1705,6 +1723,56 @@ class ClaudeCodeKernel
             : message,
       ),
     });
+  }
+
+  /// A child agent (Agent/Task) about to start: put to the user with what
+  /// it is to do and the model it would run on. The core waits for the
+  /// answer before it makes the child. With no one there to ask (a bot's),
+  /// it is allowed as it was assigned; in Don't ask, it is not started.
+  void _agentApproval(String requestId, Map<String, Object?> request) {
+    final control = _control;
+    if (control == null) return;
+    final model = '${request['model'] ?? ''}';
+    final models = [
+      for (final raw in request['models'] as List? ?? const [])
+        if (raw is String && raw.isNotEmpty) raw,
+    ];
+    if (_workspace?.approvesAll ?? false) {
+      control.respond(requestId, {'behavior': 'allow', 'model': model});
+      return;
+    }
+    // Don't ask asks no one: the child is not started, as anything else
+    // not pre-approved.
+    if (_approval == 'dontAsk') {
+      control.respond(requestId, {'behavior': 'deny', 'message': _notAsked});
+      return;
+    }
+    final forced = request['forced'] == true;
+    final description = '${request['description'] ?? ''}';
+    _permissions[requestId] = _Permission(
+      const {},
+      const [],
+      const [],
+      agent: true,
+    );
+    emit(
+      InteractionRequested(
+        nextSeq,
+        AgentApprovalRequest(
+          id: requestId,
+          title: 'Run a subagent?',
+          toolName: '${request['tool_name'] ?? 'Agent'}',
+          description: description,
+          prompt: '${request['prompt'] ?? ''}',
+          agentType: '${request['subagent_type'] ?? ''}',
+          model: model,
+          models: forced ? const [] : (models.isEmpty ? [model] : models),
+          modelSource: '${request['model_source'] ?? ''}',
+          forced: forced,
+          background: request['run_in_background'] == true,
+        ),
+      ),
+    );
   }
 
   Future<void> _permission(
@@ -2041,6 +2109,8 @@ class ClaudeCodeKernel
     switch (request['subtype']) {
       case 'can_use_tool':
         unawaited(_permission(id, request));
+      case 'can_use_agent':
+        _agentApproval(id, request);
       case 'elicitation':
         _elicitation(id, request);
       case 'mcp_message':
@@ -3983,11 +4053,16 @@ class _Permission {
     this.questions, {
     this.elicitation,
     this.sdk,
+    this.agent = false,
   });
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
   /// here, not to the CLI.
   final Completer<ApprovalDecision?>? sdk;
+
+  /// For a child agent about to start: the answer allows it and may name
+  /// the model it runs on.
+  final bool agent;
 
   /// For an MCP server's elicitation: its form's fields, or the link it
   /// asks to open.

@@ -5420,6 +5420,108 @@ abstract class AppLocalizations {
   /// **'Expand'**
   String get interactionExpand;
 
+  /// No description provided for @agentApprovalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a subagent?'**
+  String get agentApprovalTitle;
+
+  /// No description provided for @agentApprovalDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Task'**
+  String get agentApprovalDescription;
+
+  /// No description provided for @agentApprovalPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Instructions'**
+  String get agentApprovalPrompt;
+
+  /// No description provided for @agentApprovalModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get agentApprovalModel;
+
+  /// No description provided for @agentApprovalConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Start agent'**
+  String get agentApprovalConfirm;
+
+  /// No description provided for @agentApprovalBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'It runs in the background.'**
+  String get agentApprovalBackground;
+
+  /// No description provided for @agentApprovalForced.
+  ///
+  /// In en, this message translates to:
+  /// **'Every subagent runs on {model}, set by CLAUDE_CODE_SUBAGENT_MODEL_FORCE.'**
+  String agentApprovalForced(String model);
+
+  /// No description provided for @sidePanelAgents.
+  ///
+  /// In en, this message translates to:
+  /// **'Agents'**
+  String get sidePanelAgents;
+
+  /// No description provided for @sidePanelAgentsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No subagents yet.'**
+  String get sidePanelAgentsEmpty;
+
+  /// No description provided for @sidePanelAgentTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent tasks'**
+  String get sidePanelAgentTasks;
+
+  /// No description provided for @sidePanelAgentRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get sidePanelAgentRunning;
+
+  /// No description provided for @sidePanelAgentDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get sidePanelAgentDone;
+
+  /// No description provided for @sidePanelAgentFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get sidePanelAgentFailed;
+
+  /// No description provided for @sidePanelAgentUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get sidePanelAgentUnread;
+
+  /// No description provided for @sidePanelAgentPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Asked'**
+  String get sidePanelAgentPrompt;
+
+  /// No description provided for @sidePanelAgentModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get sidePanelAgentModel;
+
+  /// No description provided for @sidePanelAgentResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get sidePanelAgentResult;
+
   /// No description provided for @interactionMoreLines.
   ///
   /// In en, this message translates to:

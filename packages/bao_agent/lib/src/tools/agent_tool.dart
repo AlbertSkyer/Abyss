@@ -201,6 +201,29 @@ When the task fits a kind of agent; when there is work to run side by side; or w
     resolve: session.catalog.resolve,
   );
 
+  /// The models the user may pick for the agent about to start: the one it
+  /// was assigned first, then the subagent pool and the session's own.
+  /// None when the model is forced: there is nothing to pick.
+  static List<String> _modelChoices(
+    AgentSession session,
+    SubagentModelAssignment assignment,
+  ) {
+    if (forced(session)) return const [];
+    final seen = <String>{};
+    final models = <String>[];
+    void add(String? model) {
+      if (model == null || model.isEmpty || !seen.add(model)) return;
+      models.add(model);
+    }
+
+    add(assignment.model);
+    for (final model in session.subagentModels.pool) {
+      add(model);
+    }
+    add(session.resolvedModel);
+    return models;
+  }
+
   @override
   Future<ToolOutput> call(
     Map<String, Object?> input,
@@ -214,8 +237,64 @@ When the task fits a kind of agent; when there is work to run side by side; or w
     final description = asText(input['description']) ?? agent.name;
     // Chosen before anything awaited, so calls launched together take the
     // pool in the order they were made, whatever each then waits on.
-    final assignment = assignmentFor(session, agent, asText(input['model']));
+    var assignment = assignmentFor(session, agent, asText(input['model']));
     final isolation = asText(input['isolation']) ?? agent.isolation;
+    // One started by a subagent works in the foreground: its report goes
+    // back to that subagent, not to the main agent later.
+    final background =
+        context.run.isMain &&
+        input['run_in_background'] != false &&
+        !_truthy(session.environment['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS']);
+    // The host puts each child to the user before it starts: what it is to
+    // do, and the model it runs on. Without a host to ask, it starts as
+    // before.
+    if (session.options.canAsk) {
+      final Map<String, Object?> answer;
+      try {
+        answer = await context.cancel.guard(
+          session.agentApprovals.ask({
+            'tool_name': name,
+            'subagent_type': agent.name,
+            'description': description,
+            'prompt': '${input['prompt'] ?? ''}',
+            'tool_use_id': context.toolUseId,
+            'model': assignment.model,
+            'model_source': assignment.source.name,
+            'models': _modelChoices(session, assignment),
+            'forced': forced(session),
+            'run_in_background': background,
+            'isolation': ?isolation,
+          }),
+        );
+      } on Cancelled {
+        rethrow;
+      } on Object catch (error) {
+        return ToolOutput.error(
+          'The user could not be asked whether to start the agent: $error',
+          result: {'status': 'declined', 'description': description},
+        );
+      }
+      if (answer['behavior'] == 'deny') {
+        return ToolOutput.error(
+          asText(answer['message']) ??
+              'The user did not approve this agent, so it was not started. '
+                  'Do not start it again unless they ask; say what you would '
+                  'do instead.',
+          result: {
+            'status': 'declined',
+            'description': description,
+            'agentType': agent.name,
+          },
+        );
+      }
+      // A model picked in the confirmation is the call's own: it goes
+      // through the same path as one the model asked for in `model`. A
+      // forced model wins over it, as over everything else.
+      final picked = asText(answer['model']);
+      if (!forced(session) && picked != null && picked != assignment.model) {
+        assignment = assignmentFor(session, agent, picked);
+      }
+    }
     Worktree? worktree;
     if (isolation == 'worktree') {
       try {
@@ -241,12 +320,6 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       parentReads: context.run.readFiles,
       worktree: worktree,
     );
-    // One started by a subagent works in the foreground: its report goes
-    // back to that subagent, not to the main agent later.
-    final background =
-        context.run.isMain &&
-        input['run_in_background'] != false &&
-        !_truthy(session.environment['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS']);
     final task = session.tasks.registerAgent(
       description: description,
       agentId: job.agentId,
