@@ -3043,6 +3043,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get agentApprovalTitle => '运行子智能体？';
 
   @override
+  String get agentRetryTitle => '重试这个子智能体？';
+
+  @override
+  String get agentRetryConfirm => '重试智能体';
+
+  @override
   String get agentApprovalDescription => '任务';
 
   @override
@@ -3073,6 +3079,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sidePanelAgentRunning => '运行中';
+
+  @override
+  String get sidePanelAgentRetry => '重试';
+
+  @override
+  String get sidePanelAgentRetryUnsupported =>
+      '此 Claude Code CLI 会话不支持重试子智能体。请在对话中让智能体重试。';
 
   @override
   String get sidePanelAgentDone => '已完成';

@@ -1533,6 +1533,13 @@ class _ChatScreenState extends State<ChatScreen>
             ],
             onBack: _back,
             backFocusNode: layer.backFocus,
+            retry:
+                layer.feed.agent != null &&
+                    layer.feed.agent!.status != CommandStatus.running
+                ? () => unawaited(
+                    confirmAgentRetry(context, _session, layer.feed),
+                  )
+                : null,
             maxContentWidth: _maxContentWidth,
             // Level with the history's column.
             minimap: layer.minimapRoom.value,

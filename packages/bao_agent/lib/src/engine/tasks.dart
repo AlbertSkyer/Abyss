@@ -42,17 +42,17 @@ class BackgroundTask {
   final String type;
   final String description;
   final String outputFile;
-  final String? toolUseId;
   final String? command;
   final String? agentType;
 
   /// A subagent's: the model it was assigned, the model its call asked
   /// for, and where the assignment came from (`pool`, `requested`, …).
-  final String? model;
-  final String? requestedModel;
-  final String? modelSource;
+  String? toolUseId;
+  String? model;
+  String? requestedModel;
+  String? modelSource;
   final DateTime started;
-  final CancelToken cancel = CancelToken();
+  CancelToken cancel = CancelToken();
 
   TaskStatus status = TaskStatus.running;
   int? exitCode;
@@ -76,9 +76,10 @@ class BackgroundTask {
   String? error;
 
   final Completer<void> _done = Completer<void>();
+  Completer<void> _attemptDone = Completer<void>();
 
   /// Completes once it has ended.
-  Future<void> get done => _done.future;
+  Future<void> get done => _attemptDone.future;
 
   bool get isShell => type == 'local_bash';
 
@@ -279,6 +280,21 @@ class TaskManager {
     return task;
   }
 
+  /// Starts a user-approved attempt of a previously finished agent task.
+  void startRetry(BackgroundTask task) {
+    if (!task.status.done) throw StateError('The agent is still running.');
+    task
+      ..backgrounded = true
+      ..status = TaskStatus.running
+      ..ended = null
+      ..error = null
+      ..result = null
+      ..exitCode = null
+      ..cancel = CancelToken()
+      .._attemptDone = Completer<void>();
+    _started(task);
+  }
+
   /// A subagent working in the background.
   BackgroundTask registerAgent({
     required String description,
@@ -329,10 +345,11 @@ class TaskManager {
     String? result,
     SubagentResult? envelope,
   }) {
-    if (task.status.done && task._done.isCompleted) return;
+    if (task.status.done && task._attemptDone.isCompleted) return;
     task.status = status;
     task.ended = DateTime.now();
     if (result != null) task.result = result;
+    if (!task._attemptDone.isCompleted) task._attemptDone.complete();
     if (!task._done.isCompleted) task._done.complete();
     final summary = _summary(task);
     session.emitSystem('task_notification', {

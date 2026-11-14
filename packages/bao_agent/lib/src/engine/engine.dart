@@ -498,6 +498,12 @@ class AgentEngine {
           throw StateError('No running task with ID: $taskId');
         }
         return const {};
+      case 'retry_agent':
+        final taskId = asString(request['task_id']) ?? '';
+        final model = asString(request['model']);
+        if (model == null) throw StateError('Choose a model for the retry.');
+        final task = await session.retrySubagent(taskId, model: model);
+        return {'task_id': task.id, 'model': task.model};
       case 'background_tasks':
         return {
           'backgrounded': _toBackground(asString(request['tool_use_id'])),
@@ -679,7 +685,11 @@ class AgentEngine {
       'fast_mode_state': 'off',
       'fast_mode_disabled_reason': 'unsupported',
       'session_state': _turn == null ? 'idle' : 'running',
-      'capabilities': const ['interrupt_send_now_v1', 'ui_surface_v1'],
+      'capabilities': const [
+        'interrupt_send_now_v1',
+        'ui_surface_v1',
+        'agent_retry_v1',
+      ],
     };
   }
 

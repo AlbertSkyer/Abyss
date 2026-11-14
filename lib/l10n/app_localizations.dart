@@ -5426,6 +5426,18 @@ abstract class AppLocalizations {
   /// **'Run a subagent?'**
   String get agentApprovalTitle;
 
+  /// No description provided for @agentRetryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry this subagent?'**
+  String get agentRetryTitle;
+
+  /// No description provided for @agentRetryConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry agent'**
+  String get agentRetryConfirm;
+
   /// No description provided for @agentApprovalDescription.
   ///
   /// In en, this message translates to:
@@ -5485,6 +5497,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Running'**
   String get sidePanelAgentRunning;
+
+  /// No description provided for @sidePanelAgentRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get sidePanelAgentRetry;
+
+  /// No description provided for @sidePanelAgentRetryUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.'**
+  String get sidePanelAgentRetryUnsupported;
 
   /// No description provided for @sidePanelAgentDone.
   ///

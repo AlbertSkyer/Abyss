@@ -140,11 +140,12 @@ class Harness {
                       'behavior': 'allow',
                       'updatedInput': request['input'],
                     }));
-          } else if (request['subtype'] == 'can_use_agent') {
+          } else if (request['subtype'] == 'can_use_agent' ||
+              request['subtype'] == 'retry_agent') {
             approvalRequests.add(request);
             response =
                 await (onAgentApproval?.call(request) ??
-                    Future.value(const <String, Object?>{}));
+                    Future.value(const {'behavior': 'allow'}));
           } else {
             response =
                 await (onRequest?.call(request) ??

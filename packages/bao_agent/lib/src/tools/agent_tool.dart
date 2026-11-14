@@ -205,7 +205,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
   /// The models the user may pick for the agent about to start: the one it
   /// was assigned first, then the subagent pool and the session's own.
   /// None when the model is forced: there is nothing to pick.
-  static List<String> _modelChoices(
+  static List<String> modelChoices(
     AgentSession session,
     SubagentModelAssignment assignment,
   ) {
@@ -261,7 +261,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
             'tool_use_id': context.toolUseId,
             'model': assignment.model,
             'model_source': assignment.source.name,
-            'models': _modelChoices(session, assignment),
+            'models': modelChoices(session, assignment),
             'forced': forced(session),
             'run_in_background': background,
             'isolation': ?isolation,
@@ -275,7 +275,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
           result: {'status': 'declined', 'description': description},
         );
       }
-      if (answer['behavior'] == 'deny') {
+      if (answer['behavior'] != 'allow') {
         return ToolOutput.error(
           asText(answer['message']) ??
               'The user did not approve this agent, so it was not started. '
@@ -528,6 +528,66 @@ class SubagentJob {
   final String? effort;
   final String toolUseId;
   final ReadFileState parentReads;
+
+  /// The tool call the retry is displayed under, distinct from the first.
+  String? retryToolUseId;
+  Future<BackgroundTask> retry(
+    BackgroundTask task,
+    SubagentModelAssignment next,
+    String toolUseId,
+  ) async {
+    if (running || !task.status.done) {
+      throw StateError('The agent is still running; stop it before retrying.');
+    }
+    // The host owns the confirmation. By this point it has both approved
+    // the retry and selected this model; nothing here auto-confirms it.
+    task
+      ..toolUseId = toolUseId
+      ..model = next.model
+      ..requestedModel = next.requested
+      ..modelSource = next.source.name;
+    session.tasks.startRetry(task);
+    unawaited(start(task, retryPrompt));
+    return task;
+  }
+
+  /// The same task as a fresh child when another model was chosen. A
+  /// child job keeps its original model for its whole life.
+  SubagentJob retryJob(SubagentModelAssignment next, String toolUseId) =>
+      SubagentJob(
+        session: session,
+        agent: agent,
+        agentId: agentId,
+        description: description,
+        prompt: prompt,
+        assignment: next,
+        toolUseId: toolUseId,
+        parentReads: parentReads,
+        effort: effort,
+      );
+
+  /// Approval fields shared by the core and by test/other direct hosts.
+  Map<String, Object?> retryApproval(
+    SubagentModelAssignment next,
+    String toolUseId,
+  ) => {
+    'tool_name': 'Agent',
+    'subagent_type': agent.name,
+    'description': description,
+    'prompt': prompt,
+    'tool_use_id': toolUseId,
+    'model': next.model,
+    'model_source': next.source.name,
+    'models': AgentTool.modelChoices(session, next),
+    'forced': AgentTool.forced(session),
+    'run_in_background': true,
+    'retry': true,
+  };
+
+  static const retryPrompt =
+      'The user explicitly asked to retry this task. Inspect the previous '
+      'attempt and its current results, then finish the original task. '
+      'Report what was recovered and what remains to be done.';
 
   /// The worktree it works in, if it has one of its own.
   Worktree? worktree;

@@ -2022,6 +2022,15 @@ class ClaudeTranslator {
     (task) => task.background && task.status == CommandStatus.running,
   );
 
+  /// Only a finished, background child of the live core can be retried.
+  bool canRetryTask(String taskId) => switch (_tasks[taskId]) {
+    final task? =>
+      task.kind == KernelTaskKind.agent &&
+          task.background &&
+          task.status != CommandStatus.running,
+    _ => false,
+  };
+
   /// The CLI is gone, and the tasks it ran with it.
   void endTasks() {
     for (final task in [..._tasks.values]) {

@@ -340,6 +340,49 @@ class AgentSession {
   /// and to list.
   final Map<String, SubagentJob> subagents = {};
 
+  /// Retry a task only after the host's explicit user confirmation. The
+  /// same child may continue on the confirmed model; a different model is
+  /// a fresh child job, since one job never changes model mid-run.
+  Future<BackgroundTask> retrySubagent(
+    String agentId, {
+    required String model,
+  }) async {
+    final original = subagents[agentId];
+    if (original == null || original.running) {
+      throw StateError('No finished subagent with ID: $agentId');
+    }
+    final task = tasks[agentId];
+    if (task == null || !task.status.done || task.isShell) {
+      throw StateError('No finished subagent with ID: $agentId');
+    }
+    // The original tool call may still await a foreground child's report
+    // while cancellation unwinds; only a background task is safe to retry.
+    if (!task.backgrounded) {
+      throw StateError('Wait for the foreground agent call to finish first.');
+    }
+    var next = AgentTool.assignmentFor(this, original.agent, model);
+    final toolUseId = tasks.newId('retry');
+    if (options.canAsk) {
+      final answer = await agentApprovals.retry(
+        original.retryApproval(next, toolUseId),
+      );
+      if (answer['behavior'] != 'allow') {
+        throw StateError(
+          asText(answer['message']) ?? 'The retry was not confirmed.',
+        );
+      }
+      final picked = asText(answer['model']);
+      if (!AgentTool.forced(this) && picked != null && picked != next.model) {
+        next = AgentTool.assignmentFor(this, original.agent, picked);
+      }
+    }
+    // Even on the same model a confirmed retry is a new run with its own
+    // cancellation, run counters and prompt. The old transcript is kept.
+    subagents.remove(agentId);
+    final fresh = original.retryJob(next, toolUseId);
+    return fresh.retry(task, next, toolUseId);
+  }
+
   /// The prompts scheduled for later (CronCreate, ScheduleWakeup).
   late final Scheduler scheduler = Scheduler(cwd: cwd);
 

@@ -794,6 +794,7 @@ class AgentApprovalRequest extends InteractionRequest {
     this.forced = false,
     this.background = false,
     this.toolName = 'Agent',
+    this.retry = false,
   });
 
   /// What it is to do, in a few words.
@@ -820,6 +821,9 @@ class AgentApprovalRequest extends InteractionRequest {
 
   /// Whether it would run in the background.
   final bool background;
+
+  /// A new attempt of an existing child: always explicit user approval.
+  final bool retry;
 
   final String toolName;
 }

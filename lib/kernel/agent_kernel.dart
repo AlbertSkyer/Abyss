@@ -269,6 +269,18 @@ abstract interface class RunsBackgroundTasks {
   /// Moves the running command or subagent started by [toolUseId] to the
   /// background, so the turn goes on.
   void moveToBackground(String toolUseId);
+
+  /// Starts a new attempt only after the user's explicit confirmation and
+  /// model choice. Unsupported kernels return a clear unsupported status;
+  /// no user-visible retry is silently simulated or repeatedly attempted.
+  /// Whether this live task may start a fresh attempt after confirmation.
+  bool canRetryTask(String taskId) => false;
+
+  Future<String> retryTask(String taskId, String model) async =>
+      'Retry is unavailable for this session.';
+
+  /// Models a confirmed retry may be assigned, as that core expects them.
+  List<String> get retryModels => const [];
 }
 
 /// Takes messages while busy, and runs them in turn.

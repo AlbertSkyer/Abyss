@@ -3156,6 +3156,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get agentApprovalTitle => 'Run a subagent?';
 
   @override
+  String get agentRetryTitle => 'Retry this subagent?';
+
+  @override
+  String get agentRetryConfirm => 'Retry agent';
+
+  @override
   String get agentApprovalDescription => 'Task';
 
   @override
@@ -3186,6 +3192,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sidePanelAgentRunning => 'Running';
+
+  @override
+  String get sidePanelAgentRetry => 'Retry';
+
+  @override
+  String get sidePanelAgentRetryUnsupported =>
+      'Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.';
 
   @override
   String get sidePanelAgentDone => 'Done';

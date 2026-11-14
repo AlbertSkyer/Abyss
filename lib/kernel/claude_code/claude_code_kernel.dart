@@ -404,6 +404,10 @@ class ClaudeCodeKernel
   /// says (`interrupt_send_now_v1`).
   bool _sendsNow = false;
 
+  /// Control features the running core explicitly declares. Absence means
+  /// unsupported, especially for the installed CLI or a remote core.
+  Set<String> _capabilities = const {};
+
   /// When the usage limit the last turn hit resets (see
   /// [ReportsUsageLimit]): the account's own plan's, or every ChatGPT
   /// account of a provider out of quota; another provider's limits are
@@ -1521,6 +1525,54 @@ class ClaudeCodeKernel
   void moveToBackground(String toolUseId) =>
       _tell('background_tasks', {'tool_use_id': toolUseId});
 
+  /// Only the built-in core declares a retry control. The CLI's Agent/Task
+  /// protocol has no such request: report that truthfully, rather than
+  /// faking a rerun through an unrelated prompt or a second process.
+  @override
+  List<String> get retryModels {
+    final models = <String>{};
+    void add(String? model) {
+      if (model != null && model.isNotEmpty) models.add(model);
+    }
+
+    // Names that carry an alias are resolved by the core's catalog, not
+    // guessed at by the picker. A bare unknown id is offered as-is.
+    final aliases = {'sonnet', 'opus', 'haiku', 'fable'};
+    for (final option in model.options) {
+      add(option.id);
+    }
+    add(_model);
+    if (_custom case (final provider, _)) {
+      for (final entry in _launchSubagentPool(provider)) {
+        add(entry);
+      }
+      for (final info in provider.enabledModels) {
+        if (aliases.contains(info.id)) add(info.id);
+      }
+    }
+    return models.toList();
+  }
+
+  @override
+  bool canRetryTask(String taskId) {
+    if (!_capabilities.contains('agent_retry_v1')) return false;
+    return _translator.canRetryTask(taskId);
+  }
+
+  @override
+  Future<String> retryTask(String taskId, String model) async {
+    if (!_capabilities.contains('agent_retry_v1')) {
+      return 'Retry is unavailable for this Claude Code CLI session. '
+          'Ask the agent to retry in the conversation instead.';
+    }
+    try {
+      await _request('retry_agent', {'task_id': taskId, 'model': model});
+      return '';
+    } on Object catch (error) {
+      return 'The subagent could not be retried: $error';
+    }
+  }
+
   @override
   String? get promptSuggestion => _suggestion;
 
@@ -1748,7 +1800,11 @@ class ClaudeCodeKernel
   /// it is to do and the model it would run on. The core waits for the
   /// answer before it makes the child. With no one there to ask (a bot's),
   /// it is allowed as it was assigned; in Don't ask, it is not started.
-  void _agentApproval(String requestId, Map<String, Object?> request) {
+  void _agentApproval(
+    String requestId,
+    Map<String, Object?> request, {
+    bool retry = false,
+  }) {
     final control = _control;
     if (control == null) return;
     final model = '${request['model'] ?? ''}';
@@ -1756,7 +1812,7 @@ class ClaudeCodeKernel
       for (final raw in request['models'] as List? ?? const [])
         if (raw is String && raw.isNotEmpty) raw,
     ];
-    if (_workspace?.approvesAll ?? false) {
+    if (!retry && (_workspace?.approvesAll ?? false)) {
       control.respond(requestId, {'behavior': 'allow', 'model': model});
       return;
     }
@@ -1779,7 +1835,7 @@ class ClaudeCodeKernel
         nextSeq,
         AgentApprovalRequest(
           id: requestId,
-          title: 'Run a subagent?',
+          title: retry ? 'Retry this subagent?' : 'Run a subagent?',
           toolName: '${request['tool_name'] ?? 'Agent'}',
           description: description,
           prompt: '${request['prompt'] ?? ''}',
@@ -1789,6 +1845,7 @@ class ClaudeCodeKernel
           modelSource: '${request['model_source'] ?? ''}',
           forced: forced,
           background: request['run_in_background'] == true,
+          retry: retry,
         ),
       ),
     );
@@ -2022,6 +2079,10 @@ class ClaudeCodeKernel
       case 'system' when message['subtype'] == 'init':
         _sessionId = message['session_id'] as String? ?? _sessionId;
         _reportedModel = message['model'] as String?;
+        _capabilities = {
+          for (final capability in message['capabilities'] as List? ?? const [])
+            if (capability is String) capability,
+        };
         _sendsNow = (message['capabilities'] as List? ?? const []).contains(
           'interrupt_send_now_v1',
         );
@@ -2128,8 +2189,8 @@ class ClaudeCodeKernel
     switch (request['subtype']) {
       case 'can_use_tool':
         unawaited(_permission(id, request));
-      case 'can_use_agent':
-        _agentApproval(id, request);
+      case 'can_use_agent' || 'retry_agent':
+        _agentApproval(id, request, retry: request['subtype'] == 'retry_agent');
       case 'elicitation':
         _elicitation(id, request);
       case 'mcp_message':
@@ -3197,6 +3258,10 @@ class ClaudeCodeKernel
   // --- Options ------------------------------------------------------------------------
 
   void _applyInitialize(Map<String, Object?> response) {
+    _capabilities = {
+      for (final capability in response['capabilities'] as List? ?? const [])
+        if (capability is String) capability,
+    };
     // Claude Code's own models are those it lists set up as the user has
     // it: one on a provider lists what the provider's names stand in for.
     final own = _launchedProvider.isEmpty;

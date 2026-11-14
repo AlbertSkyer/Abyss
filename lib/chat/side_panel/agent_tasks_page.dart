@@ -7,7 +7,9 @@ import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
 import '../chat_models.dart';
+import '../chat_feed.dart';
 import '../chat_session.dart';
+import '../agent_view.dart';
 import '../widgets/agent_step.dart';
 import '../widgets/hover_builder.dart';
 import '../widgets/pixel_loader.dart';
@@ -79,6 +81,13 @@ class AgentTasksPage extends StatelessWidget {
                     onStop: entry.agent.status == CommandStatus.running
                         ? session.stopOf(entry.agent.id)
                         : null,
+                    onRetry: entry.agent.status == CommandStatus.running
+                        ? null
+                        : () => confirmAgentRetry(
+                            context,
+                            session,
+                            SubagentFeed(session, entry.path),
+                          ),
                   ),
             ],
           ),
@@ -177,6 +186,7 @@ class _AgentRow extends StatelessWidget {
     this.onToggleGroup,
     required this.onOpen,
     this.onStop,
+    this.onRetry,
   });
 
   final AgentItem agent;
@@ -189,6 +199,7 @@ class _AgentRow extends StatelessWidget {
   final bool unread;
   final VoidCallback onOpen;
   final VoidCallback? onStop;
+  final VoidCallback? onRetry;
 
   static String _status(AppLocalizations l10n, AgentItem agent) =>
       switch (agent.status) {
@@ -312,6 +323,22 @@ class _AgentRow extends StatelessWidget {
                           Icons.stop_rounded,
                           size: 14,
                           color: AppColors.textFaint,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (onRetry != null) ...[
+                    const SizedBox(width: 4),
+                    IdeHover(
+                      message: l10n.sidePanelAgentRetry,
+                      excludeFromSemantics: true,
+                      child: GestureDetector(
+                        onTap: onRetry,
+                        child: Icon(
+                          Icons.refresh_rounded,
+                          size: 14,
+                          color: AppColors.textFaint,
+                          semanticLabel: l10n.sidePanelAgentRetry,
                         ),
                       ),
                     ),

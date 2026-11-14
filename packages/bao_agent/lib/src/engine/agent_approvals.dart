@@ -20,13 +20,25 @@ class AgentApprovals {
   /// Asks the host for leave to start an agent, with [request] (see
   /// AgentTool): its answer, `{behavior, model, message}`. Given up when
   /// the session is closed or the turn stopped.
-  Future<Map<String, Object?>> ask(Map<String, Object?> request) async {
+  Future<Map<String, Object?>> ask(Map<String, Object?> request) =>
+      _ask('can_use_agent', request);
+
+  /// An explicit retry is a second, user-initiated decision, not an agent
+  /// looping on a failure. It goes through the same serial approval queue
+  /// and carries the same model choices, with a new tool-call id.
+  Future<Map<String, Object?>> retry(Map<String, Object?> request) =>
+      _ask('retry_agent', request);
+
+  Future<Map<String, Object?>> _ask(
+    String subtype,
+    Map<String, Object?> request,
+  ) async {
     final previous = _last;
     final release = Completer<void>();
     _last = release.future;
     await previous;
     try {
-      return await session.hostRequest('can_use_agent', request);
+      return await session.hostRequest(subtype, request);
     } finally {
       release.complete();
     }

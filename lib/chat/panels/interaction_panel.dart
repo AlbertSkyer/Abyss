@@ -680,7 +680,9 @@ class _AgentApprovalCardState extends State<_AgentApprovalCard> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  l10n.agentApprovalTitle,
+                  request.retry
+                      ? l10n.agentRetryTitle
+                      : l10n.agentApprovalTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -798,7 +800,9 @@ class _AgentApprovalCardState extends State<_AgentApprovalCard> {
                   PanelButton(label: l10n.commonCancel, onTap: _deny),
                   const SizedBox(width: 6),
                   PanelButton(
-                    label: l10n.agentApprovalConfirm,
+                    label: request.retry
+                        ? l10n.agentRetryConfirm
+                        : l10n.agentApprovalConfirm,
                     primary: true,
                     onTap: _allow,
                   ),

@@ -841,6 +841,37 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     if (_kernel case final RunsBackgroundTasks kernel) kernel.stopTask(task.id);
   }
 
+  /// The live task whose original or latest retry tool call owns this
+  /// card. A historical transcript is not silently turned into a new run.
+  KernelTask? taskOfAgent(List<String> path) {
+    if (path.isEmpty || _kernel is! RunsBackgroundTasks) return null;
+    final id = path.last;
+    return _transcript.tasks
+        .where(
+          (task) =>
+              task.kind == KernelTaskKind.agent &&
+              task.toolUseId == id &&
+              task.status != CommandStatus.running &&
+              (_kernel as RunsBackgroundTasks).canRetryTask(task.id),
+        )
+        .firstOrNull;
+  }
+
+  /// Models a user may choose when retrying: its pool and the session's
+  /// current model. Only these configured upstreams are offered, never an
+  /// invented snapshot or a model that merely appeared in a report.
+  List<String> get retryModels => switch (_kernel) {
+    final RunsBackgroundTasks kernel => kernel.retryModels,
+    _ => const [],
+  };
+
+  Future<String> retryTask(KernelTask task, String model) async {
+    if (_kernel case final RunsBackgroundTasks kernel) {
+      return kernel.retryTask(task.id, model);
+    }
+    return 'Retry is unavailable for this session.';
+  }
+
   /// Takes [tasks] that have ended (done, failed, stopped) off
   /// [terminalTasks]: those running stay.
   void clearTasks(Iterable<KernelTask> tasks) {
