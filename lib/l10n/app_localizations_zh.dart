@@ -3081,6 +3081,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidePanelAgentRunning => '运行中';
 
   @override
+  String get sidePanelAgentCancelled => '已取消';
+
+  @override
   String get sidePanelAgentRetry => '重试';
 
   @override

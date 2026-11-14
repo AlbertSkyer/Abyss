@@ -226,7 +226,9 @@ class _AgentRow extends StatelessWidget {
       providers: ModelProviders.current,
     );
     final model = agent.assignedModel ?? agent.model;
-    final status = _status(l10n, agent);
+    final status = agent.outcome == 'cancelled'
+        ? l10n.sidePanelAgentCancelled
+        : _status(l10n, agent);
     // What it did last, or, ended, the start of its report.
     final detail = switch (agent.status) {
       CommandStatus.running =>

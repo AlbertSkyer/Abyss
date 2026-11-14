@@ -900,6 +900,7 @@
   "sidePanelAgentsEmpty": "还没有子智能体。",
   "sidePanelAgentTasks": "子智能体任务",
   "sidePanelAgentRunning": "运行中",
+  "sidePanelAgentCancelled": "已取消",
   "sidePanelAgentRetry": "重试",
   "sidePanelAgentRetryUnsupported": "此 Claude Code CLI 会话不支持重试子智能体。请在对话中让智能体重试。",
   "sidePanelAgentDone": "已完成",

@@ -2084,6 +2084,7 @@
   "sidePanelAgentsEmpty": "No subagents yet.",
   "sidePanelAgentTasks": "Subagent tasks",
   "sidePanelAgentRunning": "Running",
+  "sidePanelAgentCancelled": "Cancelled",
   "sidePanelAgentRetry": "Retry",
   "sidePanelAgentRetryUnsupported": "Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.",
   "sidePanelAgentDone": "Done",

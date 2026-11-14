@@ -5498,6 +5498,12 @@ abstract class AppLocalizations {
   /// **'Running'**
   String get sidePanelAgentRunning;
 
+  /// No description provided for @sidePanelAgentCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get sidePanelAgentCancelled;
+
   /// No description provided for @sidePanelAgentRetry.
   ///
   /// In en, this message translates to:

@@ -281,6 +281,8 @@ class AgentItem extends ChatItem {
     this.model,
     this.assignedModel,
     this.requestedModel,
+    this.modelSource,
+    this.outcome,
     this.children = const [],
     this.result,
     this.background = false,
@@ -324,6 +326,13 @@ class AgentItem extends ChatItem {
 
   /// The `model` its call asked for, if it asked for one.
   final String? requestedModel;
+
+  /// Where its assigned model came from (`pool`, `requested`, …).
+  final String? modelSource;
+
+  /// `completed`, `failed`, or `cancelled`, if its result says. The legacy
+  /// [status] stays the visual running/succeeded/failed projection.
+  final String? outcome;
   final List<ChatItem> children;
 
   /// Its final report.
@@ -345,6 +354,8 @@ class AgentItem extends ChatItem {
     String? model,
     String? assignedModel,
     String? requestedModel,
+    String? modelSource,
+    String? outcome,
     List<ChatItem>? children,
     String? result,
     bool? background,
@@ -363,6 +374,8 @@ class AgentItem extends ChatItem {
     model: model ?? this.model,
     assignedModel: assignedModel ?? this.assignedModel,
     requestedModel: requestedModel ?? this.requestedModel,
+    modelSource: modelSource ?? this.modelSource,
+    outcome: outcome ?? this.outcome,
     children: children ?? this.children,
     result: result ?? this.result,
     background: background ?? this.background,
@@ -384,6 +397,8 @@ class AgentItem extends ChatItem {
     model: model,
     assignedModel: assignedModel,
     requestedModel: requestedModel,
+    modelSource: modelSource,
+    outcome: outcome,
     children: children,
     result: result,
     background: background,

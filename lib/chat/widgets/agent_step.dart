@@ -281,6 +281,7 @@ class _AgentStepState extends State<AgentStep> {
               assigned: item.assignedModel,
               requested: item.requestedModel,
               actual: item.model,
+              source: item.modelSource,
             ),
           // Its buttons take their own presses (see _down).
           Listener(
@@ -432,7 +433,13 @@ class _ElapsedState extends State<_Elapsed> {
 }
 
 class _Model extends StatelessWidget {
-  const _Model(this.model, {this.assigned, this.requested, this.actual});
+  const _Model(
+    this.model, {
+    this.assigned,
+    this.requested,
+    this.actual,
+    this.source,
+  });
 
   final String model;
 
@@ -441,6 +448,7 @@ class _Model extends StatelessWidget {
   final String? assigned;
   final String? requested;
   final String? actual;
+  final String? source;
 
   @override
   Widget build(BuildContext context) {
@@ -450,12 +458,14 @@ class _Model extends StatelessWidget {
       child: IdeHover(
         message: [
           ?upstream,
-          model,
-          if (requested case final requested?) 'asked: $requested',
-          if (assigned case final assigned? when assigned != actual)
-            'assigned: $assigned',
-          if (actual case final actual? when actual != assigned)
-            'answered: $actual',
+          if (requested case final requested?) 'requested: $requested',
+          if (assigned case final assigned?) 'assigned: $assigned',
+          if (source case final source? when source.isNotEmpty)
+            'source: $source',
+          if (actual case final actual?)
+            'actual: $actual'
+          else
+            'actual: not yet reported',
         ].join(' · '),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 140),

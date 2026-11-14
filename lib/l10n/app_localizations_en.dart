@@ -3194,6 +3194,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidePanelAgentRunning => 'Running';
 
   @override
+  String get sidePanelAgentCancelled => 'Cancelled';
+
+  @override
   String get sidePanelAgentRetry => 'Retry';
 
   @override

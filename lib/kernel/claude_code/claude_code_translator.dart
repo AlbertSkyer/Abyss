@@ -1423,19 +1423,27 @@ class ClaudeTranslator {
             prompt: _string(structured?['prompt']),
             // What the CLI resolved, if its messages did not say.
             model: agent.item.model == null
-                ? _ownModelOf(_string(structured?['resolvedModel']))
+                ? _ownModelOf(
+                    _string(
+                      structured?['actualModel'] ??
+                          structured?['resolvedModel'],
+                    ),
+                  )
                 : null,
             // What it was assigned, kept apart from what it answered with.
             assignedModel: agent.item.assignedModel == null
                 ? _assignedOf(structured)
                 : null,
             requestedModel: _string(structured?['requestedModel']),
+            modelSource: _string(structured?['modelSource']),
             background: true,
           );
           _putAgent(id);
           return;
         }
         agent.item = agent.item.copyWith(
+          modelSource: _string(structured?['modelSource']),
+          outcome: _string(structured?['outcome'] ?? structured?['status']),
           status: outcome == _Outcome.done
               ? CommandStatus.succeeded
               : CommandStatus.failed,
@@ -1448,7 +1456,11 @@ class ClaudeTranslator {
             _ => null,
           },
           model: agent.item.model == null
-              ? _ownModelOf(_string(structured?['resolvedModel']))
+              ? _ownModelOf(
+                  _string(
+                    structured?['actualModel'] ?? structured?['resolvedModel'],
+                  ),
+                )
               : null,
           assignedModel: agent.item.assignedModel == null
               ? _assignedOf(structured)
@@ -1907,6 +1919,7 @@ class ClaudeTranslator {
               run.item = run.item.copyWith(
                 assignedModel: run.item.assignedModel == null ? assigned : null,
                 requestedModel: requested,
+                modelSource: _string(message['model_source']),
               );
               _putAgent(card);
             }
@@ -1984,6 +1997,7 @@ class ClaudeTranslator {
           summary: _string(message['summary']),
           outputFile: _string(message['output_file']),
           usage: _map(message['usage']),
+          result: (message['result'] as Map?)?.cast<String, Object?>(),
         );
       case 'background_tasks_changed' when !replaying:
         final live = {
@@ -2051,6 +2065,7 @@ class ClaudeTranslator {
     String? summary,
     String? outputFile,
     Map<String, Object?> usage = const {},
+    Map<String, Object?>? result,
   }) {
     if (_tasks[taskId] case final task?) {
       _tasks[taskId] = task.copyWith(
@@ -2076,6 +2091,15 @@ class ClaudeTranslator {
       }
       agent.item = agent.item.copyWith(
         status: status,
+        outcome: _string(result?['outcome'] ?? result?['status']),
+        model: agent.item.model == null
+            ? _ownModelOf(_string(result?['actualModel']))
+            : null,
+        assignedModel: agent.item.assignedModel == null
+            ? _assignedOf(result)
+            : null,
+        requestedModel: _string(result?['requestedModel']),
+        modelSource: _string(result?['modelSource']),
         tokens: claudeInt(usage['total_tokens']),
         toolUses: claudeInt(usage['tool_uses']),
         duration: switch (claudeInt(usage['duration_ms'])) {
@@ -2189,6 +2213,12 @@ class ClaudeTranslator {
     final failed = status == CommandStatus.failed;
     agent.item = agent.item.copyWith(
       status: status,
+      outcome: switch (_tag(notification, 'status')) {
+        'killed' => 'cancelled',
+        'failed' => 'failed',
+        'completed' => 'completed',
+        _ => null,
+      },
       result:
           _tag(notification, 'result')?.trim() ??
           (failed ? _tag(notification, 'summary') : null),
