@@ -39,6 +39,7 @@ class AgentTool extends Tool {
 When the task fits a kind of agent; when there is work to run side by side; or when answering would mean reading through many files, and only the conclusion is wanted, not the files themselves. For one fact you can look up yourself (a file, a name, a value you know where to find), look it up. Once you hand a search over, wait for its answer rather than doing it again yourself.
 
 - Its report comes to you, not the user: pass on what matters in it.
+- Its full transcript is not returned, only its compact final result. Do not repeat a failed, refused or cancelled call by yourself: the user must explicitly ask to retry it (and may choose another model).
 - It knows nothing of this conversation: say in the prompt all it needs, what to look into or change, and whether it is to write code or only find things out.
 - To go on with an agent from before, with all it had, send it a message (SendMessage, to its agentId); a new call starts a new one.
 - A kind's model, effort and tools are its definition's (`.claude/agents/*.md`) unless set here.
@@ -381,6 +382,64 @@ When the task fits a kind of agent; when there is work to run side by side; or w
   );
 }
 
+/// The one report a child hands its supervisor: never its whole transcript.
+///
+/// The same fields go to the tool's caller and to the host's task event.
+/// [content] is only the child's final response, never its transcript;
+/// the session's sidechain file and the task's output file keep the rest.
+class SubagentResult {
+  const SubagentResult({
+    required this.status,
+    required this.agentId,
+    required this.agentType,
+    required this.content,
+    required this.duration,
+    required this.tokens,
+    required this.toolUses,
+    required this.assignment,
+    this.actualModel,
+    this.error,
+    this.usage = const {},
+  });
+
+  /// `completed`, `failed`, or `cancelled`. A turn-limit stop is a failure:
+  /// it must not look like a successful report to the supervisor.
+  final String status;
+  final String agentId;
+  final String agentType;
+  final String content;
+  final Duration duration;
+  final int tokens;
+  final int toolUses;
+  final SubagentModelAssignment assignment;
+
+  /// What the upstream said it answered with, once it said; not a guess.
+  final String? actualModel;
+  final String? error;
+  final Map<String, Object?> usage;
+
+  bool get ok => status == 'completed';
+
+  Map<String, Object?> toJson({String? prompt, int? durationMs}) => {
+    'status': status,
+    'outcome': status,
+    'agentId': agentId,
+    'agentType': agentType,
+    'prompt': ?prompt,
+    'content': [
+      {'type': 'text', 'text': content},
+    ],
+    'totalDurationMs': durationMs ?? duration.inMilliseconds,
+    'totalTokens': tokens,
+    'totalToolUseCount': toolUses,
+    'usage': usage,
+    'actualModel': ?actualModel,
+    'resolvedModel': assignment.model,
+    ...assignment.toJson(),
+    if (error case final message? when message.isNotEmpty) 'error': message,
+  };
+}
+
 /// How a subagent's work came out.
 class SubagentOutcome {
   SubagentOutcome(this.result, this.duration, {this.worktreeNote});
@@ -406,27 +465,16 @@ class SubagentOutcome {
   }
 
   ToolOutput output(SubagentJob job) {
-    final text = result.lastText;
+    final envelope = job.envelope(result, duration);
+    final text = envelope.content;
     final structured = {
-      'status': result.ok ? 'completed' : result.reason,
-      'agentId': job.agentId,
-      'agentType': job.agent.name,
-      'prompt': job.prompt,
-      'content': [
-        {'type': 'text', 'text': text},
-      ],
-      'totalDurationMs': duration.inMilliseconds,
-      'totalTokens': job.run?.tokens ?? 0,
-      'totalToolUseCount': job.run?.toolUses ?? 0,
-      'usage': result.usage,
-      'resolvedModel': job.model,
-      ...job.assignment.toJson(),
+      ...envelope.toJson(prompt: job.prompt),
       if (job.worktree case final worktree?) ...Worktrees.toJson(worktree),
     };
-    if (!result.ok && result.reason != 'max_turns') {
+    if (!envelope.ok) {
       return ToolOutput.error(
         result.error ??
-            (result.reason == 'interrupted'
+            (envelope.status == 'cancelled'
                 ? '[Request interrupted by user for tool use]'
                 : 'The agent stopped before it finished (${result.reason}).'),
         result: structured,
@@ -489,9 +537,39 @@ class SubagentJob {
   /// Whether it is at work now.
   bool running = false;
 
-  /// How its last piece of work ended (`completed`, `failed`, `stopped`),
+  /// How its last piece of work ended (`completed`, `failed`, `cancelled`),
   /// or `running`.
   String status = 'running';
+
+  /// The id its upstream actually answered with, not the assigned model.
+  String? actualModel;
+
+  /// The supervisor-facing envelope for one completed piece of work.
+  SubagentResult envelope(LoopResult result, Duration duration) {
+    final cancelled = result.reason == 'interrupted';
+    final succeeded = result.reason == 'end_turn';
+    return SubagentResult(
+      status: succeeded
+          ? 'completed'
+          : cancelled
+          ? 'cancelled'
+          : 'failed',
+      agentId: agentId,
+      agentType: agent.name,
+      content: result.lastText,
+      duration: duration,
+      tokens: run?.tokens ?? 0,
+      toolUses: run?.toolUses ?? 0,
+      usage: result.usage,
+      assignment: assignment,
+      actualModel: actualModel,
+      error:
+          result.error ??
+          (succeeded || cancelled
+              ? null
+              : 'The agent stopped before it finished (${result.reason}).'),
+    );
+  }
 
   /// Messages sent it while it works, taken up between its tool calls.
   final List<String> inbox = [];
@@ -587,6 +665,15 @@ class SubagentJob {
         takeQueued: _takeInbox,
       );
       result = await loop.runTurn(task.cancel);
+      // Only an upstream's own response is actual provenance; never infer
+      // it from the requested/assigned model or from its text.
+      actualModel = [
+        for (final entry in store.chain.reversed)
+          if (entry['type'] == 'assistant' &&
+              asMap(entry['message'])['model'] is String &&
+              asMap(entry['message'])['model'] != '<synthetic>')
+            '${asMap(entry['message'])['model']}',
+      ].firstOrNull;
     } on Cancelled {
       result = const LoopResult(
         reason: 'interrupted',
@@ -607,33 +694,40 @@ class SubagentJob {
     }
     running = false;
     status = switch (result.reason) {
-      'end_turn' || 'max_turns' || 'stopped' => 'completed',
-      'interrupted' => 'stopped',
+      'end_turn' => 'completed',
+      'interrupted' => 'cancelled',
       _ => 'failed',
     };
     task
       ..toolUses = run.toolUses
       ..tokens = run.tokens;
     final note = await _settleWorktree();
-    final report = result.lastText;
+    final elapsed = DateTime.now().difference(started);
+    final resultEnvelope = envelope(result, elapsed);
+    final report = resultEnvelope.content;
+    // The full output stays in its task file. Only the compact final report
+    // crosses into the parent supervisor's notification and tool result.
     try {
       File(task.outputFile).writeAsStringSync(
         [?note, report.isEmpty ? (result.error ?? '') : report].join('\n\n'),
       );
     } on FileSystemException {
-      // The notification carries it all the same.
+      // The notification carries the compact report all the same.
     }
-    if (!result.ok) task.error = result.error ?? result.reason;
-    session.tasks.finish(task, switch (status) {
-      'completed' => TaskStatus.completed,
-      'stopped' => TaskStatus.killed,
-      _ => TaskStatus.failed,
-    }, result: [?note, report].join('\n\n'));
-    return SubagentOutcome(
-      result,
-      DateTime.now().difference(started),
-      worktreeNote: note,
+    if (!resultEnvelope.ok) {
+      task.error = resultEnvelope.error ?? result.reason;
+    }
+    session.tasks.finish(
+      task,
+      switch (status) {
+        'completed' => TaskStatus.completed,
+        'cancelled' => TaskStatus.killed,
+        _ => TaskStatus.failed,
+      },
+      result: [?note, report].join('\n\n'),
+      envelope: resultEnvelope,
     );
+    return SubagentOutcome(result, elapsed, worktreeNote: note);
   }
 
   /// Its worktree, once its work is done: removed when nothing was done

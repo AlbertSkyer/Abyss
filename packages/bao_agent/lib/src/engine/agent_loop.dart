@@ -827,8 +827,13 @@ class AgentLoop {
       call.done = true;
       _appendResult(
         call,
-        const ToolOutput('The user interrupted this tool call.', isError: true),
+        const ToolOutput(
+          'The user interrupted this tool call.',
+          isError: true,
+          result: {'status': 'cancelled'},
+        ),
         emitResult: false,
+        emitCancelledResult: true,
       );
     }
     _appendUser(
@@ -909,7 +914,12 @@ class AgentLoop {
     });
   }
 
-  void _appendResult(_Call call, ToolOutput output, {bool emitResult = true}) {
+  void _appendResult(
+    _Call call,
+    ToolOutput output, {
+    bool emitResult = true,
+    bool emitCancelledResult = false,
+  }) {
     final content = output.content;
     final block = <String, Object?>{
       'type': 'tool_result',
@@ -927,7 +937,7 @@ class AgentLoop {
       'toolUseResult': ?output.result,
       if (!isMain) ...{'agentId': run.agentId, 'isSidechain': true},
     });
-    if (emitResult) {
+    if (emitResult || emitCancelledResult) {
       _emit({
         'type': 'user',
         'message': entry['message'],

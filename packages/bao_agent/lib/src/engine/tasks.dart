@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../util/cancel.dart';
 import '../util/ids.dart';
+import '../tools/agent_tool.dart' show SubagentResult;
 import '../util/processes.dart';
 import 'session.dart';
 
@@ -322,7 +323,12 @@ class TaskManager {
 
   /// Ends [task] as [status]: the host told, and the model, unless it was
   /// stopped on purpose.
-  void finish(BackgroundTask task, TaskStatus status, {String? result}) {
+  void finish(
+    BackgroundTask task,
+    TaskStatus status, {
+    String? result,
+    SubagentResult? envelope,
+  }) {
     if (task.status.done && task._done.isCompleted) return;
     task.status = status;
     task.ended = DateTime.now();
@@ -335,6 +341,11 @@ class TaskManager {
       'status': status.name,
       'summary': summary,
       'output_file': task.outputFile,
+      if (envelope case final report?)
+        'result': report.toJson(
+          prompt: session.subagents[task.id]?.prompt,
+          durationMs: task.ended!.difference(task.started).inMilliseconds,
+        ),
       'usage': {
         'total_tokens': task.tokens,
         'tool_uses': task.toolUses,

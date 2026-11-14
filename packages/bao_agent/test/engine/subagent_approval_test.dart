@@ -277,6 +277,78 @@ void main() {
       final notification = await done.timeout(const Duration(seconds: 10));
       expect(notification['status'], 'completed');
       expect(notification['summary'], contains('One'));
+      final envelope = (notification['result'] as Map).cast<String, Object?>();
+      expect(envelope['status'], 'completed');
+      expect(envelope['agentId'], notification['task_id']);
+      expect(envelope['agentType'], 'general-purpose');
+      expect(envelope['content'], [
+        {'type': 'text', 'text': 'SUB:one done'},
+      ]);
+      expect(envelope['assignedModel'], isNotEmpty);
+      expect(envelope['actualModel'], seen['SUB:one']!.model);
+      // The transcript stays in its sidechain; the parent receives only the
+      // child's last text, not its messages or its tools' outputs.
+      expect(jsonEncode(envelope), isNot(contains('tool_use')));
+      expect(jsonEncode(envelope), isNot(contains('messages')));
     },
   );
+
+  test('failure and cancellation are distinct, compact outcomes', () async {
+    h = await Harness.start(model: 'opus');
+    h.model.route = (request) {
+      final prompt = promptOf(request);
+      if (prompt.contains('SUB:fail')) {
+        return Reply.failing(const ApiError('upstream unavailable'));
+      }
+      if (prompt.contains('SUB:cancel')) return Reply.text('not reached');
+      return null;
+    };
+    h.model.script.addAll([
+      Reply.tool('Agent', {
+        'description': 'Fails',
+        'prompt': 'SUB:fail',
+        'run_in_background': false,
+      }),
+      Reply.text('done'),
+    ]);
+    await h.turn('go');
+    final failed = h.toolResults.single;
+    expect(failed['is_error'], isTrue);
+    final failure = (failed['tool_use_result'] as Map).cast<String, Object?>();
+    expect(failure['status'], 'failed');
+    expect(failure['error'], contains('upstream unavailable'));
+
+    final previous = h;
+    await previous.engine.close();
+    h = await Harness.start(from: previous, model: 'opus');
+    h.model.route = (request) {
+      if (promptOf(request).contains('SUB:cancel')) {
+        return Reply.tool('Read', {'file_path': 'one.txt'});
+      }
+      return null;
+    };
+    h.model.script.addAll([
+      Reply.tool('Agent', {
+        'description': 'Stops',
+        'prompt': 'SUB:cancel',
+        'run_in_background': false,
+      }),
+      Reply.text('done'),
+    ]);
+    final turn = h.turn('go');
+    await h.messages.firstWhere(
+      (message) =>
+          message['type'] == 'system' && message['subtype'] == 'task_started',
+    );
+    await h.request('interrupt');
+    await turn;
+    final cancelled = h.toolResults.single;
+    expect(cancelled['is_error'], isTrue, reason: jsonEncode(h.of('user')));
+    expect(cancelled['is_error'], isTrue, reason: jsonEncode(h.of('user')));
+    expect(
+      (cancelled['tool_use_result'] as Map)['status'],
+      'cancelled',
+      reason: jsonEncode(h.of('result')),
+    );
+  });
 }
