@@ -523,9 +523,15 @@ class TaskManager {
   /// Restores the read-only index of the previous process. Its processes
   /// and model calls are gone: no unfinished task is automatically rerun.
   void restore(Iterable<Map<String, Object?>> records) {
+    // The index is append-only: a task's start, end and recovery are
+    // successive records. Only its last snapshot says how it ended.
+    final latest = <String, Map<String, Object?>>{};
     for (final entry in records) {
       if (entry['type'] != 'task_index' || entry['task'] is! Map) continue;
       final record = (entry['task'] as Map).cast<String, Object?>();
+      if (record['task_id'] case final String id) latest[id] = record;
+    }
+    for (final record in latest.values) {
       final id = record['task_id'];
       final type = record['task_type'];
       if (id is! String || type is! String || tasks.containsKey(id)) continue;

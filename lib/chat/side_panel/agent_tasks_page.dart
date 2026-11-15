@@ -84,7 +84,9 @@ class AgentTasksPage extends StatelessWidget {
                             !entry.agent.readOnly
                         ? session.stopOf(entry.agent.id)
                         : null,
-                    onRetry: entry.agent.status == CommandStatus.running
+                    onRetry:
+                        entry.agent.status == CommandStatus.running ||
+                            entry.agent.readOnly
                         ? null
                         : () => confirmAgentRetry(
                             context,
@@ -209,6 +211,7 @@ class _AgentRow extends StatelessWidget {
         CommandStatus.running => l10n.sidePanelAgentRunning,
         CommandStatus.succeeded => l10n.sidePanelAgentDone,
         CommandStatus.failed => l10n.sidePanelAgentFailed,
+        CommandStatus.interrupted => l10n.sidePanelAgentInterrupted,
       };
 
   /// The first line of [text] with anything in it.
@@ -231,8 +234,6 @@ class _AgentRow extends StatelessWidget {
     final model = agent.assignedModel ?? agent.model;
     final status = agent.queued
         ? l10n.sidePanelAgentQueued
-        : agent.readOnly && agent.status == CommandStatus.failed
-        ? l10n.sidePanelAgentInterrupted
         : agent.outcome == 'cancelled'
         ? l10n.sidePanelAgentCancelled
         : _status(l10n, agent);

@@ -852,6 +852,7 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
               task.kind == KernelTaskKind.agent &&
               task.toolUseId == id &&
               task.status != CommandStatus.running &&
+              task.status != CommandStatus.interrupted &&
               (_kernel as RunsBackgroundTasks).canRetryTask(task.id),
         )
         .firstOrNull;

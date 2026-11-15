@@ -333,7 +333,8 @@ class AgentItem extends ChatItem {
   final String? modelSource;
 
   /// `completed`, `failed`, or `cancelled`, if its result says. The legacy
-  /// [status] stays the visual running/succeeded/failed projection.
+  /// [status] stays the visual running/succeeded/failed projection, with
+  /// [CommandStatus.interrupted] for restored work that never restarted.
   final String? outcome;
   final List<ChatItem> children;
 
@@ -346,6 +347,9 @@ class AgentItem extends ChatItem {
   /// Waiting for its parent's concurrency slot, or restored without its
   /// live process after the session's previous window closed.
   final bool queued;
+
+  /// A previous process's task, whose process or model call cannot be
+  /// controlled or retried through this session.
   final bool readOnly;
 
   AgentItem copyWith({
@@ -520,7 +524,7 @@ class NoticeItem extends ChatItem {
   final String text;
 }
 
-enum CommandStatus { running, succeeded, failed }
+enum CommandStatus { running, succeeded, failed, interrupted }
 
 class TerminalItem extends ChatItem {
   const TerminalItem({

@@ -221,7 +221,11 @@ Future<void> confirmAgentRetry(
   SubagentFeed feed,
 ) async {
   final agent = feed.agent;
-  if (agent == null || agent.status == CommandStatus.running) return;
+  if (agent == null ||
+      agent.status == CommandStatus.running ||
+      agent.readOnly) {
+    return;
+  }
   final l10n = context.l10n;
   final task = session.taskOfAgent(feed.path);
   final choices = session.retryModels;

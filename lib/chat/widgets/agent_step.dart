@@ -309,6 +309,7 @@ class _AgentStepState extends State<AgentStep> {
       CommandStatus.running => l10n.agentStateRunning,
       CommandStatus.succeeded => l10n.agentStateDone,
       CommandStatus.failed => l10n.agentStateFailed,
+      CommandStatus.interrupted => l10n.sidePanelAgentInterrupted,
     };
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 6),
@@ -510,6 +511,11 @@ class AgentStatusIcon extends StatelessWidget {
           Icons.error_outline_rounded,
           size: 14,
           color: themeColors['testing.iconFailed'],
+        ),
+        CommandStatus.interrupted => Icon(
+          Icons.pause_circle_outline_rounded,
+          size: 14,
+          color: AppColors.textFaint,
         ),
       },
     );

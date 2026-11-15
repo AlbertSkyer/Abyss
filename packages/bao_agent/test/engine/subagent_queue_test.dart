@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:bao_agent/src/engine/tasks.dart';
 import 'package:bao_agent/src/tools/team_tools.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,49 +91,92 @@ void main() {
     },
   );
 
-  test(
-    'reopen restores a read-only interrupted index without restarting',
-    () async {
-      h = await Harness.start();
-      await h.request('initialize');
-      h.engine.session.tasks.registerAgent(
-        description: 'Left running',
-        agentId: 'stale-running',
-        parentId: 'p',
+  test('reopen restores a read-only interrupted index without restarting', () async {
+    h = await Harness.start();
+    await h.request('initialize');
+    final tasks = h.engine.session.tasks;
+    for (final (id, status) in [
+      ('finished', TaskStatus.completed),
+      ('errored', TaskStatus.failed),
+      ('live-queued', TaskStatus.queued),
+    ]) {
+      final task = tasks.registerAgent(
+        description: id,
+        agentId: id,
+        parentId: status == TaskStatus.queued ? 'p' : null,
       );
-      h.engine.session.tasks.registerAgent(
-        description: 'Left queued',
-        agentId: 'stale-queued',
-        parentId: 'p',
-      );
-      h.engine.session.tasks.registerAgent(
-        description: 'Left queued 2',
-        agentId: 'stale-queued-2',
-        parentId: 'p',
-      );
-      final id = h.engine.session.sessionId;
-      final previous = h;
-      await previous.engine.close();
-      h = await Harness.start(from: previous, resume: id);
-      await h.request('initialize');
-      final restored = h.engine.session.tasks;
-      expect(restored.tasks, hasLength(3));
-      expect(
-        restored.tasks.values.map((t) => t.status),
-        everyElement(TaskStatus.interrupted),
-      );
-      expect(restored.agentQueueStatus('p')['running'], 0);
-      expect(h.model.turns, isEmpty);
-      expect(await restored.stop('stale-running'), isFalse);
-      expect(
-        () => SendMessageTool.find(h.engine.session, 'stale-running'),
-        throwsStateError,
-      );
-      final events = h.of('system', 'task_started');
-      expect(events, hasLength(3));
-      expect(events.every((event) => event['read_only'] == true), isTrue);
-    },
-  );
+      if (status != TaskStatus.queued) tasks.finish(task, status);
+    }
+    // An unfinished record from before finished-task persistence, or from
+    // a process that never wrote its end, is recovered as interrupted too.
+    final file = File(h.sessionFile);
+    file.writeAsStringSync(
+      '${jsonEncode({
+        'type': 'task_index',
+        'task': {'task_id': 'legacy-running', 'task_type': 'local_agent', 'description': 'Old unfinished record', 'status': 'running', 'is_backgrounded': true},
+      })}\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+    tasks.registerAgent(
+      description: 'Left running',
+      agentId: 'stale-running',
+      parentId: 'p',
+    );
+    h.engine.session.tasks.registerAgent(
+      description: 'Left queued',
+      agentId: 'stale-queued',
+      parentId: 'p',
+    );
+    h.engine.session.tasks.registerAgent(
+      description: 'Left queued 2',
+      agentId: 'stale-queued-2',
+      parentId: 'p',
+    );
+    final id = h.engine.session.sessionId;
+    final previous = h;
+    await previous.engine.close();
+    // A lost process leaves no killed records. Remove only those written
+    // by this harness's orderly close, keeping each task's last snapshot
+    // from the previous process and its completed/failed final states.
+    file.writeAsStringSync(
+      '${file.readAsLinesSync().where((line) {
+        final entry = jsonDecode(line);
+        if (entry case {'type': 'task_index', 'task': {'status': 'killed'}}) {
+          return false;
+        }
+        return true;
+      }).join('\n')}\n',
+      flush: true,
+    );
+    h = await Harness.start(from: previous, resume: id);
+    await h.request('initialize');
+    final restored = h.engine.session.tasks;
+    expect(restored.tasks, hasLength(7));
+    for (final id in [
+      'stale-running',
+      'stale-queued',
+      'stale-queued-2',
+      'live-queued',
+      'legacy-running',
+    ]) {
+      expect(restored[id]?.status, TaskStatus.interrupted, reason: id);
+    }
+    expect(restored['finished']?.status, TaskStatus.completed);
+    expect(restored['errored']?.status, TaskStatus.failed);
+    expect(restored.agentQueueStatus('p')['running'], 0);
+    expect(restored.agentQueueStatus('p')['queued'], 0);
+    expect(h.model.turns, isEmpty);
+    expect(await restored.stop('stale-running'), isFalse);
+    expect(
+      () => SendMessageTool.find(h.engine.session, 'stale-running'),
+      throwsStateError,
+    );
+    final events = h.of('system', 'task_started');
+    expect(events, hasLength(7));
+    expect(events.every((event) => event['read_only'] == true), isTrue);
+    expect(events.where((event) => event['status'] == 'queued'), isEmpty);
+  });
 
   test('limit is configurable and clamped', () async {
     h = await Harness.start(environment: {'BAOCODE_SUBAGENT_CONCURRENCY': '1'});

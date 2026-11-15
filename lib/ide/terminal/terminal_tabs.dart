@@ -181,6 +181,11 @@ class TerminalTaskIcon extends StatelessWidget {
       size: size,
       color: AppColors.added,
     ),
+    CommandStatus.interrupted => Icon(
+      Icons.pause_circle_outline_rounded,
+      size: size,
+      color: themeColors['icon.foreground'],
+    ),
     CommandStatus.failed => Icon(
       Codicons.error,
       size: size,

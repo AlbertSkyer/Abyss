@@ -1945,7 +1945,8 @@ class ClaudeTranslator {
           agent.item = agent.item.copyWith(
             status: _taskStatus(message['status']),
             queued: queued,
-            readOnly: restored,
+            readOnly:
+                restored || _tasks[taskId]?.status == CommandStatus.interrupted,
             activity: restored
                 ? 'Restored read-only from the previous session; not restarted'
                 : queued
@@ -2077,7 +2078,8 @@ class ClaudeTranslator {
     final task? =>
       task.kind == KernelTaskKind.agent &&
           task.background &&
-          task.status != CommandStatus.running,
+          task.status != CommandStatus.running &&
+          task.status != CommandStatus.interrupted,
     _ => false,
   };
 
@@ -2127,6 +2129,9 @@ class ClaudeTranslator {
       }
       agent.item = agent.item.copyWith(
         status: status,
+        readOnly:
+            agent.item.readOnly ||
+            _tasks[taskId]?.status == CommandStatus.interrupted,
         queued: false,
         outcome: _string(result?['outcome'] ?? result?['status']),
         model: agent.item.model == null
@@ -2417,7 +2422,8 @@ class ClaudeTranslator {
   static CommandStatus? _taskStatus(Object? status) => switch (status) {
     'running' || 'pending' => CommandStatus.running,
     'completed' => CommandStatus.succeeded,
-    'failed' || 'killed' || 'stopped' || 'interrupted' => CommandStatus.failed,
+    'interrupted' => CommandStatus.interrupted,
+    'failed' || 'killed' || 'stopped' => CommandStatus.failed,
     _ => null,
   };
 

@@ -191,6 +191,17 @@ void main() {
 
     cli.push({
       'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 't1',
+      'tool_use_id': 'toolu_a',
+      'description': 'Compare the games',
+      'task_type': 'local_agent',
+      'status': 'interrupted',
+      'read_only': true,
+      'is_backgrounded': true,
+    });
+    cli.push({
+      'type': 'system',
       'subtype': 'task_notification',
       'task_id': 't1',
       'tool_use_id': 'toolu_a',
@@ -200,7 +211,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await pumpBoard(tester, session, panel);
     expect(find.text('Queued'), findsNothing);
-    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Interrupted'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+    expect(session.agentTree.single.agent.readOnly, isTrue);
+    expect(find.byIcon(Icons.refresh_rounded), findsNothing);
+    expect(cli.requests('retry_agent'), isEmpty);
 
     cli.push({
       'type': 'system',
@@ -221,6 +236,45 @@ void main() {
       reason:
           '${session.agentTree.map((e) => '${e.agent.description}:${e.agent.status}:${e.agent.readOnly}').toList()}',
     );
+
+    cli.push({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 'stale-failed',
+      'description': 'Failed before close',
+      'task_type': 'local_agent',
+      'status': 'failed',
+      'read_only': true,
+      'is_backgrounded': true,
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Interrupted'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh_rounded), findsNothing);
+    expect(cli.requests('retry_agent'), isEmpty);
+  });
+
+  testWidgets('a queued child stays queued while it is live', (tester) async {
+    final (:session, :cli) = await scripted(tester);
+    final panel = AgentSidePanel();
+    cli.push({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 't1',
+      'tool_use_id': 'toolu_a',
+      'description': 'Compare the games',
+      'task_type': 'local_agent',
+      'status': 'queued',
+      'queue_state': 'queued',
+      'is_backgrounded': true,
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Queued'), findsOneWidget);
+    expect(find.text('Interrupted'), findsNothing);
+    expect(find.byIcon(Icons.stop_rounded), findsNothing);
+    expect(find.byIcon(Icons.refresh_rounded), findsNothing);
   });
 
   testWidgets('with no child, it says so', (tester) async {
