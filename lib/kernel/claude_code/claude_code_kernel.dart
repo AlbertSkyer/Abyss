@@ -30,6 +30,7 @@ import '../kernel_types.dart';
 import '../prompt_suggestions.dart';
 import '../transcript.dart';
 import '../queued_messages.dart';
+import 'agent_task_ledger.dart';
 import 'claude_code_transport.dart';
 import 'claude_code_translator.dart';
 import 'claude_core_setting.dart';
@@ -136,6 +137,7 @@ class ClaudeCodeKernel
     this._codex,
     ProviderEnvironment? providerEnvironment,
     Future<bool> Function(String url)? openLink,
+    Future<AgentTaskLedger>? taskLedger,
   }) : _openLink = openLink ?? openExternal,
        _usageOffBy = usageOffBy ?? _usageOn,
        _providers = providers ?? ModelProviders.current,
@@ -146,7 +148,10 @@ class ClaudeCodeKernel
       nextSeq: () => nextSeq,
       goalSaid: _syncGoal,
       ownModel: _ownModel,
+      agentOutcome: _agentOutcome,
+      agentChanged: _agentChanged,
     );
+    _ledgerReady = _loadTaskLedger(taskLedger);
     _providers.addListener(_providersChanged);
     ExtensionSwitches.changes?.addListener(_applySwitches);
     _live.add(this);
@@ -547,7 +552,12 @@ class ClaudeCodeKernel
   String? get sessionId => _sessionId;
 
   @override
-  Future<void> get stopped => _stopped;
+  Future<void> get stopped async {
+    await _stopped;
+    await _ledgerReady;
+    await _taskLedger?.flush();
+  }
+
   Future<void> _stopped = Future.value();
 
   void _setHealth(KernelHealth health) {
@@ -613,6 +623,7 @@ class ClaudeCodeKernel
       (AppEdition.isAbyss || ClaudeCore.current() == ClaudeCore.builtin);
 
   Future<void> _launch() async {
+    await _ledgerReady;
     await _history;
     // One process at a time on a session: the last one, if restarted.
     await _stopped;
@@ -989,6 +1000,9 @@ class ClaudeCodeKernel
 
   @override
   void dispose() {
+    if (_sessionId case final session?) {
+      _taskLedger?.reconcileInterrupted(session);
+    }
     _disposed = true;
     _goalRetry?.cancel();
     _providers.removeListener(_providersChanged);
@@ -1235,15 +1249,15 @@ class ClaudeCodeKernel
     _permissions.clear();
     for (final MapEntry(key: id, value: permission) in pending) {
       emit(InteractionResolved(nextSeq, id));
+      if (permission.agent && permission.hook) {
+        if (permission.toolUseId case final toolUseId?) {
+          _cancelAgentStart(toolUseId);
+        }
+      }
       if (answer && permission.agent && _control != null && _running) {
         const reason =
             'The approval was cancelled because the conversation stopped '
             'or its window closed. The subagent was not started.';
-        if (permission.hook) {
-          if (permission.toolUseId case final toolUseId?) {
-            _translator.cancelAgentStart(toolUseId);
-          }
-        }
         _control!.respond(
           id,
           permission.hook
@@ -1572,7 +1586,17 @@ class ClaudeCodeKernel
   }
 
   @override
-  void stopTask(String taskId) => _tell('stop_task', {'task_id': taskId});
+  void stopTask(String taskId) {
+    if (AppEdition.isAbyss) {
+      final call = _memberCalls[taskId] ?? _translator.stopAgentTask(taskId);
+      if (call != null && _sessionId != null) {
+        _taskLedger?.stopTask(_sessionId!, call);
+        _translator.stopAgentTask(taskId);
+        _translator.refreshAgentDecisions();
+      }
+    }
+    _tell('stop_task', {'task_id': taskId});
+  }
 
   @override
   void moveToBackground(String toolUseId) =>
@@ -1823,7 +1847,7 @@ class ClaudeCodeKernel
         });
         if (!hookAllowed) {
           if (permission.toolUseId case final toolUseId?) {
-            _translator.cancelAgentStart(toolUseId);
+            _cancelAgentStart(toolUseId);
           }
         }
       } else {
@@ -2163,10 +2187,146 @@ class ClaudeCodeKernel
   static String? _clean(String? text) =>
       text?.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '').trim();
 
+  AgentTaskLedger? _taskLedger;
+  late final Future<void> _ledgerReady;
+  final Map<String, String> _memberCalls = {};
+  final Map<String, String> _memberCards = {};
+  final Map<String, String> _activeCardCalls = {};
+
+  Future<void> _loadTaskLedger(Future<AgentTaskLedger>? injected) async {
+    if (!AppEdition.isAbyss || RemoteLocation.isRemote(_cwd)) return;
+    try {
+      _taskLedger = await (injected ?? AgentTaskLedger.open());
+      if (_disposed) return;
+      if (_context.resume?.id case final id?) {
+        _taskLedger!.reconcileInterrupted(id);
+        final tasks = _taskLedger!.tasksFor(id);
+        for (final member in _taskLedger!.membersFor(id)) {
+          final agentId = member.cliAgentId;
+          if (agentId == null) continue;
+          final runs = tasks.where((task) => task.memberId == member.memberId);
+          if (runs.isEmpty) continue;
+          final card = runs.first.toolUseId;
+          _memberCards[agentId] = card;
+          _memberCalls[agentId] = runs.last.toolUseId;
+          _activeCardCalls[card] = runs.last.toolUseId;
+        }
+      }
+    } catch (error) {
+      emit(
+        ItemUpserted(
+          nextSeq,
+          'agent-ledger-error',
+          NoticeItem(NoticeKind.error, 'Could not load task decisions: $error'),
+        ),
+      );
+    }
+  }
+
+  String? _agentOutcome(String call) {
+    final session = _sessionId;
+    if (session == null) return null;
+    final task = _taskLedger?.findTask(session, _activeCardCalls[call] ?? call);
+    if (task == null) return null;
+    if (task.hostCancelled || task.hostStopped) return 'cancelled';
+    return task.status == AgentTaskStatus.interrupted ? 'interrupted' : null;
+  }
+
+  void _agentChanged(String call, AgentItem item) {
+    final ledger = _taskLedger;
+    final session = _sessionId;
+    if (ledger == null || session == null) return;
+    call = _activeCardCalls[call] ?? call;
+    final existing = ledger.findTask(session, call);
+    // A tool call is not a started task. task_started supplies the actual
+    // CLI member identity; a denied start is recorded separately.
+    if (existing == null) return;
+    if (item.assignedModel ?? item.model case final model?) {
+      ledger.recordMember(
+        sessionId: session,
+        memberId: existing.memberId,
+        model: model,
+        description: item.description,
+      );
+    }
+    // Terminal state comes from the CLI run's events below, not from the
+    // member's reused card, which may still show the preceding run's result.
+  }
+
+  void _cancelAgentStart(String call) {
+    if (_sessionId case final session?) {
+      _taskLedger?.cancelStart(session, call);
+    }
+    _translator.cancelAgentStart(call);
+  }
+
+  void _recordAgentTask(Map<String, Object?> message) {
+    final ledger = _taskLedger;
+    final session = _sessionId;
+    if (ledger == null || session == null) return;
+    if (message['type'] != 'system') return;
+    if (message['subtype'] == 'task_started' &&
+        message['task_type'] == 'local_agent') {
+      final agentId = message['task_id'] as String?;
+      final call = message['tool_use_id'] as String?;
+      if (agentId == null || call == null) return;
+      _memberCalls[agentId] = call;
+      final card = _memberCards.putIfAbsent(agentId, () => call);
+      _activeCardCalls[card] = call;
+      final memberId = 'member:$agentId';
+      ledger.recordMember(
+        sessionId: session,
+        memberId: memberId,
+        cliAgentId: agentId,
+        model: message['model'] as String?,
+        description: message['description'] as String?,
+      );
+      ledger.recordStart(
+        sessionId: session,
+        toolUseId: call,
+        memberId: memberId,
+        taskId: 'task:${message['run_id'] ?? call}',
+        runId: message['run_id'] as String?,
+        model: message['model'] as String?,
+        description: message['description'] as String?,
+      );
+    } else if (message['subtype'] == 'task_notification' ||
+        message['subtype'] == 'task_updated') {
+      final agentId = message['task_id'] as String?;
+      if (agentId == null) return;
+      final call = message['tool_use_id'] as String? ?? _memberCalls[agentId];
+      if (call == null) return;
+      final record = ledger.findTask(session, call);
+      if (record == null) return;
+      if (message['run_id'] != null &&
+          record.runId != null &&
+          message['run_id'] != record.runId) {
+        return;
+      }
+      final patch = message['patch'] as Map?;
+      final status = patch?['status'] ?? message['status'];
+      final outcome = switch (status) {
+        'completed' => AgentTaskStatus.completed,
+        'failed' => AgentTaskStatus.failed,
+        'stopped' || 'killed' || 'interrupted' => AgentTaskStatus.interrupted,
+        _ => null,
+      };
+      if (outcome != null) {
+        ledger.recordEnd(
+          session,
+          call,
+          status: outcome,
+          result: message['summary'] as String? ?? patch?['error'] as String?,
+        );
+      }
+    }
+  }
+
   // --- Output -------------------------------------------------------------------------
 
   void _receive(Map<String, Object?> message) {
     if (_control?.receive(message) ?? false) return;
+    _recordAgentTask(message);
     _usage?.receive(message);
     if (message['type'] == 'stream_event') {
       final told = _toldContext;
@@ -3164,6 +3324,9 @@ class ClaudeCodeKernel
   }
 
   void _exited(int code, String stderr, {String? executable}) {
+    if (_sessionId case final session?) {
+      _taskLedger?.reconcileInterrupted(session);
+    }
     final wasReady = _health.status == KernelHealthStatus.ready;
     _teardown(answering: false);
     if (!wasReady &&
@@ -3195,6 +3358,7 @@ class ClaudeCodeKernel
     _queued.clear();
     _held.clear();
     _translator.endTasks();
+    _translator.refreshAgentDecisions();
     if (_disposed) return;
     if (code == 0 && wasReady) {
       _setHealth(KernelHealth.idle);
@@ -3287,6 +3451,7 @@ class ClaudeCodeKernel
     _loadingHistory = true;
     try {
       // Read alongside; never fails.
+      await _ledgerReady;
       final keptTurns = _keptTurns(session);
       final page = await read(session, turns: _firstTurns);
       final kept = await keptTurns;
@@ -3361,6 +3526,7 @@ class ClaudeCodeKernel
               emit: items.apply,
               nextSeq: () => ++seq,
               ownModel: _ownModel,
+              agentOutcome: _agentOutcome,
             )
             ..replaying = true
             ..keptTurns = kept;

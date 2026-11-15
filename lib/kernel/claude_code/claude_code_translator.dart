@@ -24,10 +24,16 @@ class ClaudeTranslator {
     required this.nextSeq,
     this.goalSaid,
     this.ownModel,
+    this.agentChanged,
+    this.agentOutcome,
   });
 
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
+
+  /// Host-owned task decisions supplement, but never rewrite, CLI history.
+  final String? Function(String toolUseId)? agentOutcome;
+  final void Function(String toolUseId, AgentItem item)? agentChanged;
 
   /// Whether the running core offers its explicit child management protocol.
   bool managedAgentTasks = false;
@@ -568,8 +574,38 @@ class ClaudeTranslator {
 
   void _putAgent(String id) {
     final agent = _agents[id]!;
-    agent.item = agent.item.copyWith(children: [...agent.children.values]);
+    final outcome =
+        agentOutcome?.call(id) ??
+        (_cancelledAgentStarts.contains(id) ? 'cancelled' : null);
+    agent.item = agent.item.copyWith(
+      children: [...agent.children.values],
+      status: outcome == 'cancelled' || outcome == 'interrupted'
+          ? CommandStatus.interrupted
+          : null,
+      outcome: outcome,
+      approvalStatus: outcome == 'cancelled' ? 'denied' : null,
+    );
+    if (!replaying) agentChanged?.call(id, agent.item);
     _put(id, agent.item, parent: _tools[id]?.parent);
+  }
+
+  /// Applies a host decision after a task or history has already appeared.
+  void refreshAgentDecisions() {
+    for (final id in _agents.keys.toList()) {
+      _putAgent(id);
+    }
+  }
+
+  /// A stop belongs to this run, not a generic execution failure.
+  String? stopAgentTask(String taskId) {
+    final call = _tasks[taskId]?.toolUseId ?? _agentCalls[taskId];
+    if (call == null) return null;
+    cancelAgentStart(call);
+    if (_tasks[taskId] case final task?) {
+      _tasks[taskId] = task.copyWith(status: CommandStatus.interrupted);
+      _reportTasks();
+    }
+    return call;
   }
 
   // --- Streaming ---------------------------------------------------------------
@@ -2104,7 +2140,10 @@ class ClaudeTranslator {
         final patch = _map(message['patch']);
         if (_tasks[taskId] case final task?) {
           _tasks[taskId] = task.copyWith(
-            status: _taskStatus(patch['status']) ?? task.status,
+            status: switch (agentOutcome?.call(task.toolUseId ?? '')) {
+              'cancelled' || 'interrupted' => CommandStatus.interrupted,
+              _ => _taskStatus(patch['status']) ?? task.status,
+            },
             background: patch['is_backgrounded'] as bool?,
             description: _string(patch['description']),
             summary: _string(patch['error']),
@@ -2200,6 +2239,15 @@ class ClaudeTranslator {
     Map<String, Object?> usage = const {},
     Map<String, Object?>? result,
   }) {
+    final call = _tasks[taskId]?.toolUseId ?? _agentCalls[taskId] ?? toolUseId;
+    if (call != null &&
+        (const {
+              'cancelled',
+              'interrupted',
+            }.contains(agentOutcome?.call(call)) ||
+            _cancelledAgentStarts.contains(call))) {
+      status = CommandStatus.interrupted;
+    }
     if (_tasks[taskId] case final task?) {
       _tasks[taskId] = task.copyWith(
         status: status,
