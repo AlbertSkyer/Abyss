@@ -618,6 +618,12 @@
     "description": "Menu bar menu."
   },
   "menuView": "View",
+  "menuWindow": "Window",
+  "windowCurrentConversation": "Current Conversation",
+  "windowPreviousConversation": "Previous Conversation",
+  "windowNextConversation": "Next Conversation",
+  "windowOpenIde": "Open IDE",
+  "menuShowSidebarAgentTasks": "Show Subagent Tasks in Sidebar",
   "@menuView": {
     "description": "Menu bar menu."
   },
@@ -1206,6 +1212,9 @@
   "emojiGroupSymbols": "Symbols",
   "emojiGroupFlags": "Flags",
   "workspaceBackToChat": "Back to chat",
+  "workspaceOpenChatTab": "Open in New Tab",
+  "workspaceOpenChatRight": "Open to the Right",
+  "workspaceKeepChatTab": "Keep Tab",
   "@workspaceBackToChat": {
     "description": "Title bar button leaving the IDE layout."
   },
@@ -8973,6 +8982,8 @@
   "settingsTransferNotAFile": "This is not a settings file Abyss exported.",
   "settingsTransferFailed": "Not done: {error}",
   "@settingsTransferFailed": {"placeholders": {"error": {"type": "String"}}},
+  "generalSettingsSidebarAgentTasks": "Show subagent tasks in the sidebar",
+  "generalSettingsSidebarAgentTasksDescription": "Shows each conversation's subagent tasks below it. Hiding them does not stop tasks or clear their history, unread state, folding or approvals.",
   "generalSettingsSessionTools": "Agents can coordinate other conversations",
   "generalSettingsSessionToolsDescription": "An agent can list your other conversations, read where they stand without waking them, hand them work (resumed if stopped, queued if busy) and wait for them. For one conversation that coordinates the others; agents started after the change have it.",
   "generalSettingsCommandLine": "Command Line",

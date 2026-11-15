@@ -8,6 +8,35 @@ String cells(ChatGrid<String> grid) =>
     '${grid.at(0)}${grid.at(1)}/${grid.at(2)}${grid.at(3)}';
 
 void main() {
+  group('persistent chat tabs', () {
+    test('explicit tabs are not evicted and survive collapsing a split', () {
+      final grid = ChatGrid<String>(preserveTabs: true)..show('A');
+      for (var i = 0; i < 12; i++) {
+        grid.coverTab(grid.panes.single, 'tab-$i');
+      }
+      expect(grid.tabs(grid.panes.single).length, 13);
+      grid.split(grid.panes.single, PaneSide.right, 'right');
+      grid.take('right');
+      expect(grid.tabs(grid.panes.single).length, 13);
+    });
+
+    test('moving active and covered tabs preserves peers and ordering', () {
+      final grid = ChatGrid<String>(preserveTabs: true)
+        ..show('A')
+        ..coverTab('A', 'B')
+        ..split('B', PaneSide.right, 'C')
+        ..coverTab('C', 'D');
+      expect(grid.moveTab('B', 'D', before: 'C'), isTrue);
+      expect(grid.panes, ['A', 'B']);
+      expect(grid.tabs('B'), ['B', 'C', 'D']);
+      expect(grid.moveTab('C', 'A'), isTrue);
+      expect(grid.tabs('C'), ['A', 'C']);
+      expect(grid.tabs('B'), ['B', 'D']);
+      expect(grid.reorderTab('D', 'B', before: 'B'), isTrue);
+      expect(grid.tabs('B'), ['D', 'B']);
+    });
+  });
+
   test('one pane splits any way; two only across their line', () {
     final grid = ChatGrid<String>()..show('A');
     for (final side in PaneSide.values) {

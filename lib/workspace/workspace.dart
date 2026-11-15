@@ -18,6 +18,7 @@ import '../icons/project_icon.dart';
 import '../kernel/agent_kernel.dart';
 import '../kernel/kernel_registry.dart';
 import '../kernel/kernel_types.dart';
+import '../platform/app_edition.dart';
 import '../l10n/l10n.dart';
 import '../models/model_providers.dart';
 import '../theme/workbench_theme.dart' show ColorThemeStorage;
@@ -351,7 +352,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// through [select], [openBeside], [openInPlaceOf] and [closePane]; only
   /// its lines are the view's to move.
   ChatGrid<AgentThread> get grid => _grid;
-  final ChatGrid<AgentThread> _grid = ChatGrid();
+  final ChatGrid<AgentThread> _grid = ChatGrid(
+    preserveTabs: AppEdition.isAbyss,
+  );
 
   bool _loading = false;
   bool get loading => _loading;
@@ -420,7 +423,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     }
     _restoreChatView();
     if (!_disposed) resumes.resume = _resumeAfterReset;
-    if (_selected == null && _projects.isNotEmpty) {
+    if (_selected == null && _projects.isNotEmpty && !_emptyChatView) {
       create();
     } else {
       notifyListeners();
@@ -2550,6 +2553,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   void _draftChanged(AgentThread thread) {
+    // ComposerDraft.save is synchronous on every editor change. Pin here,
+    // before a subsequent sidebar click can replace a newly edited preview.
+    if (AppEdition.isAbyss && _hasDraft(thread)) pinChatTab(thread);
     final draft = thread.session.draft;
     final key = thread.id ?? '$_newDraft${thread.project.path}';
     if (_draftKeys[thread] case final was? when was != key) {
@@ -3089,6 +3095,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   void _sync(AgentThread thread) {
     if (!_threads.contains(thread)) return;
     final session = thread.session;
+    if (AppEdition.isAbyss && _hasDraft(thread)) pinChatTab(thread);
     _noteLimit(thread);
     if (session.isStreaming) {
       thread._quietSince = null;
@@ -3223,6 +3230,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// The panes as the last run left them, until [load] shows them again.
   Map<Object?, Object?>? _keptChatView;
   bool _chatViewRestored = false;
+  bool _emptyChatView = false;
 
   /// What [_chatView] was last saved as.
   String? _chatViewSaved;
@@ -3232,11 +3240,17 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// folder. Each pane's other tabs too, by id: those under it ([ChatGrid.
   /// under]'s order) and all its tabs in their order.
   Map<String, Object?>? get _chatView {
-    if (_grid.isEmpty) return null;
+    if (_grid.isEmpty) return AppEdition.isAbyss ? {'panes': const []} : null;
     final panes = _grid.panes;
     final focused = _selected;
-    List<List<String>> ids(List<AgentThread> Function(AgentThread) of) => [
-      for (final pane in panes) [for (final thread in of(pane)) ?thread.id],
+    Object keyOf(AgentThread thread) =>
+        thread.id ?? {'new': thread.project.path};
+    List<List<Object>> ids(List<AgentThread> Function(AgentThread) of) => [
+      for (final pane in panes)
+        [
+          for (final thread in of(pane))
+            if (AppEdition.isAbyss) keyOf(thread) else ?thread.id,
+        ],
     ];
     return {
       'panes': [
@@ -3247,6 +3261,18 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
         'under': ids(_grid.under),
         'tabs': ids(_grid.tabs),
       },
+      if (AppEdition.isAbyss)
+        'previews': [
+          for (final pane in panes)
+            switch (_grid
+                .tabs(pane)
+                .where(_previewChats.contains)
+                .firstOrNull) {
+              final preview? => keyOf(preview),
+              _ => null,
+            },
+        ],
+      if (AppEdition.isAbyss) 'active': [for (final pane in panes) keyOf(pane)],
       if (focused != null && panes.contains(focused))
         'focused': panes.indexOf(focused),
       'columnRatios': _grid.columnRatios,
@@ -3261,7 +3287,16 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     final kept = _keptChatView;
     _keptChatView = null;
     _chatViewRestored = true;
-    if (kept == null || _selected != null) return;
+    if (kept == null) return;
+    if (AppEdition.isAbyss &&
+        kept['panes'] is List &&
+        (kept['panes']! as List).isEmpty) {
+      _selected = null;
+      _chatGroup = null;
+      _emptyChatView = true;
+      return;
+    }
+    if (_selected != null) return;
     final panes = switch (kept['panes']) {
       final List<Object?> panes => panes,
       _ => const <Object?>[],
@@ -3303,23 +3338,43 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     }
     if (cells.isEmpty) return;
     _grid.restore([for (final cell in cells.cells) shown[cell]!]);
+    // New chats can also be covered tabs, not only the pane shown.
+    AgentThread? newTab(String path) {
+      final project = _projects.where((p) => p.path == path).firstOrNull;
+      if (project == null || isAppFolder(path)) return null;
+      return _threads
+              .where((t) => t.project == project && t.id == null && !t.archived)
+              .firstOrNull ??
+          _newThread(project);
+    }
+
     // Each pane's other tabs, those whose agent is gone left out.
     List<AgentThread> keptTabs(String key, int pane) => [
       if (kept[key] case final List<Object?> lists)
         if (lists.elementAtOrNull(pane) case final List<Object?> ids)
-          for (final id in ids.whereType<String>())
-            ?_threads
-                .where(
-                  (t) =>
-                      t.id == id && !t.archived && !isAppFolder(t.project.path),
-                )
-                .firstOrNull,
+          for (final id in ids)
+            ?switch (id) {
+              final String id =>
+                _threads
+                    .where(
+                      (t) =>
+                          t.id == id &&
+                          !t.archived &&
+                          !isAppFolder(t.project.path),
+                    )
+                    .firstOrNull,
+              {'new': final String path} when AppEdition.isAbyss => newTab(
+                path,
+              ),
+              _ => null,
+            },
     ];
     for (final MapEntry(key: pane, value: thread) in shown.entries) {
       _grid.restoreTabs(
         thread,
         keptTabs('tabs', pane),
         keptTabs('under', pane),
+        bounded: !AppEdition.isAbyss,
       );
     }
     if (kept['columnsFirst'] case final bool columnsFirst) {
@@ -3335,7 +3390,33 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       final int pane => shown[pane],
       _ => null,
     };
-    _focus(focused ?? _grid.at(0)!);
+    if (AppEdition.isAbyss) {
+      Object? keyOf(AgentThread thread) =>
+          thread.id ?? {'new': thread.project.path};
+      for (final MapEntry(key: pane, value: thread) in shown.entries) {
+        final tabs = _grid.tabs(thread);
+        if (kept['previews'] case final List<Object?> previews) {
+          final key = previews.elementAtOrNull(pane);
+          for (final tab in tabs) {
+            if (jsonEncode(key) == jsonEncode(keyOf(tab)) && !_hasDraft(tab)) {
+              _previewChats.add(tab);
+            }
+          }
+        }
+        final key = kept['active'] is List<Object?>
+            ? (kept['active']! as List<Object?>).elementAtOrNull(pane)
+            : null;
+        final active = tabs
+            .where(
+              (tab) => key != null && jsonEncode(key) == jsonEncode(keyOf(tab)),
+            )
+            .firstOrNull;
+        _activeChatTabs[thread] = active ?? thread;
+      }
+      _activateGroup(focused ?? _grid.at(0)!);
+    } else {
+      _focus(focused ?? _grid.at(0)!);
+    }
   }
 
   /// A line's ratios as [_chatView] kept them under [name]`s`, one for each
@@ -3365,10 +3446,21 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// Shows [thread] and focuses it: in its pane if it has one, else in
-  /// place of the focused one.
+  /// place of the focused one. In Abyss a closed session becomes a preview.
   void select(AgentThread thread) {
-    // A bot's: the phone's, never shown here.
     if (isAppFolder(thread.project.path)) return;
+    if (AppEdition.isAbyss &&
+        !_grid.contains(thread) &&
+        !_grid.isCovered(thread)) {
+      // Only browsing a session that is not open creates a preview. Clicking
+      // a visible pane or one of its existing tabs never changes its pin
+      // state. Open it in this exact group, not via _focus's project lookup.
+      _rememberSelection(thread);
+      _previewChat(thread);
+      _followInSidebar(thread);
+      notifyListeners();
+      return;
+    }
     if (_selected case final before? when !identical(before, thread)) {
       if (!identical(_agentsBack.lastOrNull, before)) _agentsBack.add(before);
       if (_agentsBack.length > _agentsKept) _agentsBack.removeAt(0);
@@ -3377,6 +3469,283 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     _focus(thread);
     _followInSidebar(thread);
     notifyListeners();
+  }
+
+  // --- Abyss: editor-like chat tabs -----------------------------------------
+
+  /// At most one temporary tab per group; explicit tabs are always fixed.
+  final Set<AgentThread> _previewChats = {};
+  final Map<AgentThread, AgentThread> _activeChatTabs = {};
+  AgentThread? _chatGroup;
+
+  AgentThread? get activeChatGroup => _chatGroup;
+  List<AgentThread> get chatTabsInActiveGroup =>
+      _chatGroup == null ? const [] : _grid.tabs(_chatGroup!);
+  bool isPreviewChat(AgentThread thread) => _previewChats.contains(thread);
+
+  AgentThread? _focusedChatGroup() {
+    if (_selected case final selected? when _grid.groupOf(selected) != null) {
+      return _grid.groupOf(selected);
+    }
+    final group = _chatGroup;
+    if (group != null && _grid.contains(group)) return group;
+    return _grid.panes.firstOrNull;
+  }
+
+  /// Focuses a tab in this exact group, never one found by project.
+  void _activateTab(AgentThread tab, {AgentThread? group}) {
+    final actual = group ?? _grid.groupOf(tab);
+    if (actual == null) return;
+    if (_grid.contains(actual) && !identical(actual, tab)) {
+      _grid.raise(actual, tab);
+    }
+    _selected = tab;
+    _chatGroup = _grid.groupOf(tab);
+    if (_chatGroup case final group?) _activeChatTabs[group] = tab;
+    tab._markSeen();
+    _snapshots[tab] = tab._snapshot;
+  }
+
+  void _rememberSelection(AgentThread thread) {
+    if (_selected case final before? when !identical(before, thread)) {
+      if (!identical(_agentsBack.lastOrNull, before)) _agentsBack.add(before);
+      if (_agentsBack.length > _agentsKept) _agentsBack.removeAt(0);
+      _agentsForward.clear();
+    }
+  }
+
+  void _activateGroup(AgentThread group) {
+    final active = _activeChatTabs[group];
+    _activateTab(
+      active != null && _grid.groupOf(active) == group ? active : group,
+    );
+  }
+
+  void openChatTab(AgentThread thread) {
+    if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return;
+    _rememberSelection(thread);
+    _previewChats.remove(thread);
+    if (_grid.groupOf(thread) != null) {
+      _activateTab(thread);
+    } else {
+      final group = _focusedChatGroup();
+      if (group != null) {
+        _previewChats.removeWhere((tab) => _grid.groupOf(tab) == group);
+      }
+      if (group == null) {
+        _grid.show(thread);
+        _activateTab(thread, group: thread);
+      } else {
+        _grid.coverTab(group, thread);
+        _pinCoveredTabs(_grid.under(thread));
+        _activateTab(thread);
+      }
+    }
+    notifyListeners();
+  }
+
+  void previewChat(AgentThread thread) {
+    if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return;
+    _rememberSelection(thread);
+    if (_grid.groupOf(thread) == null) _previewChat(thread);
+    _activateTab(thread);
+    notifyListeners();
+  }
+
+  void _previewChat(AgentThread thread) {
+    final group = _focusedChatGroup();
+    if (group == null) {
+      _grid.show(thread);
+      if (!_hasDraft(thread)) _previewChats.add(thread);
+      _activateTab(thread, group: thread);
+      return;
+    }
+    final preview = _grid
+        .tabs(group)
+        .where((tab) => _previewChats.contains(tab))
+        .firstOrNull;
+    if (preview case final old? when !identical(old, thread)) {
+      if (_grid.contains(old)) {
+        _grid.replace(old, thread);
+        _activeChatTabs[thread] = thread;
+        _activeChatTabs.remove(old);
+      } else {
+        _grid.take(old);
+        _activeChatTabs.remove(old);
+        _grid.coverTab(group, thread);
+        _pinCoveredTabs(_grid.under(thread));
+      }
+      _previewChats.remove(old);
+    } else if (!_grid.contains(thread)) {
+      if (group.untouched &&
+          !_hasDraft(group) &&
+          _grid.tabs(group).length == 1) {
+        _grid.replace(group, thread);
+      } else {
+        _grid.coverTab(group, thread);
+      }
+      _pinCoveredTabs(_grid.under(thread));
+    }
+    if (_hasDraft(thread)) {
+      _previewChats.remove(thread);
+    } else {
+      _previewChats.add(thread);
+    }
+    _activateTab(thread);
+  }
+
+  void _pinCoveredTabs(Iterable<AgentThread> tabs) {
+    for (final tab in tabs) {
+      if (_hasDraft(tab)) _previewChats.remove(tab);
+    }
+  }
+
+  bool _hasDraft(AgentThread thread) {
+    final session = thread.session;
+    final content = session.draft.content;
+    return (content != null && content.trim().isNotEmpty) ||
+        session.draft.images.isNotEmpty;
+  }
+
+  void pinChatTab(AgentThread thread) {
+    if (_grid.groupOf(thread) == null || !_previewChats.remove(thread)) return;
+    notifyListeners();
+  }
+
+  bool canOpenChatRight(AgentThread thread) {
+    if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return false;
+    final group = _focusedChatGroup();
+    if (group == null) return true;
+    return _grid.neighbor(group, PaneSide.right) != null ||
+        _grid.canSplit(group, PaneSide.right);
+  }
+
+  void openChatRight(AgentThread thread) {
+    if (!canOpenChatRight(thread)) return;
+    final source = _focusedChatGroup();
+    if (source == null) {
+      openChatTab(thread);
+      return;
+    }
+    _rememberSelection(thread);
+    _previewChats.remove(thread);
+    final right = _grid.neighbor(source, PaneSide.right);
+    if (right != null) {
+      if (_grid.groupOf(thread) == null) {
+        _grid.coverTab(right, thread);
+        _activateTab(thread);
+      } else {
+        _moveChatTab(thread, right);
+      }
+    } else if (_grid.groupOf(thread) != null) {
+      _splitChatTab(thread, source, PaneSide.right);
+    } else {
+      _grid.split(source, PaneSide.right, thread);
+      _activateTab(thread, group: thread);
+    }
+    _rememberSelection(thread);
+    notifyListeners();
+  }
+
+  /// Moves a tab into the group containing [target], not its whole old group.
+  void moveChatTab(AgentThread thread, AgentThread target) {
+    final group = _grid.groupOf(target);
+    if (group == null || identical(thread, target)) return;
+    _previewChats.remove(thread);
+    _moveChatTab(thread, group);
+    _rememberSelection(thread);
+    notifyListeners();
+  }
+
+  void _moveChatTab(AgentThread thread, AgentThread group) {
+    if (_grid.moveTab(thread, group)) {
+      _activateTab(thread);
+      _repairActiveTabs();
+    } else if (identical(_grid.groupOf(thread), group)) {
+      _activateTab(thread, group: group);
+    }
+  }
+
+  void _splitChatTab(AgentThread tab, AgentThread target, PaneSide side) {
+    final old = _grid.groupOf(tab);
+    if (old == null) return;
+    final peers = _grid
+        .tabs(old)
+        .where((item) => !identical(item, tab))
+        .toList();
+    if (identical(tab, target) && peers.isEmpty) return;
+    _grid.take(tab);
+    final group = _grid.contains(target) ? target : peers.last;
+    _grid.split(group, side, tab);
+    _activateTab(tab, group: tab);
+    _repairActiveTabs();
+  }
+
+  /// Orders a tab before/after [target]; cross-group uses [moveChatTab].
+  void reorderChatTab(
+    AgentThread thread,
+    AgentThread target, {
+    bool after = false,
+  }) {
+    var group = _grid.groupOf(target);
+    if (group == null || identical(thread, target)) return;
+    _previewChats.remove(thread);
+    if (_grid.groupOf(thread) != group) {
+      _moveChatTab(thread, group);
+      group = _grid.groupOf(thread);
+      if (group == null) return;
+    }
+    final tabs = _grid.tabs(group);
+    final at = tabs.indexOf(target);
+    if (at < 0) return;
+    final before = after ? tabs.elementAtOrNull(at + 1) : target;
+    if (_grid.reorderTab(thread, group, before: before)) {
+      _activateTab(thread, group: group);
+      notifyListeners();
+    }
+  }
+
+  /// Closes only this display tab; the session, draft and execution survive.
+  void closeChatTab(AgentThread thread) {
+    final group = _grid.groupOf(thread);
+    if (group == null) return;
+    final wasFocused = identical(thread, _selected);
+    _previewChats.remove(thread);
+    _activeChatTabs.removeWhere((_, tab) => identical(tab, thread));
+    if (_grid.contains(thread)) {
+      final heir = _grid.uncover(thread);
+      if (heir == null) {
+        final next = _grid.remove(thread);
+        if (wasFocused) {
+          _selected = null;
+          _chatGroup = null;
+          if (next case final group?) _activateGroup(group);
+        }
+      } else if (wasFocused) {
+        _activateTab(heir);
+      }
+    } else {
+      _grid.take(thread);
+      if (wasFocused) {
+        _selected = null;
+        _chatGroup = null;
+        if (_grid.contains(group)) _activateGroup(group);
+      }
+    }
+    _repairActiveTabs();
+    notifyListeners();
+  }
+
+  void _repairActiveTabs() {
+    _activeChatTabs.removeWhere(
+      (group, tab) => !_grid.contains(group) || _grid.groupOf(tab) != group,
+    );
+    if (_selected case final selected? when _grid.groupOf(selected) != null) {
+      _chatGroup = _grid.groupOf(selected);
+    } else if (_grid.isEmpty) {
+      _selected = null;
+      _chatGroup = null;
+    }
   }
 
   /// The agents selected before the one in front, the latest last, and
@@ -3400,7 +3769,12 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
         continue;
       }
       if (_selected case final here?) to.add(here);
-      _focus(thread);
+      if (AppEdition.isAbyss) {
+        if (_grid.groupOf(thread) == null) _previewChat(thread);
+        _activateTab(thread);
+      } else {
+        _focus(thread);
+      }
       _followInSidebar(thread);
       notifyListeners();
       return true;
@@ -3517,12 +3891,16 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   /// Whether [thread]'s pane can close: another shows beside it.
   bool canClosePane(AgentThread thread) =>
-      _grid.contains(thread) && _grid.length > 1;
+      _grid.contains(thread) && (AppEdition.isAbyss || _grid.length > 1);
 
   /// Closes [thread]'s pane: the agent it covered shows there again, else
   /// the one beside it takes its place; the last one stays. The agent goes
   /// on, in the sidebar.
   void closePane(AgentThread thread) {
+    if (AppEdition.isAbyss) {
+      closeChatTab(thread);
+      return;
+    }
     if (!canClosePane(thread)) return;
     final heir = _grid.uncover(thread) ?? _grid.remove(thread)!;
     if (identical(thread, _selected)) _focus(heir);

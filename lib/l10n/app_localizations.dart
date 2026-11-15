@@ -2810,6 +2810,42 @@ abstract class AppLocalizations {
   /// **'View'**
   String get menuView;
 
+  /// No description provided for @menuWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Window'**
+  String get menuWindow;
+
+  /// No description provided for @windowCurrentConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Conversation'**
+  String get windowCurrentConversation;
+
+  /// No description provided for @windowPreviousConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous Conversation'**
+  String get windowPreviousConversation;
+
+  /// No description provided for @windowNextConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Next Conversation'**
+  String get windowNextConversation;
+
+  /// No description provided for @windowOpenIde.
+  ///
+  /// In en, this message translates to:
+  /// **'Open IDE'**
+  String get windowOpenIde;
+
+  /// No description provided for @menuShowSidebarAgentTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Show Subagent Tasks in Sidebar'**
+  String get menuShowSidebarAgentTasks;
+
   /// Menu bar menu.
   ///
   /// In en, this message translates to:
@@ -3991,6 +4027,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to chat'**
   String get workspaceBackToChat;
+
+  /// No description provided for @workspaceOpenChatTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in New Tab'**
+  String get workspaceOpenChatTab;
+
+  /// No description provided for @workspaceOpenChatRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Open to the Right'**
+  String get workspaceOpenChatRight;
+
+  /// No description provided for @workspaceKeepChatTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep Tab'**
+  String get workspaceKeepChatTab;
 
   /// Shown while dropping a conversation where it does not fit.
   ///
@@ -23052,6 +23106,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not done: {error}'**
   String settingsTransferFailed(String error);
+
+  /// No description provided for @generalSettingsSidebarAgentTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Show subagent tasks in the sidebar'**
+  String get generalSettingsSidebarAgentTasks;
+
+  /// No description provided for @generalSettingsSidebarAgentTasksDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Shows each conversation\'s subagent tasks below it. Hiding them does not stop tasks or clear their history, unread state, folding or approvals.'**
+  String get generalSettingsSidebarAgentTasksDescription;
 
   /// No description provided for @generalSettingsSessionTools.
   ///

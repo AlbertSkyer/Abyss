@@ -17,6 +17,7 @@ import 'package:baocode/ide/ide_workbench.dart';
 import 'package:baocode/ide/lsp_ui/problems_panel.dart';
 import 'package:baocode/ide/terminal/terminal_instance.dart';
 import 'package:baocode/main.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/settings/settings_dialog.dart';
 import 'package:baocode/sidebar/sidebar.dart';
 import 'package:baocode/theme/code_font.dart';
@@ -31,6 +32,7 @@ import 'package:baocode/workspace/window_header/header_menu_bar.dart';
 import 'package:baocode/workspace/window_header/window_header.dart';
 import 'package:baocode/workspace/workspace.dart';
 import 'package:baocode/update/version.dart';
+import 'package:baocode/workspace/window_header/header_menu.dart';
 
 import 'ide/terminal/fake_pty.dart';
 import 'ide/terminal/fake_terminal.dart';
@@ -69,6 +71,46 @@ Future<(Workspace, List<MethodCall>)> pumpWindowsApp(
 final _windows = TargetPlatformVariant.only(TargetPlatform.windows);
 
 void main() {
+  testWidgets(
+    'the Window menu navigates real conversations',
+    (tester) async {
+      final (workspace, _) = await pumpWindowsApp(tester);
+      expect(HeaderMenuBar.menus, contains(HeaderMenu.window));
+      final current = workspace.current!;
+      final target = workspace.threads.firstWhere(
+        (thread) => !identical(thread, current),
+      );
+      workspace.openChatTab(target);
+      workspace.select(current);
+      await tester.pump();
+      await tester.tap(find.text('Window'));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(HeaderMenuBar),
+          matching: find.text(target.title),
+        ),
+      );
+      await tester.pump();
+      expect(workspace.current, same(target));
+
+      final before = workspace.current;
+      await tester.tap(find.text('Window'));
+      await tester.pump();
+      await tester.tap(find.text('Previous Conversation'));
+      await tester.pump();
+      expect(workspace.current, isNot(same(before)));
+
+      await tester.tap(find.text('Window'));
+      await tester.pump();
+      await tester.tap(find.text('Current Conversation'));
+      await tester.pump();
+      expect(workspace.current, same(workspace.current));
+    },
+    variant: _windows,
+    skip: !AppEdition.isAbyss,
+  );
+
   testWidgets('the header opens the current session\'s project, as the '
       'session changes', (tester) async {
     final (workspace, _) = await pumpWindowsApp(tester);

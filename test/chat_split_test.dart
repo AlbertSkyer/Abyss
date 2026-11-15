@@ -12,6 +12,7 @@ import 'package:baocode/chat/widgets/inline_rename_field.dart';
 import 'package:baocode/ide/ide_modern_ui.dart';
 import 'package:baocode/ide/ide_workbench.dart';
 import 'package:baocode/main.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/sidebar/sidebar.dart';
 import 'package:baocode/theme/app_theme.dart';
 import 'package:baocode/workspace/islands.dart';
@@ -134,6 +135,109 @@ Offset near(Rect rect, PaneSide side) => switch (side) {
 };
 
 void main() {
+  group('Abyss session tabs', skip: !AppEdition.isAbyss, () {
+    testWidgets('sidebar opens fixed tabs and two real sessions side by side', (
+      tester,
+    ) async {
+      final workspace = await pumpApp(tester);
+      final original = workspace.current!;
+      final other = workspace.threads.firstWhere((t) => t.title == second);
+      await tester.tap(
+        inSidebar(find.textContaining(second)),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open in New Tab'));
+      await tester.pumpAndSettle();
+      expect(workspace.grid.tabs(other), containsAll([original, other]));
+      expect(workspace.isPreviewChat(other), isFalse);
+      expect(find.byType(PaneTabs), findsOneWidget);
+
+      workspace.select(original);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        inSidebar(find.textContaining(second)),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open to the Right'));
+      await tester.pumpAndSettle();
+      expect(paneTitles(tester), unorderedEquals([first, second]));
+      expect(workspace.grid.panes.toSet().length, 2);
+      expect(identical(other.session, workspace.current!.session), isTrue);
+      workspace.closeChatTab(other);
+      await tester.pumpAndSettle();
+      expect(paneTitles(tester), [first]);
+      expect(workspace.threads, contains(other));
+    });
+
+    testWidgets('tab drag reorders and moves one session between groups', (
+      tester,
+    ) async {
+      final workspace = await pumpApp(tester);
+      final a = workspace.current!;
+      final b = workspace.threads.firstWhere((t) => t.title == second);
+      final c = workspace.threads.firstWhere((t) => t.title == third);
+      workspace.openChatTab(b);
+      workspace.openChatTab(c);
+      await tester.pumpAndSettle();
+      Finder tab(String title) => find.descendant(
+        of: find.byType(PaneTabs),
+        matching: find.text(title),
+      );
+      await tester.drag(
+        tab(third),
+        tester.getCenter(tab(first)) - tester.getCenter(tab(third)),
+      );
+      await tester.pumpAndSettle();
+      expect(workspace.grid.tabs(workspace.current!).first, same(c));
+      workspace.select(a);
+      workspace.openChatRight(b);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        tab(third),
+        tester.getCenter(tab(second)) - tester.getCenter(tab(third)),
+      );
+      await tester.pumpAndSettle();
+      expect(workspace.grid.tabs(workspace.current!), [c, b]);
+      expect(workspace.grid.groupOf(a), isNot(workspace.grid.groupOf(c)));
+      expect(workspace.grid.panes, hasLength(2));
+    });
+
+    testWidgets('preview browsing replaces only an unedited preview', (
+      tester,
+    ) async {
+      final workspace = await pumpApp(tester);
+      final a = workspace.threads.firstWhere((t) => t.title == second);
+      final b = workspace.threads.firstWhere((t) => t.title == third);
+      workspace.select(a);
+      await tester.pumpAndSettle();
+      expect(workspace.isPreviewChat(a), isTrue);
+      workspace.select(b);
+      await tester.pumpAndSettle();
+      expect(workspace.grid.groupOf(a), isNull);
+      expect(workspace.isPreviewChat(b), isTrue);
+      b.session.draft.save(
+        'Keep this draft',
+        const TextSelection.collapsed(offset: 15),
+        const [],
+      );
+      expect(workspace.isPreviewChat(b), isFalse);
+      workspace.select(a);
+      await tester.pumpAndSettle();
+      expect(workspace.grid.tabs(a), contains(b));
+      expect(b.session.draft.content, 'Keep this draft');
+      workspace.closeChatTab(a);
+      workspace.closeChatTab(b);
+      for (final tab in [...workspace.grid.panes]) {
+        workspace.closeChatTab(tab);
+      }
+      await tester.pumpAndSettle();
+      expect(workspace.current, isNull);
+      expect(find.byType(ChatScreen), findsNothing);
+    });
+  });
+
   testWidgets("the mouse's back and forward buttons go through the agents "
       'selected, as a browser through its pages (#516)', (tester) async {
     final workspace = await pumpApp(tester);

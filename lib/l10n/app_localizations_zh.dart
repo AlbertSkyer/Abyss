@@ -1393,6 +1393,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get menuView => '查看';
 
   @override
+  String get menuWindow => '窗口';
+
+  @override
+  String get windowCurrentConversation => '当前会话';
+
+  @override
+  String get windowPreviousConversation => '上一个会话';
+
+  @override
+  String get windowNextConversation => '下一个会话';
+
+  @override
+  String get windowOpenIde => '打开 IDE';
+
+  @override
+  String get menuShowSidebarAgentTasks => '在侧边栏显示子代理任务';
+
+  @override
   String get menuHelp => '帮助';
 
   @override
@@ -2135,6 +2153,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get workspaceBackToChat => '返回聊天';
+
+  @override
+  String get workspaceOpenChatTab => '在新标签页打开';
+
+  @override
+  String get workspaceOpenChatRight => '在右侧打开';
+
+  @override
+  String get workspaceKeepChatTab => '固定标签';
 
   @override
   String get workspaceNotEnoughRoom => '此屏幕空间不足';
@@ -13395,6 +13422,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String settingsTransferFailed(String error) {
     return '没能完成：$error';
   }
+
+  @override
+  String get generalSettingsSidebarAgentTasks => '在侧边栏显示子代理任务';
+
+  @override
+  String get generalSettingsSidebarAgentTasksDescription =>
+      '在会话下方显示其子代理任务。隐藏不会停止任务，也不会清除历史、未读、折叠状态或审批。';
 
   @override
   String get generalSettingsSessionTools => 'Agent 可以统筹其他对话';

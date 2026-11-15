@@ -24,6 +24,9 @@ class PaneTabs extends StatelessWidget {
     required this.onSelect,
     required this.onClose,
     required this.onMenu,
+    this.isPreview,
+    this.onKeep,
+    this.onMove,
   });
 
   final List<AgentThread> tabs;
@@ -31,6 +34,9 @@ class PaneTabs extends StatelessWidget {
   final ValueChanged<AgentThread> onSelect;
   final ValueChanged<AgentThread> onClose;
   final void Function(AgentThread tab, Offset position) onMenu;
+  final bool Function(AgentThread tab)? isPreview;
+  final ValueChanged<AgentThread>? onKeep;
+  final void Function(AgentThread tab, AgentThread target)? onMove;
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
@@ -39,23 +45,59 @@ class PaneTabs extends StatelessWidget {
       children: [
         for (final (i, tab) in tabs.indexed) ...[
           if (i > 0) const SizedBox(width: 2),
-          _PaneTab(
-            tab: tab,
-            active: identical(tab, shown),
-            onSelect: () => onSelect(tab),
-            onClose: () => onClose(tab),
-            onMenu: (position) => onMenu(tab, position),
-          ),
+          _tab(tab),
         ],
       ],
     ),
   );
+
+  Widget _tab(AgentThread tab) {
+    final child = _PaneTab(
+      tab: tab,
+      active: identical(tab, shown),
+      preview: isPreview?.call(tab) ?? false,
+      onKeep: onKeep == null ? null : () => onKeep!(tab),
+      onSelect: () => onSelect(tab),
+      onClose: () => onClose(tab),
+      onMenu: (position) => onMenu(tab, position),
+    );
+    if (onMove == null) return child;
+    return DragTarget<AgentThread>(
+      onWillAcceptWithDetails: (details) => !identical(details.data, tab),
+      onAcceptWithDetails: (details) => onMove!(details.data, tab),
+      builder: (context, candidates, rejected) => Draggable<AgentThread>(
+        data: tab,
+        onDragStarted: () => onKeep?.call(tab),
+        feedback: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(5),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(tab.localizedTitle(context.l10n)),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: .4, child: child),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: candidates.isEmpty
+                ? null
+                : Border(
+                    left: BorderSide(color: AppColors.textPrimary, width: 2),
+                  ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
 class _PaneTab extends StatelessWidget {
   const _PaneTab({
     required this.tab,
     required this.active,
+    required this.preview,
+    this.onKeep,
     required this.onSelect,
     required this.onClose,
     required this.onMenu,
@@ -63,6 +105,8 @@ class _PaneTab extends StatelessWidget {
 
   final AgentThread tab;
   final bool active;
+  final bool preview;
+  final VoidCallback? onKeep;
   final VoidCallback onSelect;
   final VoidCallback onClose;
   final ValueChanged<Offset> onMenu;
@@ -93,6 +137,7 @@ class _PaneTab extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onSelect,
+              onDoubleTap: onKeep,
               onSecondaryTapUp: (details) => onMenu(details.globalPosition),
               child: Container(
                 height: 22,
@@ -126,6 +171,7 @@ class _PaneTab extends StatelessWidget {
                           color: foreground,
                           fontSize: 12,
                           fontWeight: active ? FontWeight.w500 : null,
+                          fontStyle: preview ? FontStyle.italic : null,
                         ),
                       ),
                     ),

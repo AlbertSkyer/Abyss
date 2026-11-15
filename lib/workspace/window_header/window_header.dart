@@ -18,6 +18,8 @@ import '../../keybindings/default_keybindings.dart'
     show openSettingsCommandId, toggleAutoSaveCommandId;
 import '../../keybindings/window_keybindings.dart' show WindowCommandIds;
 import '../../l10n/l10n.dart';
+import '../../platform/app_edition.dart';
+import '../../settings/abyss_workbench_settings.dart';
 import '../../sidebar/sidebar.dart';
 import '../../theme/codicons.dart';
 import '../../theme/app_theme.dart';
@@ -760,6 +762,7 @@ class _WindowHeaderState extends State<WindowHeader> {
           onSelected: widget.onToggleContextPanel,
         ),
       ],
+      HeaderMenu.window => _windowItems(l10n, run: run, ide: ide),
       HeaderMenu.help => [
         HeaderMenuItem(
           l10n.menuAboutBaoCode,
@@ -767,6 +770,119 @@ class _WindowHeaderState extends State<WindowHeader> {
         ),
       ],
     };
+  }
+
+  /// The Abyss Window menu opens real conversations and calls the same
+  /// navigation, layout and tool actions as their existing header controls.
+  /// Nothing here creates a placeholder panel or a second kind of session.
+  List<HeaderMenuItem> _windowItems(
+    AppLocalizations l10n, {
+    required ValueChanged<String>? run,
+    required bool ide,
+  }) {
+    void select(AgentThread thread) {
+      if (ide) {
+        if (widget.onBack case final back?) {
+          back();
+        } else {
+          widget.workspace.layout = WorkspaceLayout.chat;
+        }
+      }
+      widget.workspace.select(thread);
+    }
+
+    void openIde() {
+      if (widget.workspace.layout == WorkspaceLayout.ide) {
+        widget.onBack?.call();
+        return;
+      }
+      if (run != null && widget.project != null) {
+        run(ChatCommandIds.openIde);
+        return;
+      }
+      widget.workspace.layout = WorkspaceLayout.ide;
+    }
+
+    HeaderMenuItem command(String label, String id) => HeaderMenuItem(
+      label,
+      shortcut: _shortcut(id),
+      onSelected: () => run!(id),
+    );
+    return [
+      if (widget.workspace.current case final current?) ...[
+        HeaderMenuItem(
+          l10n.windowCurrentConversation,
+          onSelected: () => select(current),
+        ),
+        const HeaderMenuItem.rule(),
+      ],
+      if (run != null) ...[
+        command(l10n.windowPreviousConversation, ChatCommandIds.previousAgent),
+        command(l10n.windowNextConversation, ChatCommandIds.nextAgent),
+        command(l10n.cmdChatSearchAgents, ChatCommandIds.searchAgents),
+        const HeaderMenuItem.rule(),
+      ],
+      if (ide)
+        HeaderMenuItem(
+          l10n.menuBackToChat,
+          shortcut: _shortcut(_backToChatCommand, ChatKeys.ideLayout),
+          onSelected:
+              widget.onBack ??
+              () => widget.workspace.layout = WorkspaceLayout.chat,
+        )
+      else if (run != null && widget.project != null)
+        command(l10n.cmdChatOpenIde, ChatCommandIds.openIde)
+      else
+        HeaderMenuItem(l10n.windowOpenIde, onSelected: openIde),
+      if (widget.onToggleTerminal case final toggle? when !ide)
+        HeaderMenuItem(
+          l10n.idePanelTerminal,
+          checked: widget.terminalShown,
+          shortcut: _shortcut(toggleTerminalCommand),
+          onSelected: toggle,
+        ),
+      if (widget.onToggleSidebar case final toggle?)
+        HeaderMenuItem(
+          widget.sidebarShown ? l10n.menuHideSidebar : l10n.menuShowSidebar,
+          shortcut: _shortcut(
+            _toggleSidebarCommand,
+            ide ? ChatKeys.ideLayout : ChatKeys.chatLayout,
+          ),
+          onSelected: toggle,
+        ),
+      if (widget.onToggleSidePanel case final toggle? when !ide)
+        HeaderMenuItem(
+          l10n.cmdToggleSidePanel,
+          checked: widget.sidePanelShown,
+          shortcut: _shortcut(ChatCommandIds.toggleSidePanel),
+          onSelected: toggle,
+        ),
+      if (AppEdition.isAbyss)
+        HeaderMenuItem(
+          l10n.menuShowSidebarAgentTasks,
+          checked: AbyssWorkbenchSettings.shown.value,
+          onSelected: () => unawaited(
+            AbyssWorkbenchSettings.setShown(
+              !AbyssWorkbenchSettings.shown.value,
+            ),
+          ),
+        ),
+      if (!widget.workspace.grid.isEmpty) ...[
+        const HeaderMenuItem.rule(),
+        for (final thread in widget.workspace.grid.panes.expand(
+          widget.workspace.grid.tabs,
+        ))
+          HeaderMenuItem(
+            thread.localizedTitle(l10n),
+            checked: identical(thread, widget.workspace.current),
+            onSelected: () => select(thread),
+          ),
+      ],
+      if (widget.onOpenSettings case final open?) ...[
+        const HeaderMenuItem.rule(),
+        HeaderMenuItem('${l10n.settingsTitle}…', onSelected: open),
+      ],
+    ];
   }
 
   /// [command]'s keybinding in the chat (or the [layout] given), as the

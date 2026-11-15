@@ -96,6 +96,7 @@ import 'l10n/l10n.dart';
 import 'notifications/attention_host.dart';
 import 'notifications/attention_service.dart';
 import 'notifications/attention_settings.dart';
+import 'platform/app_edition.dart';
 import 'platform/data_dir.dart' show DataDirectory;
 import 'platform/event_log.dart' show appEvent;
 import 'platform/local_paths.dart'
@@ -3545,6 +3546,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [WindowHeader.title]), not a row of the chat's own: the narrow
   /// window's, with one conversation in it, as macOS's title bar has it.
   bool get _titleInHeader =>
+      !AppEdition.isAbyss &&
       WindowControls.drawsHeader &&
       _narrow &&
       !_showsIde &&
@@ -4723,13 +4725,25 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   Widget _paneTabStrip(AgentThread pane) {
     final l10n = context.l10n;
     final tabs = _workspace.grid.tabs(pane);
-    void close(AgentThread tab) => identical(tab, pane)
-        ? _workspace.closePane(pane)
-        : _workspace.closeCovered(pane, tab);
+    void close(AgentThread tab) {
+      if (AppEdition.isAbyss) {
+        _workspace.closeChatTab(tab);
+      } else if (identical(tab, pane)) {
+        _workspace.closePane(pane);
+      } else {
+        _workspace.closeCovered(pane, tab);
+      }
+    }
+
     return KeepPaneFocus(
       child: PaneTabs(
         tabs: tabs,
         shown: pane,
+        isPreview: AppEdition.isAbyss ? _workspace.isPreviewChat : null,
+        onKeep: AppEdition.isAbyss ? _workspace.pinChatTab : null,
+        onMove: AppEdition.isAbyss
+            ? (tab, target) => _workspace.reorderChatTab(tab, target)
+            : null,
         onSelect: (tab) {
           if (!identical(tab, pane)) _workspace.raiseCovered(pane, tab);
           _focusChat(tab);
@@ -4740,6 +4754,18 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
             context,
             position: position,
             entries: [
+              if (AppEdition.isAbyss) ...[
+                if (_workspace.isPreviewChat(tab))
+                  IdeMenuAction(
+                    l10n.workspaceKeepChatTab,
+                    onSelected: () => _workspace.pinChatTab(tab),
+                  ),
+                if (_workspace.canOpenChatRight(tab))
+                  IdeMenuAction(
+                    l10n.workspaceOpenChatRight,
+                    onSelected: () => _workspace.openChatRight(tab),
+                  ),
+              ],
               IdeMenuAction(l10n.tabClose, onSelected: () => close(tab)),
               IdeMenuAction(
                 l10n.tabCloseOthers,
@@ -5025,11 +5051,16 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         onRename: (title) => _workspace.rename(thread, title),
         onSummarizeTitle: () => _workspace.summarizeTitle(thread),
         // Those under it as tabs in place of its title, where they show so.
-        titleTabs: !embedded && _workspace.paneTabs && under.isNotEmpty
+        titleTabs:
+            !embedded &&
+                (AppEdition.isAbyss ||
+                    (_workspace.paneTabs && under.isNotEmpty))
             ? _paneTabStrip(thread)
             : null,
         // Side by side, which project each is, and which computer.
-        subtitle: place.alone ? null : _paneSubtitle(thread),
+        subtitle: place.alone && !AppEdition.isAbyss
+            ? null
+            : _paneSubtitle(thread),
         titleDragBuilder: draggable
             ? (title) => MouseRegion(
                 cursor: SystemMouseCursors.grab,

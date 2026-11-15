@@ -32,9 +32,12 @@ import '../keybindings/keybinding_service.dart';
 import '../l10n/l10n.dart';
 import '../models/model_provider.dart' show parseModelRef;
 import '../models/model_providers.dart';
+import '../platform/app_edition.dart';
 import '../remote/remote_location.dart';
 import '../remote/remote_status.dart' show sshErrorText;
 import '../remote/ssh_host.dart' show SshHost, SshHostState, SshHosts;
+import '../settings/abyss_workbench_settings.dart';
+import '../settings/user_settings.dart';
 import '../theme/app_theme.dart';
 import '../theme/codicons.dart';
 import '../theme/workbench_theme.dart' show themeColors;
@@ -420,6 +423,8 @@ class _SidebarState extends State<Sidebar>
     });
     _workspace.addListener(_markRowsDirty);
     SidebarTimes.shown.addListener(_timesChanged);
+    AbyssWorkbenchSettings.attach(SettingsFiles.instance.settings);
+    AbyssWorkbenchSettings.shown.addListener(_timesChanged);
     _listFocus.addListener(_focusChanged);
     widget.link?._state = this;
     _attachDrag(widget.drag);
@@ -477,6 +482,7 @@ class _SidebarState extends State<Sidebar>
     _detachDrag(widget.drag);
     _workspace.removeListener(_markRowsDirty);
     SidebarTimes.shown.removeListener(_timesChanged);
+    AbyssWorkbenchSettings.shown.removeListener(_timesChanged);
     _clock.cancel();
     _autoScroll?.cancel();
     _listFocus.removeListener(_focusChanged);
@@ -1782,29 +1788,31 @@ class _SidebarState extends State<Sidebar>
               ),
             );
           }
-          if (_agentTasks(thread).isNotEmpty) {
-            rows.add(
-              _ListRow(
-                _ListRowKind.agentTaskHeader,
-                group,
-                ValueKey(('agentTasks', thread)),
-                _rowHeight,
-                thread: thread,
-              ),
-            );
-          }
-          if (!_agentTasksFolded(thread)) {
-            for (final entry in _agentTasks(thread)) {
+          if (AbyssWorkbenchSettings.shown.value) {
+            if (_agentTasks(thread).isNotEmpty) {
               rows.add(
                 _ListRow(
-                  _ListRowKind.agentTask,
+                  _ListRowKind.agentTaskHeader,
                   group,
-                  ValueKey(('agentTask', thread, entry.path.join('/'))),
+                  ValueKey(('agentTasks', thread)),
                   _rowHeight,
                   thread: thread,
-                  task: entry,
                 ),
               );
+            }
+            if (!_agentTasksFolded(thread)) {
+              for (final entry in _agentTasks(thread)) {
+                rows.add(
+                  _ListRow(
+                    _ListRowKind.agentTask,
+                    group,
+                    ValueKey(('agentTask', thread, entry.path.join('/'))),
+                    _rowHeight,
+                    thread: thread,
+                    task: entry,
+                  ),
+                );
+              }
             }
           }
         }
@@ -2126,6 +2134,18 @@ class _SidebarState extends State<Sidebar>
       },
       renaming: identical(thread, _renaming),
       onTap: () => _handleRowTap(thread),
+      onOpenTab: AppEdition.isAbyss
+          ? () => _workspace.openChatTab(thread)
+          : null,
+      onOpenRight: AppEdition.isAbyss && _workspace.canOpenChatRight(thread)
+          ? () => _workspace.openChatRight(thread)
+          : null,
+      onKeepTab: AppEdition.isAbyss
+          ? () {
+              _open(thread);
+              _workspace.pinChatTab(thread);
+            }
+          : null,
       onRename: () => setState(() => _renaming = thread),
       onRenamed: (title) {
         if (title != null) _workspace.rename(thread, title);
@@ -3575,6 +3595,9 @@ class _ThreadRow extends StatelessWidget {
     required this.renaming,
     required this.onTap,
     required this.onRename,
+    this.onOpenTab,
+    this.onOpenRight,
+    this.onKeepTab,
     required this.onRenamed,
     required this.onPin,
     required this.onArchive,
@@ -3624,6 +3647,9 @@ class _ThreadRow extends StatelessWidget {
   final bool renaming;
   final VoidCallback onTap;
   final VoidCallback onRename;
+  final VoidCallback? onOpenTab;
+  final VoidCallback? onOpenRight;
+  final VoidCallback? onKeepTab;
 
   /// The new title, or null when renaming was cancelled.
   final ValueChanged<String?> onRenamed;
@@ -3681,6 +3707,24 @@ class _ThreadRow extends StatelessWidget {
       ];
     }
     return [
+      if (onOpenTab case final open?)
+        SidebarMenuItem(
+          l10n.workspaceOpenChatTab,
+          icon: Codicons.add,
+          onSelected: open,
+        ),
+      if (onOpenRight case final open?)
+        SidebarMenuItem(
+          l10n.workspaceOpenChatRight,
+          icon: Codicons.splitHorizontal,
+          onSelected: open,
+        ),
+      if (onKeepTab case final keep?)
+        SidebarMenuItem(
+          l10n.workspaceKeepChatTab,
+          icon: Icons.push_pin_outlined,
+          onSelected: keep,
+        ),
       if (onOpenStash case final open?)
         for (final stash in stashes)
           SidebarMenuItem(
@@ -3754,7 +3798,7 @@ class _ThreadRow extends StatelessWidget {
         focused: focused,
         keepSelectionActive: true,
         onTap: renaming ? null : onTap,
-        onDoubleTap: renaming ? null : onRename,
+        onDoubleTap: renaming ? null : onKeepTab ?? onRename,
         onContextMenu: (position) {
           onContextMenu();
           menu.open(position);

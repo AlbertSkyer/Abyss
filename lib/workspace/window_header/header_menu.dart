@@ -3,11 +3,12 @@ import 'package:flutter/widgets.dart';
 import '../../l10n/l10n.dart';
 
 /// The header's menus (see window_header.dart): what this app can do, not
-/// the whole of an editor's bar — File, Edit, View and Help.
+/// the whole of an editor's bar — File, Edit, View, Window and Help.
 enum HeaderMenu {
   file('File'),
   edit('Edit'),
   view('View'),
+  window('Window'),
   help('Help');
 
   const HeaderMenu(this.label);
@@ -19,6 +20,7 @@ enum HeaderMenu {
     file => l10n.menuFile,
     edit => l10n.menuEdit,
     view => l10n.menuView,
+    window => l10n.menuWindow,
     help => l10n.menuHelp,
   };
 }

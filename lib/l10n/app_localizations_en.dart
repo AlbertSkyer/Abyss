@@ -1430,6 +1430,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get menuView => 'View';
 
   @override
+  String get menuWindow => 'Window';
+
+  @override
+  String get windowCurrentConversation => 'Current Conversation';
+
+  @override
+  String get windowPreviousConversation => 'Previous Conversation';
+
+  @override
+  String get windowNextConversation => 'Next Conversation';
+
+  @override
+  String get windowOpenIde => 'Open IDE';
+
+  @override
+  String get menuShowSidebarAgentTasks => 'Show Subagent Tasks in Sidebar';
+
+  @override
   String get menuHelp => 'Help';
 
   @override
@@ -2218,6 +2236,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get workspaceBackToChat => 'Back to chat';
+
+  @override
+  String get workspaceOpenChatTab => 'Open in New Tab';
+
+  @override
+  String get workspaceOpenChatRight => 'Open to the Right';
+
+  @override
+  String get workspaceKeepChatTab => 'Keep Tab';
 
   @override
   String get workspaceNotEnoughRoom => 'Not enough room on this screen';
@@ -14199,6 +14226,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String settingsTransferFailed(String error) {
     return 'Not done: $error';
   }
+
+  @override
+  String get generalSettingsSidebarAgentTasks =>
+      'Show subagent tasks in the sidebar';
+
+  @override
+  String get generalSettingsSidebarAgentTasksDescription =>
+      'Shows each conversation\'s subagent tasks below it. Hiding them does not stop tasks or clear their history, unread state, folding or approvals.';
 
   @override
   String get generalSettingsSessionTools =>

@@ -13,6 +13,10 @@ enum PaneSide { left, top, right, bottom }
 /// line); the other is in two parts, one each side of it, each moving on its
 /// own: the panes of one column are sized apart from the other's.
 class ChatGrid<T extends Object> {
+  ChatGrid({this.preserveTabs = false});
+
+  final bool preserveTabs;
+
   /// The pane on each cell, row by row: top left, top right, bottom left,
   /// bottom right. Empty with no pane at all.
   List<T> _cells = const [];
@@ -166,17 +170,86 @@ class ChatGrid<T extends Object> {
 
   /// Shows [pane] over [old], in its place: [old] and those it covered under
   /// it, to show again once [pane] closes; the [maxUnder] last covered.
-  void cover(T old, T pane) {
+  void cover(T old, T pane, {bool bounded = true}) {
     assert(contains(old) && !contains(pane));
     forget(pane);
     final under = [...?_under.remove(old), old];
-    if (under.length > maxUnder) under.removeRange(0, under.length - maxUnder);
+    if (bounded && under.length > maxUnder) {
+      under.removeRange(0, under.length - maxUnder);
+    }
     _open(pane);
     _cells = [for (final shown in _cells) shown == old ? pane : shown];
     _under[pane] = under;
   }
 
   static const maxUnder = 8;
+
+  /// Removes one tab, keeping its group's other tabs and their slot.
+  bool take(T tab) {
+    if (contains(tab)) {
+      if (uncover(tab) == null) remove(tab);
+      _opened.remove(tab);
+      return true;
+    }
+    final found = isCovered(tab);
+    forget(tab);
+    if (found) _opened.remove(tab);
+    return found;
+  }
+
+  /// Opens [tab] as a tab of [group], over the tab showing there. No slot
+  /// is moved or split, and an existing tab is only raised in its own group.
+  bool coverTab(T group, T tab) {
+    if (contains(tab)) {
+      if (tab != group) raise(group, tab);
+      return false;
+    }
+    final old = groupOf(tab);
+    if (old != null) take(tab);
+    if (!contains(group)) return false;
+    cover(group, tab, bounded: false);
+    return true;
+  }
+
+  /// Moves [tab] into [group]'s tab group, shown and inserted just before
+  /// [before] (last when it is null or is not one of its tabs). The group
+  /// keeps its slot and its other tabs; [tab]'s old slot closes without
+  /// affecting any other session. False where either group or tab is absent.
+  bool moveTab(T tab, T group, {T? before}) {
+    final old = groupOf(tab);
+    if (old == null || !contains(group) || tab == group) return false;
+    if (old == group) return reorderTab(tab, group, before: before);
+    if (before != null && !tabs(group).contains(before)) return false;
+    final next = copy();
+    next.take(tab);
+    next.cover(group, tab, bounded: false);
+    next.reorderTab(tab, tab, before: before);
+    _cells = next._cells;
+    _under = next._under;
+    _opened
+      ..clear()
+      ..addAll(next._opened);
+    _openings = next._openings;
+    _columnRatios = next._columnRatios;
+    _rowRatios = next._rowRatios;
+    _columnsFirst = next._columnsFirst;
+    return true;
+  }
+
+  /// Orders an existing [tab] within [group], just before [before] (last
+  /// when null). Neither tab's shown/covered state is changed.
+  bool reorderTab(T tab, T group, {T? before}) {
+    if (groupOf(tab) != group || tab == before) return false;
+    final tabs = this.tabs(group);
+    if (before != null && !tabs.contains(before)) return false;
+    tabs
+      ..remove(tab)
+      ..insert(before == null ? tabs.length : tabs.indexOf(before), tab);
+    for (final item in tabs) {
+      _open(item);
+    }
+    return true;
+  }
 
   /// [pane] closed where it covers another: the last it covered shows in its
   /// place again, over the rest. Null, nothing changed, where it covers none.
@@ -194,6 +267,15 @@ class ChatGrid<T extends Object> {
   int get length => panes.length;
 
   bool contains(T pane) => _cells.contains(pane);
+
+  /// The pane whose tab group has [tab], whether shown or covered.
+  T? groupOf(T tab) {
+    if (contains(tab)) return tab;
+    for (final pane in panes) {
+      if (_under[pane]?.contains(tab) ?? false) return pane;
+    }
+    return null;
+  }
 
   /// The pane on each cell, row by row (see [at]); empty with none.
   List<T> get cells => List.unmodifiable(_cells);
@@ -217,14 +299,16 @@ class ChatGrid<T extends Object> {
   /// [pane]'s tabs again, as [tabs] and [under] gave them: those of [under]
   /// under it in that order, the tabs in [tabs]' order. Those shown or
   /// under another already are left out.
-  void restoreTabs(T pane, List<T> tabs, List<T> under) {
+  void restoreTabs(T pane, List<T> tabs, List<T> under, {bool bounded = true}) {
     if (!contains(pane)) return;
     final taken = {..._cells, ..._under.values.expand((under) => under)};
     final kept = {
       for (final covered in under)
         if (!taken.contains(covered)) covered,
     }.toList();
-    if (kept.length > maxUnder) kept.removeRange(0, kept.length - maxUnder);
+    if (bounded && kept.length > maxUnder) {
+      kept.removeRange(0, kept.length - maxUnder);
+    }
     if (kept.isNotEmpty) _under[pane] = kept;
     final slot = {pane, ...kept};
     for (final tab in {...tabs.where(slot.contains), ...slot}) {
@@ -379,7 +463,7 @@ class ChatGrid<T extends Object> {
       ],
     );
     // Alone, a pane shows another in its place, not over it (see [cover]).
-    if (length == 1) _under = {};
+    if (length == 1 && !preserveTabs) _under = {};
     return _cells[gone.reduce(math.min)];
   }
 
@@ -390,7 +474,7 @@ class ChatGrid<T extends Object> {
   }
 
   /// A grid the same as this one, to change without changing it.
-  ChatGrid<T> copy() => ChatGrid<T>()
+  ChatGrid<T> copy() => ChatGrid<T>(preserveTabs: preserveTabs)
     .._opened.addAll(_opened)
     .._openings = _openings
     .._cells = [..._cells]

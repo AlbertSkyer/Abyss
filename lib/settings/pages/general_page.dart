@@ -28,6 +28,7 @@ import '../../tips/feature_tips_view.dart';
 import '../../window/window_settings.dart';
 import '../../workspace/main_window.dart';
 import '../../workspace/session_tools.dart';
+import '../abyss_workbench_settings.dart';
 import '../shell_command_actions.dart';
 import '../user_settings.dart';
 import 'settings_dropdown.dart';
@@ -219,7 +220,9 @@ class GeneralSettingsPage extends StatelessWidget {
   }
 
   void _write(String key, Object? value) {
-    final settings = this.settings;
+    final settings =
+        this.settings ??
+        (AppEdition.isAbyss ? SettingsFiles.instance.settings : null);
     if (settings == null) return;
     unawaited(
       settings.update(key, value).catchError((Object error) {
@@ -274,9 +277,17 @@ class GeneralSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final settings = this.settings;
+    final settings =
+        this.settings ??
+        (AppEdition.isAbyss ? SettingsFiles.instance.settings : null);
+    if (settings != null && AppEdition.isAbyss) {
+      AbyssWorkbenchSettings.attach(settings);
+    }
     return ListenableBuilder(
-      listenable: settings ?? Listenable.merge(const []),
+      listenable: Listenable.merge([
+        ?settings,
+        if (AppEdition.isAbyss) AbyssWorkbenchSettings.shown,
+      ]),
       builder: (context, _) {
         final current = CommitAttribution.parse(
           settings?[CommitAttribution.settingKey],
@@ -384,6 +395,17 @@ class GeneralSettingsPage extends StatelessWidget {
                     on ? null : PromptSuggestions.off,
                   ),
                 ),
+                if (AppEdition.isAbyss)
+                  SettingsSwitchRow(
+                    label: l10n.generalSettingsSidebarAgentTasks,
+                    description:
+                        l10n.generalSettingsSidebarAgentTasksDescription,
+                    value: AbyssWorkbenchSettings.shown.value,
+                    onChanged: (on) => _write(
+                      AbyssWorkbenchSettings.sidebarAgentTasksKey,
+                      AbyssWorkbenchSettings.setting(on),
+                    ),
+                  ),
                 SettingsSwitchRow(
                   label: l10n.generalSettingsSessionTools,
                   description: l10n.generalSettingsSessionToolsDescription,

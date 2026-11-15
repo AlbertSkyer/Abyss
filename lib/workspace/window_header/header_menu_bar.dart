@@ -6,6 +6,7 @@ import '../../chat/floating/floating_placement.dart';
 import '../../chat/floating/floating_registry.dart';
 import '../../chat/widgets/hover_builder.dart';
 import '../../l10n/l10n.dart';
+import '../../platform/app_edition.dart';
 import '../../sidebar/sidebar.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
@@ -27,6 +28,12 @@ class HeaderMenuBar extends StatefulWidget {
 
   final bool compact;
 
+  /// The menus in this edition. Abyss adds its real Window menu; BaoCode's
+  /// established menu bar is unchanged.
+  static List<HeaderMenu> get menus => [
+    for (final menu in HeaderMenu.values)
+      if (AppEdition.isAbyss || menu != HeaderMenu.window) menu,
+  ];
   @override
   State<HeaderMenuBar> createState() => _HeaderMenuBarState();
 }
@@ -81,7 +88,7 @@ class _HeaderMenuBarState extends State<HeaderMenuBar> {
     if (widget.compact) return _buildFolded();
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [for (final menu in HeaderMenu.values) _buildLabel(menu)],
+      children: [for (final menu in HeaderMenuBar.menus) _buildLabel(menu)],
     );
   }
 
@@ -95,7 +102,7 @@ class _HeaderMenuBarState extends State<HeaderMenuBar> {
       onTapOutside: _close,
       builder: (context) => _panel(
         width: 160,
-        children: [for (final menu in HeaderMenu.values) _buildEntry(menu)],
+        children: [for (final menu in HeaderMenuBar.menus) _buildEntry(menu)],
       ),
       child: TapRegion(
         groupId: _tapRegion,

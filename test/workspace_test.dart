@@ -15,6 +15,7 @@ import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/claude_code/mock_claude_code_transport.dart';
 import 'package:baocode/main.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
 import 'package:baocode/sidebar/sidebar.dart';
@@ -725,10 +726,7 @@ void main() {
       isNot(contains(modelSettingKey(KernelChoiceKind.context, '@gw/m'))),
     );
     expect(settings[modelSettingKey(KernelChoiceKind.context, 'opus')], '1m');
-    expect(
-      settings[modelSettingKey(KernelChoiceKind.effort, '@gw/m')],
-      'high',
-    );
+    expect(settings[modelSettingKey(KernelChoiceKind.effort, '@gw/m')], 'high');
 
     // Once: one picked since stays.
     (store.preferences['settings'] as Map)[modelSettingKey(
@@ -1150,6 +1148,75 @@ void main() {
       workspace.clearRecent();
       expect(workspace.recentFolders, isEmpty);
       expect(workspace.recentFiles, isEmpty);
+    });
+  });
+
+  group('Abyss tab persistence', skip: !AppEdition.isAbyss, () {
+    testWidgets('preview pin and a right group retain independent ownership', (
+      tester,
+    ) async {
+      FakeCatalog.started.addAll([
+        for (final id in ['preview-a', 'preview-b', 'preview-c'])
+          SessionRecord(
+            id: id,
+            title: id,
+            updatedAt: DateTime(2026),
+            cwd: '/tmp/project',
+          ),
+      ]);
+      addTearDown(FakeCatalog.started.clear);
+      var workspace = await pumpLoaded(tester);
+      AgentThread byId(String id) =>
+          workspace.threads.firstWhere((t) => t.id == id);
+      final a = byId('preview-a');
+      final b = byId('preview-b');
+      final c = byId('preview-c');
+      workspace.select(a);
+      expect(workspace.isPreviewChat(a), isTrue);
+      workspace.openChatTab(b);
+      expect(workspace.isPreviewChat(a), isFalse);
+      workspace.select(c);
+      expect(workspace.grid.tabs(c), containsAll([a, b, c]));
+      workspace.select(b);
+      workspace.openChatRight(c);
+      expect(workspace.grid.panes, hasLength(2));
+      workspace.select(b);
+      workspace.openChatRight(a);
+      expect(workspace.grid.tabs(a), contains(c));
+      expect(workspace.grid.tabs(a), contains(a));
+      expect(workspace.grid.tabs(b), [b]);
+      expect(workspace.grid.panes, hasLength(2));
+    });
+
+    testWidgets('fixed and preview tabs restore with focus and empty state', (
+      tester,
+    ) async {
+      final store = MemoryPreferenceStore();
+      var workspace = await pumpLoaded(tester, preferences: store);
+      final original = workspace.selected;
+      var kept = workspace.threads.firstWhere(
+        (t) => t.id == FakeCatalog.kept.id,
+      );
+      workspace.openChatTab(kept);
+      expect(workspace.grid.tabs(workspace.current!), contains(original));
+      expect(workspace.isPreviewChat(kept), isFalse);
+      await tester.pumpWidget(const SizedBox());
+      workspace = await pumpLoaded(tester, preferences: store);
+      kept = workspace.threads.firstWhere((t) => t.id == FakeCatalog.kept.id);
+      expect(workspace.grid.tabs(workspace.current!), contains(kept));
+      expect(workspace.isPreviewChat(kept), isFalse);
+      expect(workspace.current, same(kept));
+      expect(workspace.grid.tabs(kept).any((t) => t.id == null), isTrue);
+      for (final pane in [...workspace.grid.panes]) {
+        for (final tab in [...workspace.grid.tabs(pane)]) {
+          workspace.closeChatTab(tab);
+        }
+      }
+      expect(workspace.current, isNull);
+      await tester.pumpWidget(const SizedBox());
+      workspace = await pumpLoaded(tester, preferences: store);
+      expect(workspace.current, isNull);
+      expect(workspace.grid.isEmpty, isTrue);
     });
   });
 

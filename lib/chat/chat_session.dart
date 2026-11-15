@@ -9,6 +9,7 @@ import '../kernel/kernel_event.dart';
 import '../kernel/kernel_registry.dart';
 import '../kernel/kernel_types.dart';
 import '../kernel/transcript.dart';
+import '../platform/app_edition.dart';
 import '../remote/remote_location.dart';
 import 'chat_feed.dart';
 import 'chat_models.dart';
@@ -416,12 +417,15 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     _startReview();
   }
 
-  /// A view no longer shows it. With none left, an idle kernel frees what
-  /// it holds (a view may come right back, e.g. as the layout changes).
+  /// A view no longer shows it. Abyss retains the opened conversation until
+  /// disposal: closing or moving its display must not restart its CLI.
+  /// BaoCode releases an idle kernel when its last view goes away.
   void detach() {
     _views--;
     scheduleMicrotask(() {
-      if (_views == 0 && !_disposed) _kernel.release();
+      if (_views == 0 && !_disposed && !AppEdition.isAbyss) {
+        _kernel.release();
+      }
     });
   }
 
