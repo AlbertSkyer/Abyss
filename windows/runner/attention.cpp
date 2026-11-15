@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "app_windows.h"
+#include "generated_edition_identity.h"
 #include "resource.h"
 #include "utils.h"
 
@@ -107,12 +108,33 @@ std::wstring MenuText(const std::wstring& text) {
   return escaped;
 }
 
-// Pixels of a square icon, top row first: 0xAARRGGBB, alpha not
-// premultiplied (as an icon's are).
+// Pixels of a square icon, top row first: 0xAARRGGBB. Imported resource
+// pixels have premultiplied alpha; procedural icons keep their original blend.
 class Canvas {
  public:
   explicit Canvas(int size)
       : size_(size), pixels_(static_cast<size_t>(size) * size, 0) {}
+
+  Canvas(int size, std::vector<uint32_t> pixels)
+      : size_(size), pixels_(std::move(pixels)), premultiplied_(true) {}
+
+  // A 32-bit target for drawing a resource icon into. The caller owns the
+  // bitmap and clears its bits before drawing.
+  HBITMAP Bitmap(HDC dc, void** bits) const {
+    BITMAPV5HEADER header = {};
+    header.bV5Size = sizeof(header);
+    header.bV5Width = size_;
+    header.bV5Height = -size_;
+    header.bV5Planes = 1;
+    header.bV5BitCount = 32;
+    header.bV5Compression = BI_BITFIELDS;
+    header.bV5RedMask = 0x00FF0000;
+    header.bV5GreenMask = 0x0000FF00;
+    header.bV5BlueMask = 0x000000FF;
+    header.bV5AlphaMask = 0xFF000000;
+    return ::CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&header),
+                              DIB_RGB_COLORS, bits, nullptr, 0);
+  }
 
   void Fill(int x0, int y0, int x1, int y1, uint32_t rgb) {
     for (int y = (std::max)(0, y0); y < (std::min)(size_, y1); y++) {
@@ -146,9 +168,22 @@ class Canvas {
         uint32_t& pixel = pixels_[static_cast<size_t>(y) * size_ + x];
         const double below = (pixel >> 24) / 255.0;
         if (erase) {
+          const double remaining = 1 - coverage;
           const auto alpha =
-              static_cast<uint32_t>(std::lround(below * (1 - coverage) * 255));
-          pixel = (pixel & 0x00FFFFFFu) | (alpha << 24);
+              static_cast<uint32_t>(std::lround(below * remaining * 255));
+          if (premultiplied_) {
+            pixel = (alpha << 24) |
+                    (static_cast<uint32_t>(
+                         std::lround(((pixel >> 16) & 0xFF) * remaining))
+                     << 16) |
+                    (static_cast<uint32_t>(
+                         std::lround(((pixel >> 8) & 0xFF) * remaining))
+                     << 8) |
+                    static_cast<uint32_t>(
+                        std::lround((pixel & 0xFF) * remaining));
+          } else {
+            pixel = (pixel & 0x00FFFFFFu) | (alpha << 24);
+          }
           continue;
         }
         const double alpha = coverage + below * (1 - coverage);
@@ -156,7 +191,9 @@ class Canvas {
           const double top = (rgb >> shift) & 0xFF;
           const double under = (pixel >> shift) & 0xFF;
           return static_cast<uint32_t>(std::lround(
-              (top * coverage + under * below * (1 - coverage)) / alpha));
+              premultiplied_
+                  ? top * coverage + under * (1 - coverage)
+                  : (top * coverage + under * below * (1 - coverage)) / alpha));
         };
         pixel = (static_cast<uint32_t>(std::lround(alpha * 255)) << 24) |
                 (channel(16) << 16) | (channel(8) << 8) | channel(0);
@@ -166,22 +203,9 @@ class Canvas {
 
   // An icon of the pixels; the caller destroys it.
   HICON Icon() const {
-    BITMAPV5HEADER header = {};
-    header.bV5Size = sizeof(header);
-    header.bV5Width = size_;
-    header.bV5Height = -size_;  // Top row first.
-    header.bV5Planes = 1;
-    header.bV5BitCount = 32;
-    header.bV5Compression = BI_BITFIELDS;
-    header.bV5RedMask = 0x00FF0000;
-    header.bV5GreenMask = 0x0000FF00;
-    header.bV5BlueMask = 0x000000FF;
-    header.bV5AlphaMask = 0xFF000000;
     void* bits = nullptr;
     HDC screen = ::GetDC(nullptr);
-    HBITMAP color = ::CreateDIBSection(
-        screen, reinterpret_cast<BITMAPINFO*>(&header), DIB_RGB_COLORS, &bits,
-        nullptr, 0);
+    HBITMAP color = Bitmap(screen, &bits);
     ::ReleaseDC(nullptr, screen);
     if (color == nullptr) {
       return nullptr;
@@ -204,6 +228,7 @@ class Canvas {
  private:
   int size_;
   std::vector<uint32_t> pixels_;
+  bool premultiplied_ = false;
 };
 
 // The logo's cells, in its own 56×42 units (bao.svg; the same as
@@ -513,18 +538,60 @@ void Attention::SetTray(const flutter::EncodableValue* value) {
 HICON Attention::TrayIcon(bool dot) const {
   const int size = ::GetSystemMetrics(SM_CXSMICON);
   Canvas canvas(size);
-  // Whole pixels for each of the logo's 8×6 cells, as large as fit.
-  const int cell = (std::max)(1, size / 8);
-  const double k = cell / 7.0;
-  const int left = (size - 8 * cell) / 2;
-  const int top = (size - 6 * cell) / 2;
-  const uint32_t ink = TaskbarIsLight() ? 0x1F1F1F : 0xFFFFFF;
-  for (const Cell& c : kLogoCells) {
-    canvas.Fill(left + static_cast<int>(std::lround(c.x * k)),
-                top + static_cast<int>(std::lround(c.y * k)),
-                left + static_cast<int>(std::lround((c.x + c.width) * k)),
-                top + static_cast<int>(std::lround((c.y + c.height) * k)),
-                ink);
+  HICON resource = nullptr;
+  if constexpr (edition::kIsAbyss) {
+    // The bundled resource has this edition's supplied artwork, rather than
+    // BaoCode's procedural cells. LoadImage returns a private icon for ShowIcon
+    // to own. Preserve it if making a badged copy cannot finish.
+    resource = static_cast<HICON>(::LoadImageW(
+        ::GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
+        size, size, 0));
+    if (resource == nullptr) {
+      return nullptr;
+    }
+    if (!dot) {
+      return resource;
+    }
+    HDC screen = ::GetDC(nullptr);
+    HDC target = ::CreateCompatibleDC(screen);
+    void* bits = nullptr;
+    HBITMAP color = canvas.Bitmap(screen, &bits);
+    bool drawn = false;
+    if (target != nullptr && color != nullptr && bits != nullptr) {
+      std::memset(bits, 0, static_cast<size_t>(size) * size * sizeof(uint32_t));
+      HGDIOBJ old = ::SelectObject(target, color);
+      if (old != nullptr && old != HGDI_ERROR) {
+        drawn = ::DrawIconEx(target, 0, 0, resource, size, size, 0, nullptr,
+                             DI_NORMAL) != FALSE;
+        drawn = (::GdiFlush() != FALSE) && drawn;
+        ::SelectObject(target, old);
+      }
+    }
+    if (drawn) {
+      const auto* pixels = static_cast<const uint32_t*>(bits);
+      const size_t count = static_cast<size_t>(size) * size;
+      canvas = Canvas(size, std::vector<uint32_t>(pixels, pixels + count));
+    }
+    if (color != nullptr) ::DeleteObject(color);
+    if (target != nullptr) ::DeleteDC(target);
+    ::ReleaseDC(nullptr, screen);
+    if (!drawn) {
+      return resource;
+    }
+  } else {
+    // Whole pixels for each of the logo's 8×6 cells, as large as fit.
+    const int cell = (std::max)(1, size / 8);
+    const double k = cell / 7.0;
+    const int left = (size - 8 * cell) / 2;
+    const int top = (size - 6 * cell) / 2;
+    const uint32_t ink = TaskbarIsLight() ? 0x1F1F1F : 0xFFFFFF;
+    for (const Cell& c : kLogoCells) {
+      canvas.Fill(left + static_cast<int>(std::lround(c.x * k)),
+                  top + static_cast<int>(std::lround(c.y * k)),
+                  left + static_cast<int>(std::lround((c.x + c.width) * k)),
+                  top + static_cast<int>(std::lround((c.y + c.height) * k)),
+                  ink);
+    }
   }
   if (dot) {
     const double radius = size * 0.17;
@@ -533,7 +600,14 @@ HICON Attention::TrayIcon(bool dot) const {
     canvas.Disc(cx, cy, radius + (std::max)(1.0, size / 16.0), 0, true);
     canvas.Disc(cx, cy, radius, kBadgeRed, false);
   }
-  return canvas.Icon();
+  HICON badged = canvas.Icon();
+  if constexpr (edition::kIsAbyss) {
+    if (badged == nullptr) {
+      return resource;
+    }
+    ::DestroyIcon(resource);
+  }
+  return badged;
 }
 
 void Attention::ShowIcon() {
@@ -546,7 +620,7 @@ void Attention::ShowIcon() {
   data.uCallbackMessage = kTrayMessage;
   data.hIcon = icon;
   const std::wstring tooltip =
-      tray_ && !tray_->tooltip.empty() ? tray_->tooltip : L"Abyss";
+      tray_ && !tray_->tooltip.empty() ? tray_->tooltip : edition::kName;
   wcsncpy_s(data.szTip, tooltip.c_str(), _TRUNCATE);
   bool shown = icon_added_ && ::Shell_NotifyIconW(NIM_MODIFY, &data);
   if (!shown) {

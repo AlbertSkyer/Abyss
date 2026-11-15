@@ -6,6 +6,7 @@
 // is intentionally shared; product isolation identities never are.
 namespace edition {
 
+constexpr bool kIsAbyss = @APP_PRODUCT_IS_ABYSS@;
 constexpr wchar_t kName[] = L"@APP_PRODUCT@";
 constexpr wchar_t kDataFolder[] = L"@APP_DATA_FOLDER@";
 constexpr wchar_t kRegistryRoot[] = L"@APP_REGISTRY_ROOT@";

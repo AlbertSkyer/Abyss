@@ -8,6 +8,7 @@ import 'package:baocode/l10n/l10n.dart';
 import 'package:baocode/notifications/attention_host.dart';
 import 'package:baocode/notifications/attention_service.dart';
 import 'package:baocode/notifications/attention_settings.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/workspace/workspace.dart';
 
 /// Records what the service asks of the system.
@@ -105,6 +106,7 @@ void main() {
     // One mock agent starts unread.
     expect(host.badge, 1);
     expect(host.trays.last!.dot, isTrue);
+    expect(host.trays.last!.tooltip, AppEdition.name);
 
     final background = _thread(workspace, 'Rate limit per API key');
     background.session.send(const ComposerMessage(text: '加一个限流'));
@@ -121,6 +123,10 @@ void main() {
     expect(host.sounds.single, isA<Uint8List>());
     expect(host.badge, 2);
     expect(host.trays.last!.waiting.single.title, 'Rate limit per API key');
+    expect(
+      host.trays.last!.tooltip,
+      '${AppEdition.name} · ${englishLocalizations.trayWaitingCount(1)}',
+    );
 
     background.session.answer(_answer);
     await _runUntilDone(tester, background.session);
