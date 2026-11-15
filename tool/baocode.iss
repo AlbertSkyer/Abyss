@@ -27,6 +27,9 @@
   #define WerModule "abyss_wer.dll"
   #define AppGuid "{{0bf422b7-e758-4d4a-a649-31c8a52f589c}"
   #define UrlScheme "abyss"
+  #define CliFlag "--abyss-cli"
+  #define AgentFlag "--abyss-agent"
+  #define LinkFlag "--abyss-link"
   #define BundleBrowser 0
 #elif AppEdition == "BaoCode"
   #define ProductName "BaoCode"
@@ -34,6 +37,9 @@
   #define WerModule "baocode_wer.dll"
   #define AppGuid "{{6fdd732b-95c6-4c37-af6f-ff574358deb5}"
   #define UrlScheme "baocode"
+  #define CliFlag "--baocode-cli"
+  #define AgentFlag "--baocode-agent"
+  #define LinkFlag "--baocode-link"
   #define BundleBrowser 1
 #else
   #error AppEdition must be Abyss or BaoCode
@@ -192,7 +198,7 @@ Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}"; ValueType: string;
   ValueName: "Icon"; ValueData: """{app}\{#BinaryName}"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-agent ""%1"""; Tasks: contextmenu
+  ValueData: """{app}\{#BinaryName}"" {#AgentFlag} ""%1"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|{#ProductName}}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
@@ -201,7 +207,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}"; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-agent ""%V"""; Tasks: contextmenu
+  ValueData: """{app}\{#BinaryName}"" {#AgentFlag} ""%V"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|{#ProductName}}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
@@ -210,7 +216,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}";
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-agent ""%V"""; Tasks: contextmenu
+  ValueData: """{app}\{#BinaryName}"" {#AgentFlag} ""%V"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}FastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
   Tasks: contextmenu; Flags: uninsdeletekey
@@ -219,7 +225,7 @@ Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}FastIde"; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}FastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-cli ""%1"" -n ""%1"""; \
+  ValueData: """{app}\{#BinaryName}"" {#CliFlag} ""%1"" -n ""%1"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}FastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
@@ -229,7 +235,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}FastIde"; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\shell\{#ProductName}FastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-cli ""%V"" -n ""%V"""; \
+  ValueData: """{app}\{#BinaryName}"" {#CliFlag} ""%V"" -n ""%V"""; \
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}FastIde"; \
   ValueType: string; ValueName: ""; ValueData: "{code:MenuLabel|Fast Ide}"; \
@@ -239,7 +245,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}Fa
   Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\{#ProductName}FastIde\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-cli ""%V"" -n ""%V"""; \
+  ValueData: """{app}\{#BinaryName}"" {#CliFlag} ""%V"" -n ""%V"""; \
   Tasks: contextmenu
 ; The product's own URL scheme: one-click provider imports and opening a
 ; file in the IDE. Abyss never replaces BaoCode's scheme registration.
@@ -251,7 +257,7 @@ Root: HKA; Subkey: "Software\Classes\{#UrlScheme}\DefaultIcon"; ValueType: strin
   ValueName: ""; ValueData: """{app}\{#BinaryName}"",0"
 Root: HKA; Subkey: "Software\Classes\{#UrlScheme}\shell\open\command"; \
   ValueType: string; ValueName: ""; \
-  ValueData: """{app}\{#BinaryName}"" --baocode-link ""%1"""
+  ValueData: """{app}\{#BinaryName}"" {#LinkFlag} ""%1"""
 #if BundleBrowser
 ; The browsers' native messaging host for BaoCode's extension, always
 ; (windows/BrowserBridge): a browser finds dev.baocode.browser.json, beside

@@ -53,8 +53,14 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 target_compile_definitions(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:BAOCODE_DEV_ICON>")
 
 # Write identity literals rather than passing quoted strings through
-# Visual Studio's C++ or resource-compiler command-line parsing.
-configure_file("edition.h.in" "${CMAKE_CURRENT_BINARY_DIR}/edition.h" @ONLY)
+# Visual Studio's C++ or resource-compiler command-line parsing. There is
+# deliberately no source-directory header with this name: a quoted include
+# searches the including source's directory first, which made a checked-in
+# BaoCode fallback override this generated Abyss identity.
+configure_file(
+  "generated_edition_identity.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/generated_edition_identity.h"
+  @ONLY)
 configure_file("edition.rc.in" "${CMAKE_CURRENT_BINARY_DIR}/edition.rc" @ONLY)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 

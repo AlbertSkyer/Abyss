@@ -1,0 +1,27 @@
+#ifndef RUNNER_GENERATED_EDITION_IDENTITY_H_
+#define RUNNER_GENERATED_EDITION_IDENTITY_H_
+
+// Native identity selected by APP_EDITION / APP_PRODUCT at build time. This
+// file exists only in the build directory. Flutter's method-channel protocol
+// is intentionally shared; product isolation identities never are.
+namespace edition {
+
+constexpr wchar_t kName[] = L"@APP_PRODUCT@";
+constexpr wchar_t kDataFolder[] = L"@APP_DATA_FOLDER@";
+constexpr wchar_t kRegistryRoot[] = L"@APP_REGISTRY_ROOT@";
+constexpr wchar_t kSingleInstanceMutex[] = L"@APP_MUTEX@";
+constexpr wchar_t kOpenRequestProperty[] = L"@APP_OPEN_PROPERTY@";
+constexpr wchar_t kLoginProfile[] = L"@APP_LOGIN_PROFILE@";
+constexpr wchar_t kWerModule[] = L"@APP_WER_NAME@.dll";
+constexpr wchar_t kImpellerVariable[] = L"@APP_IMPELLER_VARIABLE@";
+constexpr wchar_t kPerfVariable[] = L"@APP_PERF_VARIABLE@";
+constexpr wchar_t kClipboardFormat[] = L"@APP_CLIPBOARD_FORMAT@";
+constexpr wchar_t kLoginWindowClass[] = L"@APP_LOGIN_WINDOW_CLASS@";
+constexpr char kCodeRequestFlag[] = "@APP_CLI_FLAG@";
+constexpr char kAgentRequestFlag[] = "@APP_AGENT_FLAG@";
+constexpr char kLinkRequestFlag[] = "@APP_LINK_FLAG@";
+constexpr unsigned long long kOpenRequestData = @APP_OPEN_DATA@;
+
+}  // namespace edition
+
+#endif  // RUNNER_GENERATED_EDITION_IDENTITY_H_

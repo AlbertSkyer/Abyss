@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "generated_edition_identity.h"
 #include "utils.h"
 
 namespace {
@@ -500,7 +501,7 @@ namespace {
 
 // The format of the editors' copies, the app's own.
 UINT MarkdownFormat() {
-  static const UINT format = ::RegisterClipboardFormatW(L"BaoCode Markdown");
+  static const UINT format = ::RegisterClipboardFormatW(edition::kClipboardFormat);
   return format;
 }
 

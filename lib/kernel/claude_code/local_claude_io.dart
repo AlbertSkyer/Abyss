@@ -13,11 +13,11 @@ import 'package:bao_remote/local.dart'
         ManagedClaude,
         machinePlatform;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
-import 'package:path/path.dart' as p;
 
 import '../../network/network_proxy_io.dart';
 import '../../platform/data_dir.dart';
 import 'claude_code_transport.dart';
+import 'claude_edition.dart';
 import 'claude_install_progress.dart';
 import 'claude_path_setting.dart';
 
@@ -30,7 +30,9 @@ abstract final class LocalClaude {
   static ClaudeRuntime? _runtime;
 
   static ClaudeRuntime get runtime => _runtime ??= ClaudeRuntime(
-    managed: ManagedClaude(p.join(DataDirectory.current.path, 'claude')),
+    managed: ManagedClaude(
+      LocalClaudeIdentity.runtimeDir(DataDirectory.current.path),
+    ),
     platform: ClaudeRelease.platformOf(machinePlatform()),
     named: _named,
   );

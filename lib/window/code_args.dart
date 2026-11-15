@@ -88,12 +88,14 @@ class CodeArgs {
   /// The suffix of the file the macOS script writes a request to, which
   /// the system hands the app as one to open (see shell_command_io.dart):
   /// the working directory on the first line, the arguments on the rest.
-  static const requestFileSuffix = '.baocode-cli';
+  static const requestFileSuffix = AppEdition.isAbyss
+      ? '.abyss-cli'
+      : '.baocode-cli';
 
   /// The flag the Windows script (code.cmd) starts the app with, the
   /// console's folder and the arguments next; the runner hands them over
   /// as a request ([requestMarker]; see open_requests.cpp).
-  static const windowsRequestFlag = '--baocode-cli';
+  static const windowsRequestFlag = AppEdition.nativeCliFlag;
 
   /// The marker of Open with BaoCode (Explorer's context menu, which the
   /// Windows installer or the settings add; Finder's, the macOS app's
@@ -103,7 +105,7 @@ class CodeArgs {
 
   /// The flag that menu starts the app with, the path next; the runner
   /// hands it over as a request ([agentRequestMarker]).
-  static const windowsAgentFlag = '--baocode-agent';
+  static const windowsAgentFlag = AppEdition.nativeAgentFlag;
 
   /// The marker of a `baocode://` link, the link next: a site's one-click
   /// import of an upstream (`baocode://provider/import?…`, see
@@ -115,7 +117,7 @@ class CodeArgs {
   /// The flag Windows starts the app with for a `baocode://` link (the URL
   /// scheme the installer registers), the link next; the runner hands it
   /// over as a request ([importRequestMarker]).
-  static const windowsLinkFlag = '--baocode-link';
+  static const windowsLinkFlag = AppEdition.nativeLinkFlag;
 
   /// Whether [argument] starts a request ([requestMarker],
   /// [agentRequestMarker], [importRequestMarker]) among what the system

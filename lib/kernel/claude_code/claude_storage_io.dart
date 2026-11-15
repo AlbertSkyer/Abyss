@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 import '../../platform/data_dir.dart';
 import '../agent_kernel.dart';
+import 'claude_environment.dart' as local;
 
 /// Claude Code's own record of its sessions on this machine (see
 /// [ClaudeSessions]).
@@ -22,8 +23,8 @@ class ClaudeStorage implements SessionCatalog, MovesSessions {
   /// app's cache folder by default.
   final String? cacheFile;
 
-  ClaudeSessions get _sessions => ClaudeSessions(
-    configDir: configDir,
+  Future<ClaudeSessions> get _sessions async => ClaudeSessions(
+    configDir: configDir ?? await local.ClaudeEnvironment.configDir(),
     tempDir: tempDir,
     cacheFile:
         cacheFile ??
@@ -31,14 +32,16 @@ class ClaudeStorage implements SessionCatalog, MovesSessions {
   );
 
   @override
-  Future<void> delete(String id) => _sessions.delete(id);
+  Future<void> delete(String id) async => (await _sessions).delete(id);
 
   @override
-  Future<int> moveSessions(String from, String to) => _sessions.move(from, to);
+  Future<int> moveSessions(String from, String to) async =>
+      (await _sessions).move(from, to);
 
   @override
   Future<List<ProjectRecord>> projects() async => [
-    for (final project in await _sessions.projects()) projectRecord(project),
+    for (final project in await (await _sessions).projects())
+      projectRecord(project),
   ];
 
   @override
@@ -48,7 +51,8 @@ class ClaudeStorage implements SessionCatalog, MovesSessions {
   }
 
   /// What the session [id] kept of its goal (see [ClaudeSessions.goal]).
-  Future<List<Map<String, Object?>>> goal(String id) => _sessions.goal(id);
+  Future<List<Map<String, Object?>>> goal(String id) async =>
+      (await _sessions).goal(id);
 
   /// Copies the session [id] into a new one, [into] (see
   /// [ClaudeSessions.fork]): its file.
@@ -57,7 +61,7 @@ class ClaudeStorage implements SessionCatalog, MovesSessions {
     String into, {
     String? before,
     String? title,
-  }) => _sessions.fork(id, into, before: before, title: title);
+  }) async => (await _sessions).fork(id, into, before: before, title: title);
 
   /// The session's conversation along the branch it ended on.
   static Future<List<Map<String, Object?>>> read(SessionRecord session) {

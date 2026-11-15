@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-/// Product identity which differs between parallel editions. Package names,
-/// Flutter channels, command-line flags and remote protocols deliberately do
-/// not: they remain BaoCode's in every edition.
+/// Product identity which differs between parallel editions. Package names
+/// and Flutter method-channel protocols deliberately do not: those remain
+/// BaoCode's in every edition. Filesystem, registry, window and native request
+/// identities must always be edition-specific.
 abstract final class AppEdition {
   static const name = String.fromEnvironment(
     'APP_EDITION',
@@ -21,6 +22,9 @@ abstract final class AppEdition {
       : r'Software\BaoCode';
   static const windowsContextMenu = isAbyss ? 'Abyss' : 'BaoCode';
   static const urlScheme = isAbyss ? 'abyss' : 'baocode';
+  static const nativeCliFlag = isAbyss ? '--abyss-cli' : '--baocode-cli';
+  static const nativeAgentFlag = isAbyss ? '--abyss-agent' : '--baocode-agent';
+  static const nativeLinkFlag = isAbyss ? '--abyss-link' : '--baocode-link';
 
   /// Abyss has neither a signed update feed nor an extension of its own yet.
   /// Do not silently take BaoCode's, whose installer and browser host would

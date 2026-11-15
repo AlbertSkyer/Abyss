@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <vector>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "crash_report.h"
 #include "hang_watchdog.h"
 #include "utils.h"

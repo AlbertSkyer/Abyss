@@ -7,7 +7,7 @@
 
 #include <utility>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "utils.h"
 
 namespace {

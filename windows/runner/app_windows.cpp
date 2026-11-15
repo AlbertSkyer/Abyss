@@ -1,5 +1,5 @@
 #include "app_windows.h"
-#include "edition.h"
+#include "generated_edition_identity.h"
 
 #include <flutter/standard_method_codec.h>
 

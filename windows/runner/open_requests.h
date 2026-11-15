@@ -2,6 +2,7 @@
 #define RUNNER_OPEN_REQUESTS_H_
 
 #include <flutter/binary_messenger.h>
+#include "generated_edition_identity.h"
 #include <flutter/encodable_value.h>
 #include <flutter/method_channel.h>
 #include <windows.h>
@@ -47,26 +48,13 @@ class OpenRequests {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };
 
-// What a WM_COPYDATA carrying paths to open has as its dwData: told from
-// any other app's copy data by it.
-constexpr ULONG_PTR kOpenRequestData = 0x42414F43;  // "BAOC"
-
-// The flag code.cmd starts the app with (see
-// lib/platform/shell_command_io.dart): the console's folder comes next, then
-// the arguments as typed (`-n`, `-r`, `-g file:line`, the paths), which
-// Flutter reads as VS Code's CLI does.
-constexpr char kCodeRequestFlag[] = "--baocode-cli";
-
-// The flag Explorer's Open with BaoCode starts the app with (the context
-// menu the installer adds, see tool/baocode.iss), the path next: a new agent
-// in the chat's window, the file in its composer (lib/window/app_windows.dart's
-// openAgent).
-constexpr char kAgentRequestFlag[] = "--baocode-agent";
-
-// The flag a baocode: link starts the app with (the URL scheme the installer
-// registers, see tool/baocode.iss), the link next: a site's one-click import
-// of an upstream, which Flutter reads (lib/models/upstream_import.dart).
-constexpr char kLinkRequestFlag[] = "--baocode-link";
+// The product-specific WM_COPYDATA tag and native request flags. Abyss and
+// BaoCode must never consume one another's open requests. The Dart flags are
+// selected with the same APP_EDITION in lib/platform/app_edition.dart.
+constexpr auto& kOpenRequestData = edition::kOpenRequestData;
+constexpr auto* kCodeRequestFlag = edition::kCodeRequestFlag;
+constexpr auto* kAgentRequestFlag = edition::kAgentRequestFlag;
+constexpr auto* kLinkRequestFlag = edition::kLinkRequestFlag;
 
 // Whether |paths| are a request rather than paths: kCodeRequestFlag,
 // kAgentRequestFlag or kLinkRequestFlag first.

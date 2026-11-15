@@ -60,6 +60,7 @@
 // the remote server's gzipped builds, which the app downloads instead of
 // carrying them (tool/build_remote_server.dart), to upload with the
 // release.
+import 'dart:convert' show ascii;
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
@@ -99,17 +100,6 @@ List<String> _required(String product) => [
   r'data\icudtl.dat',
   r'data\flutter_assets',
 ];
-
-const _editionRequired = <String, List<String>>{
-  'Abyss': [
-    'Abyss.exe',
-    'abyss_wer.dll',
-    r'data\app.so',
-    r'data\icudtl.dat',
-    r'data\flutter_assets',
-    'flutter_windows.dll',
-  ],
-};
 
 /// The OpenSSH for Windows release the bundle carries (Win32-OpenSSH's
 /// OpenSSH-Win64.zip, OpenSSH-ARM64.zip for arm64), their SHA-256, and what
@@ -158,10 +148,18 @@ Future<void> main(List<String> arguments) async {
     _fail('--portable-only is only for the independent --abyss build.');
   }
   final buildDirAt = arguments.indexOf('--build-dir');
-  final buildRoot = buildDirAt >= 0 && buildDirAt + 1 < arguments.length
-      ? arguments[buildDirAt + 1]
-      : 'build';
-  if (buildRoot.isEmpty || buildRoot.startsWith('\\\\')) {
+  final buildRoot =
+      (buildDirAt >= 0 && buildDirAt + 1 < arguments.length
+              ? arguments[buildDirAt + 1]
+              : 'build')
+          .replaceAll('/', r'\');
+  final normalizedBuildRoot = Uri(path: buildRoot.replaceAll(r'\', '/'));
+  if (buildRoot.isEmpty ||
+      buildRoot.startsWith(r'\\') ||
+      normalizedBuildRoot.isAbsolute ||
+      normalizedBuildRoot.pathSegments.any(
+        (segment) => segment.isEmpty || segment == '.' || segment == '..',
+      )) {
     _fail('--build-dir must be a local folder below the repository.');
   }
   final buildOnly = arguments.contains('--build-only');
@@ -207,24 +205,26 @@ Future<void> main(List<String> arguments) async {
       ..createSync(recursive: true);
     final environment = <String, String>{};
     if (buildRoot != 'build') {
-      // `flutter build windows` has no --build-dir. Its supported config
-      // setting lives under APPDATA, so isolate it rather than modifying
-      // the developer's Flutter settings or reusing BaoCode's CMake cache.
+      // Windows environment keys ignore case: an added APPDATA must replace
+      // (not duplicate) a parent's AppData. Flutter reads its settings there.
       final appData = Directory('${root.path}\\build\\edition-build-config')
         ..createSync(recursive: true);
-      File('${appData.path}\\.flutter_settings')
-          .writeAsStringSync('{"build-dir":"$buildRoot"}');
       environment['APPDATA'] = appData.absolute.path;
     }
+    final childEnvironment = mergeBuildEnvironment(
+      Platform.environment,
+      environment,
+    );
     await _run(
       'flutter',
       [
         'config',
         '--no-analytics',
         if (environment.isNotEmpty) '--build-dir=$buildRoot',
+        if (environment.isNotEmpty) '--list',
       ],
       root.path,
-      environment: environment,
+      environment: childEnvironment,
     );
     await _run(
       'flutter',
@@ -240,7 +240,7 @@ Future<void> main(List<String> arguments) async {
             '${symbols.path}\\app.windows-$arch.symbols',
       ],
       root.path,
-      environment: environment,
+      environment: childEnvironment,
     );
   } else {
     _step('Using the bundle already built');
@@ -248,8 +248,8 @@ Future<void> main(List<String> arguments) async {
 
   _step('Checking the bundle');
   _checkBundle(bundle, _required(product));
-  if (abyss) _checkBundle(bundle, _editionRequired[product]!);
   if (abyss) {
+    _checkIndependentIdentity(bundle);
     for (final foreign in [
       'baocode.exe',
       'baocode_wer.dll',
@@ -323,6 +323,11 @@ Future<void> main(List<String> arguments) async {
 
   if (portableOnly) {
     _step('Portable Abyss bundle ready: ${bundle.path}');
+    stdout.writeln(
+      'Portable-only: no installer was produced (Inno Setup is optional for\n'
+      'this mode). This bundle registers no AppId, shortcuts, URL scheme,\n'
+      'Explorer menus or browser host, and does not alter BaoCode\'s.',
+    );
     return;
   }
   _step('Compiling the installer');
@@ -404,6 +409,19 @@ Future<void> main(List<String> arguments) async {
   );
 }
 
+/// Runs the child with the complete parent environment and Windows-safe
+/// replacement keys. Never pass an APPDATA-only environment to a build.
+Map<String, String> mergeBuildEnvironment(
+  Map<String, String> parent,
+  Map<String, String> overrides,
+) => Map<String, String>.from(parent)
+  ..removeWhere(
+    (key, value) => overrides.keys.any(
+      (replacement) => key.toLowerCase() == replacement.toLowerCase(),
+    ),
+  )
+  ..addAll(overrides);
+
 /// Stops unless [directory] holds every one of [required].
 void _checkBundle(Directory directory, List<String> required) {
   if (!directory.existsSync()) {
@@ -431,6 +449,105 @@ void _checkBundle(Directory directory, List<String> required) {
     'LNK1104, a running baocode.exe is holding the output file — close it and\n'
     'build again.',
   );
+}
+
+/// Native isolation strings are checked in the artifacts, not just their
+/// sources: a quoted include once picked a source-directory BaoCode header
+/// instead of the generated Abyss one and forwarded Abyss to BaoCode.
+void _checkIndependentIdentity(Directory bundle) {
+  void check(String relative, List<String> own, List<String> foreign) {
+    final file = File('${bundle.path}\\$relative');
+    final bytes = file.readAsBytesSync();
+    final utf8 = ascii.encode;
+    bool has(String identity) =>
+        bytes.containsBytes(utf8(identity)) ||
+        bytes.containsBytes([
+          for (final unit in identity.codeUnits) ...[unit, 0],
+        ]);
+    final missing = own.where((identity) => !has(identity)).toList();
+    final leaked = foreign.where(has).toList();
+    if (missing.isEmpty && leaked.isEmpty) {
+      stdout.writeln(
+        '  $relative passed the Abyss-only isolation identity check.',
+      );
+      return;
+    }
+    _fail(
+      'Edition isolation check failed for ${file.path}.\n'
+      '${missing.isEmpty ? '' : 'Missing Abyss identities: $missing\n'}'
+      '${leaked.isEmpty ? '' : 'Foreign BaoCode isolation identities: $leaked\n'}'
+      'Do not package a stale or source-header-contaminated build.',
+    );
+  }
+
+  check(
+    'Abyss.exe',
+    [
+      'Abyss',
+      r'Local\Abyss.SingleInstance',
+      'Abyss.OpenRequests',
+      r'Software\Abyss',
+      'Abyss-Login',
+      'abyss_wer.dll',
+      'ABYSS_IMPELLER',
+      '--abyss-cli',
+      '--abyss-agent',
+      '--abyss-link',
+      'ABYSS_LOGIN_WINDOW',
+      'Abyss Markdown',
+    ],
+    [
+      r'Local\BaoCode.SingleInstance',
+      'BaoCode.OpenRequests',
+      r'Software\BaoCode',
+      'BaoCode-Login',
+      'baocode_wer.dll',
+      'BAOCODE_IMPELLER',
+      'BAOCODE_PERF_SCENARIOS',
+      '--baocode-cli',
+      '--baocode-agent',
+      '--baocode-link',
+      'BAOCODE_LOGIN_WINDOW',
+      'BaoCode Markdown',
+    ],
+  );
+  check(
+    r'data\app.so',
+    [
+      'abyss',
+      'ABYSS_DATA_DIR',
+      '.abyss',
+      '--abyss-cli',
+      '--abyss-agent',
+      '--abyss-link',
+    ],
+    [
+      'BAOCODE_DATA_DIR',
+      '.baocode/config-dir.json',
+      '.baocode\\config-dir.json',
+      r'Software\BaoCode',
+      '--baocode-cli',
+      '--baocode-agent',
+      '--baocode-link',
+    ],
+  );
+}
+
+extension on List<int> {
+  bool containsBytes(List<int> needle) {
+    if (needle.isEmpty) return true;
+    for (var offset = 0; offset <= length - needle.length; offset++) {
+      var found = true;
+      for (var index = 0; index < needle.length; index++) {
+        if (this[offset + index] != needle[index]) {
+          found = false;
+          break;
+        }
+      }
+      if (found) return true;
+    }
+    return false;
+  }
 }
 
 /// Replaces the bundle's flutter_windows.dll with tool/engine's, provided the

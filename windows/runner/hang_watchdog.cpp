@@ -10,7 +10,7 @@
 #include <cwchar>
 #include <string>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "crash_report.h"
 #include "log_folder.h"
 

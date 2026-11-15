@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../../platform/app_paths.dart';
 import 'claude_environment.dart';
+import 'claude_edition.dart';
 
 /// Checked at app startup, before any session starts. An existing true
 /// flag needs no write; the rest of Claude Code's state is kept.
@@ -14,12 +15,9 @@ Future<bool> prepareClaudeOnboarding({Map<String, String>? environment}) async {
   try {
     final env = environment ?? await ClaudeEnvironment.of();
     final home = AppPaths.home(env);
-    final config = [
-      env[ClaudeEnvironment.dataPathVariable],
-      env['CLAUDE_CONFIG_DIR'],
-    ].whereType<String>().where((dir) => dir.isNotEmpty).firstOrNull;
+    final config = LocalClaudeIdentity.configDir(env);
     final String path;
-    if (config != null) {
+    if (config.isNotEmpty) {
       if (!p.isAbsolute(config)) {
         throw const FormatException('Claude Code config directory is relative');
       }

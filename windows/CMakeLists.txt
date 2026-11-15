@@ -2,6 +2,13 @@
 cmake_minimum_required(VERSION 3.14)
 project(baocode LANGUAGES CXX)
 
+# CMAKE_INSTALL_PREFIX's default contains $<TARGET_FILE_DIR:baocode>. CMake
+# evaluates that while processing subdirectories, before the edition target is
+# created, so Abyss would fail generation looking for a nonexistent baocode
+# target. Give generation a neutral value, then select the real bundle target
+# below, after BINARY_NAME and add_subdirectory(runner).
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/bundle" CACHE PATH "..." FORCE)
+
 # APP_EDITION in Flutter's dart-defines, or -DAPP_PRODUCT=Abyss for native
 # builds, selects the parallel product. The default remains BaoCode.
 include("edition.cmake")
@@ -79,7 +86,8 @@ include(flutter/generated_plugins.cmake)
 set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
 # Make the "install" step default, as it's required to run.
 set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR
+   CMAKE_INSTALL_PREFIX STREQUAL "${CMAKE_BINARY_DIR}/bundle")
   set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
 endif()
 

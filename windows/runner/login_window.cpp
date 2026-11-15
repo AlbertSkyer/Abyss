@@ -6,7 +6,7 @@
 #include <optional>
 #include <utility>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "utils.h"
 
 using Microsoft::WRL::Callback;
@@ -14,7 +14,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"BAOCODE_LOGIN_WINDOW";
+constexpr auto& kWindowClass = edition::kLoginWindowClass;
 
 // Its size at 100%, as the macOS app's.
 constexpr int kWidth = 480;

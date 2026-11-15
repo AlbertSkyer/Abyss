@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <string>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "log_folder.h"
 #include "resource.h"
 

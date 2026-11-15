@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "edition.h"
+#include "generated_edition_identity.h"
 #include "flutter_window.h"
 #include "hang_watchdog.h"
 #include "open_requests.h"
@@ -88,7 +88,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // scenarios in the environment): it runs beside the user's own copy, on
   // a data folder of its own.
   const bool perf_run =
-      ::GetEnvironmentVariableW(L"BAOCODE_PERF_SCENARIOS", nullptr, 0) > 0;
+      ::GetEnvironmentVariableW(edition::kPerfVariable, nullptr, 0) > 0;
   const HANDLE single_instance =
       perf_run ? nullptr
                : ::CreateMutexW(nullptr, FALSE, kSingleInstanceMutex);
@@ -121,7 +121,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Skia some users saw a white strip along the window's sides and bottom.
   // BAOCODE_IMPELLER=1 brings Impeller back, to compare.
   project.set_impeller_switch(
-      ::GetEnvironmentVariableW(L"BAOCODE_IMPELLER", nullptr, 0) > 0
+      ::GetEnvironmentVariableW(edition::kImpellerVariable, nullptr, 0) > 0
           ? flutter::ImpellerSwitch::Enabled
           : flutter::ImpellerSwitch::Disabled);
 
