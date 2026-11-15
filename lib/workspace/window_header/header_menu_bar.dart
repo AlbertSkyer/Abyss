@@ -240,10 +240,17 @@ class _HeaderMenuBarState extends State<HeaderMenuBar> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: (MediaQuery.sizeOf(context).height - 70).clamp(100, 1000),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
       ),
     );
   }

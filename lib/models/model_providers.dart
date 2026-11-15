@@ -105,6 +105,10 @@ class ModelProviders extends ChangeNotifier {
   static const actionsKey = 'models.actions';
   static const imageKey = 'models.image';
   static const subagentPoolKey = 'models.subagentPool';
+  static const subagentCapabilitiesKey = 'models.subagentCapabilities';
+
+  static const _maxSubagentCapabilities = 16;
+  static const _maxSubagentCapabilityLength = 64;
 
   /// [actionsModel]'s value for the auxiliary model, whatever it is.
   static const followAuxiliary = 'auxiliary';
@@ -358,6 +362,89 @@ class ModelProviders extends ChangeNotifier {
         if (_poolRef(ref) case final ref? when seen.add(ref)) ref,
     ];
     await _write(subagentPoolKey, pool.isEmpty ? null : pool);
+  }
+
+  /// Optional caller-defined tags for a model ref. Tags do not add a model
+  /// to the pool or otherwise change its allowlist.
+  List<String> subagentCapabilities(String ref) => List.unmodifiable(
+    _subagentCapabilitiesOf(ref, _read(subagentCapabilitiesKey)),
+  );
+
+  /// Replaces the tags of [ref], trimming and deduping them in input order.
+  /// Empty tags remove that ref's entry. Capability names are not predefined.
+  Future<void> setSubagentCapabilities(String ref, List<String> tags) async {
+    final parsed = parseModelRef(ref.trim());
+    if (parsed == null) {
+      throw ArgumentError.value(ref, 'ref', 'Must be a model ref');
+    }
+    final normalized = ref.trim();
+    final seen = <String>{};
+    final clean = <String>[];
+    for (final tag in tags) {
+      final value = tag.trim();
+      if (value.isEmpty || !seen.add(value)) continue;
+      if (value.length > _maxSubagentCapabilityLength) {
+        throw ArgumentError.value(
+          tag,
+          'tags',
+          'Each tag must be at most $_maxSubagentCapabilityLength characters',
+        );
+      }
+      if (clean.length == _maxSubagentCapabilities) {
+        throw ArgumentError.value(
+          tags,
+          'tags',
+          'At most $_maxSubagentCapabilities distinct tags are allowed',
+        );
+      }
+      clean.add(value);
+    }
+    final stored = _capabilityMap(_read(subagentCapabilitiesKey));
+    if (clean.isEmpty) {
+      stored.remove(normalized);
+    } else {
+      stored[normalized] = clean;
+    }
+    await _write(
+      subagentCapabilitiesKey,
+      stored.isEmpty
+          ? null
+          : {
+              for (final entry in stored.entries)
+                if (entry.value.isNotEmpty) entry.key: entry.value,
+            },
+    );
+  }
+
+  static List<String> _subagentCapabilitiesOf(String ref, Object? stored) {
+    final normalized = ref.trim();
+    if (parseModelRef(normalized) == null) return const [];
+    return _capabilityMap(stored)[normalized] ?? const [];
+  }
+
+  static Map<String, List<String>> _capabilityMap(Object? stored) {
+    final result = <String, List<String>>{};
+    if (stored is! Map) return result;
+    for (final entry in stored.entries) {
+      if (entry.key is! String || entry.value is! List) continue;
+      final ref = (entry.key as String).trim();
+      if (parseModelRef(ref) == null) continue;
+      final seen = <String>{};
+      final tags = <String>[];
+      for (final tag in entry.value as List) {
+        if (tag is! String) continue;
+        final value = tag.trim();
+        if (value.isEmpty ||
+            value.length > _maxSubagentCapabilityLength ||
+            !seen.add(value)) {
+          continue;
+        }
+        if (tags.length == _maxSubagentCapabilities) break;
+        tags.add(value);
+      }
+      if (tags.isNotEmpty) result[ref] = tags;
+    }
+    return result;
   }
 
   static List<String> _poolOf(Object? stored) {

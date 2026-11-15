@@ -1029,7 +1029,8 @@ class _SidebarState extends State<Sidebar>
         if ((thread.archived
                 ? _workspace.listsHost(thread.project.host)
                 : _listed(thread)) &&
-            _workspace.listsInSidebar(thread))
+            _workspace.listsInSidebar(thread) &&
+            !_workspace.isScratch(thread))
           thread,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     // Asides under the one each was asked beside, where that one is

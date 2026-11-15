@@ -140,6 +140,16 @@ Future<void> main(List<String> arguments) async {
       'On macOS, use tool/build_macos.dart.',
     );
   }
+  final isccAt = arguments.indexOf('--iscc');
+  final isccOverride = isccAt < 0
+      ? null
+      : isccAt + 1 < arguments.length && !arguments[isccAt + 1].startsWith('--')
+      ? arguments[isccAt + 1]
+      : '';
+  if (isccOverride != null &&
+      (isccOverride.isEmpty || !File(isccOverride).existsSync())) {
+    _fail('--iscc requires the path of an existing Inno Setup compiler.');
+  }
   final skipBuild = arguments.contains('--skip-build');
   final abyss = arguments.contains('--abyss');
   final product = abyss ? 'Abyss' : 'BaoCode';
@@ -331,7 +341,7 @@ Future<void> main(List<String> arguments) async {
     return;
   }
   _step('Compiling the installer');
-  final iscc = _findIscc();
+  final iscc = isccOverride ?? _findIscc();
   installers.createSync(recursive: true);
   await _run(iscc, [
     '/DBundleDir=${bundle.path}',

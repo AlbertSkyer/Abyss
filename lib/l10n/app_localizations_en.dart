@@ -10,6 +10,98 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get agentCapabilitiesTitle => 'Model capability tags';
+
+  @override
+  String get agentCapabilitiesDescription =>
+      'Optional comma-separated preferences, such as fast, analysis, implementation or review. Tags guide the parent; they are not performance guarantees.';
+
+  @override
+  String get dockMainChat => 'Conversations';
+
+  @override
+  String get dockTeam => 'Agent team';
+
+  @override
+  String get dockScratch => 'Temporary chat';
+
+  @override
+  String get dockSaveLayout => 'Save current layout…';
+
+  @override
+  String get dockResetLayout => 'Reset layout';
+
+  @override
+  String get dockManageLayouts => 'Manage saved layouts…';
+
+  @override
+  String get dockLayoutName => 'Layout name';
+
+  @override
+  String get dockFocusLayout => 'Focus conversation';
+
+  @override
+  String get dockTeamLayout => 'Team collaboration';
+
+  @override
+  String get dockDevelopLayout => 'Development';
+
+  @override
+  String get teamStandby => 'Standby';
+
+  @override
+  String get teamDisabled => 'Disabled';
+
+  @override
+  String get teamStopped => 'Stopped';
+
+  @override
+  String get teamUnverified => 'Unverified';
+
+  @override
+  String get teamDescription =>
+      'Standby means retained context is available for reuse, not a continuously running process. Disabling a member does not stop its running task.';
+
+  @override
+  String get teamEmpty =>
+      'No members yet. The main agent creates members when it delegates work.';
+
+  @override
+  String get teamRole => 'Role';
+
+  @override
+  String get teamEnable => 'Enable';
+
+  @override
+  String get teamDisable => 'Disable';
+
+  @override
+  String get teamRestore => 'Restore member';
+
+  @override
+  String get teamShowTasks => 'Show tasks';
+
+  @override
+  String get scratchCreate => 'Inherit current conversation';
+
+  @override
+  String get scratchEmpty => 'Start empty chat';
+
+  @override
+  String get scratchNew => 'New temporary chat';
+
+  @override
+  String get scratchDescription =>
+      'Copies completed context at creation, then chats independently. Tools and agent dispatch are disabled.';
+
+  @override
+  String get scratchUnavailable =>
+      'This conversation has no saved context to copy yet. You can start an empty temporary chat.';
+
+  @override
+  String get scratchSnapshot => 'Snapshot from';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override

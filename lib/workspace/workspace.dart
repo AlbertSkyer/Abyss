@@ -736,6 +736,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
               ...?_agentSettings[session.id],
             }),
             workspace: () => _kernelWorkspace(session.cwd),
+            chatOnly: _scratches.containsKey(session.id),
           ),
           historyCount: 0,
         ),
@@ -2491,10 +2492,14 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     }
     final ids = {...titles.keys, for (final thread in _threads) ?thread.id};
     final asides = _forgetGoneAsides(ids);
+    final scratches = _scratches.length;
+    _scratches.removeWhere((id, scratch) => !ids.contains(id));
     final drafts = _drafts.length;
     _drafts.removeWhere(
       (key, _) => key.startsWith(_newDraft)
           ? !paths.contains(key.substring(_newDraft.length))
+          : key.startsWith('scratch-new:')
+          ? !paths.contains(key.substring('scratch-new:'.length))
           : !ids.contains(key),
     );
     if (_drafts.length != drafts) _saveDrafts();
@@ -2507,6 +2512,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     if (_pinned.length + _archived.length + _folders.length != count ||
         _names.length != names ||
         asides ||
+        _scratches.length != scratches ||
         size() != before) {
       _save();
     }
@@ -2545,8 +2551,12 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   void _followDraft(AgentThread thread) {
     final draft = thread.session.draft;
     final id = thread.id;
-    final key = id ?? '$_newDraft${thread.project.path}';
-    if (id != null || _newDrafts.remove(thread.project.path)) {
+    final key =
+        id ??
+        '${thread.session.kernelContext.chatOnly ? 'scratch-new:' : _newDraft}${thread.project.path}';
+    if (id != null ||
+        thread.session.kernelContext.chatOnly ||
+        _newDrafts.remove(thread.project.path)) {
       if (_drafts[key] case final kept?) _decodeDraft(kept, draft);
     }
     draft.onSaved = () => _draftChanged(thread);
@@ -2557,7 +2567,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     // before a subsequent sidebar click can replace a newly edited preview.
     if (AppEdition.isAbyss && _hasDraft(thread)) pinChatTab(thread);
     final draft = thread.session.draft;
-    final key = thread.id ?? '$_newDraft${thread.project.path}';
+    final key =
+        thread.id ??
+        '${thread.session.kernelContext.chatOnly ? 'scratch-new:' : _newDraft}${thread.project.path}';
     if (_draftKeys[thread] case final was? when was != key) {
       _drafts.remove(was);
     }
@@ -2841,6 +2853,19 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       if (sidebar['foldedAsides'] case final List<Object?> folded) {
         _foldedAsides.addAll(folded.whereType<String>());
       }
+      if (sidebar['scratches'] case final Map<Object?, Object?> scratches) {
+        for (final MapEntry(:key, :value) in scratches.entries) {
+          if ((key, value) case (
+            final String id,
+            {'source': final String source},
+          )) {
+            _scratches[id] = (
+              source: source,
+              at: (value as Map)['at'] as String?,
+            );
+          }
+        }
+      }
       _foldedAgentTasks.addAll(list('foldedAgentTasks'));
     }
     if (kept['workspaces'] case final List<Object?> workspaces) {
@@ -2971,6 +2996,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
             id: {'parent': aside.parent, 'from': aside.from, 'at': ?aside.at},
         },
         'foldedAsides': [..._foldedAsides],
+        'scratches': {
+          for (final MapEntry(key: id, value: scratch) in _scratches.entries)
+            id: {'source': scratch.source, 'at': ?scratch.at},
+        },
         'foldedAgentTasks': [..._foldedAgentTasks],
       },
       'ide': {
@@ -3105,6 +3134,15 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     }
     // Renamed in Claude Code (/rename): named so here too.
     if (session.takeRenamed() case final title?) rename(thread, title);
+    if (_scratchOrigins[thread] case final origin?) {
+      if (thread.id case final id?) {
+        final sourceId = _scratchSources[thread]?.id ?? origin.source;
+        if (!_scratches.containsKey(id)) {
+          _scratches[id] = (source: sourceId, at: origin.at);
+          _save();
+        }
+      }
+    }
     // An agent of the app's own (a bot's) is named by it, not by what it
     // was first told, nor by a model.
     if (isAppFolder(thread.project.path)) {
@@ -3951,7 +3989,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// A new, empty agent in [project], listed here but not shown.
-  AgentThread _newThread(Project project) {
+  AgentThread _newThread(Project project, {bool chatOnly = false}) {
     final kernel =
         switch (agentSetup?.call(project.path)?.kernel) {
           final id? => kernels.where((k) => k.id == id).firstOrNull,
@@ -3975,6 +4013,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
           cwd: cwd,
           settings: settings,
           workspace: () => _kernelWorkspace(cwd),
+          chatOnly: chatOnly,
         ),
         historyCount: 0,
       ),
@@ -4016,10 +4055,16 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// [fork], the copy titled [title].
-  Future<AgentThread?> _fork(AgentThread thread, String title) async {
+  Future<AgentThread?> _fork(
+    AgentThread thread,
+    String title, {
+    bool chatOnly = false,
+  }) async {
     final session = thread.session;
     final record = await session.fork(title: title);
     if (record == null || _disposed) return null;
+    chatOnly = chatOnly || session.kernelContext.chatOnly;
+    if (chatOnly) _scratches[record.id] = (source: '', at: session.forkEndsAt);
     final settings = {
       for (final kind in KernelChoiceKind.values)
         if (kind != KernelChoiceKind.fast) kind.name: ?session.selected(kind),
@@ -4048,6 +4093,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
             ...?_agentSettings[record.id],
           }),
           workspace: () => _kernelWorkspace(record.cwd),
+          chatOnly: chatOnly,
         ),
         historyCount: 0,
       ),
@@ -4056,6 +4102,108 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     _save();
     notifyListeners();
     return forked;
+  }
+
+  // --- Scratch chats -------------------------------------------------------
+
+  /// A scratch chat's origin and the parent item its fork was taken at.
+  /// IDs keep the relationship across runs, once the catalogs are listed.
+  final Map<String, ({String source, String? at})> _scratches = {};
+
+  /// A scratch with no session id yet: its origin once its first message
+  /// gives it one. Only this chat is provisional; the source is unchanged.
+  final Map<AgentThread, ({String source, String? at})> _scratchOrigins = {};
+  final Map<AgentThread, AgentThread> _scratchSources = {};
+
+  List<AgentThread> get scratchChats =>
+      List.unmodifiable(_threads.where(isScratch));
+
+  bool hasEmptyScratchDraft(AgentThread source) =>
+      _drafts.containsKey('scratch-new:${source.project.path}');
+
+  bool isScratch(AgentThread thread) =>
+      _scratchOrigins.containsKey(thread) || _scratches.containsKey(thread.id);
+
+  AgentThread? scratchFor(AgentThread source) {
+    for (final thread in _threads) {
+      if (identical(scratchOrigin(thread), source)) return thread;
+    }
+    return null;
+  }
+
+  String? scratchBoundary(AgentThread scratch) =>
+      (_scratchOrigins[scratch] ?? _scratches[scratch.id])?.at;
+
+  AgentThread? scratchOrigin(AgentThread scratch) {
+    if (_scratchSources[scratch] case final source?) return source;
+    final origin = _scratchOrigins[scratch] ?? _scratches[scratch.id];
+    if (origin == null) return null;
+    return _threadWithId(origin.source);
+  }
+
+  /// Opens [source]'s one scratch chat, a fork of it up to the boundary
+  /// captured now. Nothing is sent or selected, and neither conversation
+  /// is deleted when its display closes. Null when [source] has no session
+  /// id, or cannot be forked (see [createEmptyScratch] for an empty one).
+  Future<AgentThread?> openScratchChat(AgentThread source) async {
+    if (scratchFor(source) case final scratch?) return scratch;
+    final sourceId = source.id;
+    final at = source.session.forkEndsAt;
+    if (sourceId == null || !source.session.canFork) return null;
+    final scratch = await _fork(
+      source,
+      '${source.localizedTitle(l10n())} (scratch)',
+      chatOnly: true,
+    );
+    final id = scratch?.id;
+    if (scratch == null || id == null) return null;
+    _scratches[id] = (source: sourceId, at: at);
+    _save();
+    notifyListeners();
+    return scratch;
+  }
+
+  /// A new, empty chat-only conversation beside [source], not a fork.
+  /// Used when [source] has no id yet. It is still listed here, not shown.
+  Future<AgentThread> createEmptyScratch(AgentThread source) async {
+    if (scratchFor(source) case final scratch?) return scratch;
+    final scratch = _newThread(source.project, chatOnly: true);
+    _scratchSources[scratch] = source;
+    final sourceId = source.id;
+    _scratchOrigins[scratch] = (
+      source: sourceId ?? '',
+      at: source.session.forkEndsAt,
+    );
+    if (sourceId != null) {
+      if (scratch.id case final id?) {
+        _scratches[id] = _scratchOrigins[scratch]!;
+      }
+    }
+    _save();
+    notifyListeners();
+    return scratch;
+  }
+
+  /// Starts a new snapshot without deleting either conversation. Previous
+  /// scratch history remains recoverable, but is no longer the active scratch.
+  Future<AgentThread?> resetScratchChat(AgentThread scratch) async {
+    final source = scratchOrigin(scratch);
+    if (source == null || !_threads.contains(scratch)) return null;
+    _scratchSources.remove(scratch);
+    _scratchOrigins.remove(scratch);
+    if (scratch.id case final id?) _scratches[id] = (source: '', at: null);
+    _save();
+    return source.id == null
+        ? createEmptyScratch(source)
+        : openScratchChat(source);
+  }
+
+  void _forgetScratch(String id) {
+    _scratches.remove(id);
+    _scratchOrigins.removeWhere((thread, origin) => thread.id == id);
+    _scratchSources.removeWhere(
+      (scratch, source) => scratch.id == id || source.id == id,
+    );
   }
 
   // --- Asides (/btw) -----------------------------------------------------
@@ -4492,7 +4640,11 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       resumes.remove(id);
       final kept = [_pinned.remove(id), _archived.remove(id)];
       final named = _names.remove(id) != null;
-      if (save && (named || kept.contains(true))) _save();
+      final scratched =
+          _scratches.containsKey(id) ||
+          _scratches.values.any((origin) => origin.source == id);
+      _forgetScratch(id);
+      if (save && (named || scratched || kept.contains(true))) _save();
     }
     final catalog = thread.kernel.catalog;
     final listener = _listeners.remove(thread);

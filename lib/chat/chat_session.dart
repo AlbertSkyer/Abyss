@@ -178,6 +178,29 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
   @override
   ({int index, ComposerDraft draft})? editing;
 
+  List<KernelAgentMember> get agentMembers => switch (_kernel) {
+    final ManagesAgentMembers kernel => kernel.agentMembers,
+    _ => const [],
+  };
+
+  void updateAgentMember(
+    String id, {
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
+  }) {
+    if (_kernel case final ManagesAgentMembers kernel) {
+      kernel.updateAgentMember(
+        id,
+        name: name,
+        role: role,
+        enabled: enabled,
+        archived: archived,
+      );
+    }
+  }
+
   /// The subagents opened in its view, one in the other (their ids,
   /// outermost first): shown again when the view comes back to it.
   List<String> openAgents = const [];
@@ -475,15 +498,19 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     _ => false,
   };
 
-  KernelChoice? get modes => switch (_kernel) {
-    final SelectsMode kernel => _choice(kernel.mode),
-    _ => null,
-  };
+  KernelChoice? get modes => kernelContext.chatOnly
+      ? null
+      : switch (_kernel) {
+          final SelectsMode kernel => _choice(kernel.mode),
+          _ => null,
+        };
 
-  KernelChoice? get permissions => switch (_kernel) {
-    final SelectsPermission kernel => _choice(kernel.permission),
-    _ => null,
-  };
+  KernelChoice? get permissions => kernelContext.chatOnly
+      ? null
+      : switch (_kernel) {
+          final SelectsPermission kernel => _choice(kernel.permission),
+          _ => null,
+        };
 
   /// The settings that go with [model] (one of [models]' options), in
   /// the order they are picked in: only those with a choice to make.

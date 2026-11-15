@@ -98,6 +98,180 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// No description provided for @agentCapabilitiesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Model capability tags'**
+  String get agentCapabilitiesTitle;
+
+  /// No description provided for @agentCapabilitiesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional comma-separated preferences, such as fast, analysis, implementation or review. Tags guide the parent; they are not performance guarantees.'**
+  String get agentCapabilitiesDescription;
+
+  /// No description provided for @dockMainChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get dockMainChat;
+
+  /// No description provided for @dockTeam.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent team'**
+  String get dockTeam;
+
+  /// No description provided for @dockScratch.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary chat'**
+  String get dockScratch;
+
+  /// No description provided for @dockSaveLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Save current layout…'**
+  String get dockSaveLayout;
+
+  /// No description provided for @dockResetLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset layout'**
+  String get dockResetLayout;
+
+  /// No description provided for @dockManageLayouts.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage saved layouts…'**
+  String get dockManageLayouts;
+
+  /// No description provided for @dockLayoutName.
+  ///
+  /// In en, this message translates to:
+  /// **'Layout name'**
+  String get dockLayoutName;
+
+  /// No description provided for @dockFocusLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Focus conversation'**
+  String get dockFocusLayout;
+
+  /// No description provided for @dockTeamLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Team collaboration'**
+  String get dockTeamLayout;
+
+  /// No description provided for @dockDevelopLayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Development'**
+  String get dockDevelopLayout;
+
+  /// No description provided for @teamStandby.
+  ///
+  /// In en, this message translates to:
+  /// **'Standby'**
+  String get teamStandby;
+
+  /// No description provided for @teamDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get teamDisabled;
+
+  /// No description provided for @teamStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get teamStopped;
+
+  /// No description provided for @teamUnverified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unverified'**
+  String get teamUnverified;
+
+  /// No description provided for @teamDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Standby means retained context is available for reuse, not a continuously running process. Disabling a member does not stop its running task.'**
+  String get teamDescription;
+
+  /// No description provided for @teamEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No members yet. The main agent creates members when it delegates work.'**
+  String get teamEmpty;
+
+  /// No description provided for @teamRole.
+  ///
+  /// In en, this message translates to:
+  /// **'Role'**
+  String get teamRole;
+
+  /// No description provided for @teamEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable'**
+  String get teamEnable;
+
+  /// No description provided for @teamDisable.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable'**
+  String get teamDisable;
+
+  /// No description provided for @teamRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore member'**
+  String get teamRestore;
+
+  /// No description provided for @teamShowTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Show tasks'**
+  String get teamShowTasks;
+
+  /// No description provided for @scratchCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Inherit current conversation'**
+  String get scratchCreate;
+
+  /// No description provided for @scratchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Start empty chat'**
+  String get scratchEmpty;
+
+  /// No description provided for @scratchNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New temporary chat'**
+  String get scratchNew;
+
+  /// No description provided for @scratchDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Copies completed context at creation, then chats independently. Tools and agent dispatch are disabled.'**
+  String get scratchDescription;
+
+  /// No description provided for @scratchUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This conversation has no saved context to copy yet. You can start an empty temporary chat.'**
+  String get scratchUnavailable;
+
+  /// No description provided for @scratchSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Snapshot from'**
+  String get scratchSnapshot;
+
   /// No description provided for @commonCancel.
   ///
   /// In en, this message translates to:

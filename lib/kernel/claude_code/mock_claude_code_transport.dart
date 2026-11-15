@@ -127,6 +127,7 @@ class MockClaudeCodeTransport implements ClaudeCodeTransport {
       case 'initialize':
         _hooks = (request['hooks'] as Map? ?? const {}).cast<String, Object?>();
         _respond(id, {
+          'hooks_applied': true,
           'commands': [
             {
               'name': 'compact',

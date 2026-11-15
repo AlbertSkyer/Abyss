@@ -58,6 +58,7 @@ class KernelContext {
     this.resume,
     this.settings = const {},
     this.workspace,
+    this.chatOnly = false,
   });
 
   /// The project directory.
@@ -73,6 +74,10 @@ class KernelContext {
   /// Initial choices by [KernelChoiceKind] name, e.g. the permission mode
   /// new agents start in.
   final Map<String, String> settings;
+
+  /// A chat-only session: text in and out, no built-in or MCP tools.
+  /// It is not a read-only composer, nor a different history policy.
+  final bool chatOnly;
 }
 
 // --- Capabilities -----------------------------------------------------------
@@ -398,6 +403,19 @@ abstract interface class ManagesMcpServers {
   /// Signs in to a server that needs it: the page where the user does,
   /// or null when there is nothing for them to do.
   Future<Uri?> authenticateMcpServer(String name);
+}
+
+/// A kernel whose agent-member roster can be inspected and edited.
+abstract interface class ManagesAgentMembers {
+  List<KernelAgentMember> get agentMembers;
+
+  void updateAgentMember(
+    String id, {
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
+  });
 }
 
 // --- Sessions ------------------------------------------------------------------

@@ -280,6 +280,35 @@ void main() {
                 as Map;
         expect(output['permissionDecision'], 'allow');
         expect(output.containsKey('updatedInput'), isFalse);
+        expect(kernel.agentMembers.single.status, AgentMemberStatus.standby);
+        kernel.updateAgentMember(
+          'm',
+          name: 'Research member',
+          role: 'analysis',
+          enabled: false,
+        );
+        expect(kernel.agentMembers.single.status, AgentMemberStatus.disabled);
+        cli.push({
+          'type': 'control_request',
+          'request_id': 'disabled',
+          'request': {
+            'subtype': 'hook_callback',
+            'callback_id': 'baocode-approve-agent',
+            'input': {
+              'tool_name': 'SendMessage',
+              'tool_input': {'to': 'cli-m', 'message': 'Work'},
+            },
+          },
+        });
+        await pumpEventQueue();
+        expect(transcript.pendingInteraction, isNull);
+        final disabled =
+            ((cli.written.last['response'] as Map)['response']
+                    as Map)['hookSpecificOutput']
+                as Map;
+        expect(disabled['permissionDecision'], 'deny');
+        kernel.updateAgentMember('m', enabled: true);
+        expect(kernel.agentMembers.single.name, 'Research member');
         cli.push({
           'type': 'control_request',
           'request_id': 'denied-continuation',

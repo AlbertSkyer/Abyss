@@ -10,6 +10,94 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get agentCapabilitiesTitle => '模型能力标签';
+
+  @override
+  String get agentCapabilitiesDescription =>
+      '可选，以逗号分隔，例如快速、分析、实现、审查。标签供主代理选择参考，不是性能保证。';
+
+  @override
+  String get dockMainChat => '会话工作区';
+
+  @override
+  String get dockTeam => '代理团队';
+
+  @override
+  String get dockScratch => '临时聊天';
+
+  @override
+  String get dockSaveLayout => '保存当前布局…';
+
+  @override
+  String get dockResetLayout => '重置布局';
+
+  @override
+  String get dockManageLayouts => '管理已保存布局…';
+
+  @override
+  String get dockLayoutName => '布局名称';
+
+  @override
+  String get dockFocusLayout => '专注对话';
+
+  @override
+  String get dockTeamLayout => '多代理协作';
+
+  @override
+  String get dockDevelopLayout => '开发工作区';
+
+  @override
+  String get teamStandby => '待命';
+
+  @override
+  String get teamDisabled => '已禁用';
+
+  @override
+  String get teamStopped => '已停止';
+
+  @override
+  String get teamUnverified => '待核实';
+
+  @override
+  String get teamDescription => '待命表示保留的上下文可供复用，不代表进程一直运行。禁用成员不会停止其正在运行的任务。';
+
+  @override
+  String get teamEmpty => '暂无成员。主代理派工时会按需创建成员。';
+
+  @override
+  String get teamRole => '职责';
+
+  @override
+  String get teamEnable => '启用';
+
+  @override
+  String get teamDisable => '禁用';
+
+  @override
+  String get teamRestore => '恢复成员';
+
+  @override
+  String get teamShowTasks => '查看任务';
+
+  @override
+  String get scratchCreate => '继承当前会话';
+
+  @override
+  String get scratchEmpty => '开始空白聊天';
+
+  @override
+  String get scratchNew => '新的临时聊天';
+
+  @override
+  String get scratchDescription => '创建时复制已完成的上下文，之后独立交流。工具与子代理派工已禁用。';
+
+  @override
+  String get scratchUnavailable => '当前会话尚无可复制的已保存上下文，可先开始空白临时聊天。';
+
+  @override
+  String get scratchSnapshot => '快照来源';
+
+  @override
   String get commonCancel => '取消';
 
   @override

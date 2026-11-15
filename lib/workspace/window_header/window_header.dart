@@ -77,7 +77,10 @@ class WindowHeader extends StatefulWidget {
     this.compact = false,
     this.title,
     this.settingsShown = false,
+    this.windowItems,
   });
+
+  final List<HeaderMenuItem> Function()? windowItems;
 
   final Workspace workspace;
 
@@ -809,6 +812,10 @@ class _WindowHeaderState extends State<WindowHeader> {
       onSelected: () => run!(id),
     );
     return [
+      if (widget.windowItems case final items?) ...[
+        ...items(),
+        const HeaderMenuItem.rule(),
+      ],
       if (widget.workspace.current case final current?) ...[
         HeaderMenuItem(
           l10n.windowCurrentConversation,

@@ -9,6 +9,9 @@ import '../../platform/data_dir.dart';
 /// The host's durable record of a CLI task.
 enum AgentTaskStatus { running, completed, failed, cancelled, interrupted }
 
+/// A member's local projection, not a network presence indicator.
+enum AgentMemberState { running, standby, disabled, stopped, unverified }
+
 /// An immutable member of a host session. [memberId] is stable; the CLI's
 /// agent id is kept separately because it may be reused across continuations.
 final class AgentMemberRecord {
@@ -18,6 +21,10 @@ final class AgentMemberRecord {
     this.cliAgentId,
     this.model,
     this.description,
+    this.name,
+    this.role,
+    this.enabled = true,
+    this.archived = false,
   });
 
   final String sessionId;
@@ -25,6 +32,27 @@ final class AgentMemberRecord {
   final String? cliAgentId;
   final String? model;
   final String? description;
+  final String? name;
+  final String? role;
+  final bool enabled;
+  final bool archived;
+
+  AgentMemberRecord _copyWith({
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
+  }) => AgentMemberRecord(
+    sessionId: sessionId,
+    memberId: memberId,
+    cliAgentId: cliAgentId,
+    model: model,
+    description: description,
+    name: name ?? this.name,
+    role: role ?? this.role,
+    enabled: enabled ?? this.enabled,
+    archived: archived ?? this.archived,
+  );
 
   Map<String, Object?> toJson() => {
     'sessionId': sessionId,
@@ -32,6 +60,10 @@ final class AgentMemberRecord {
     if (cliAgentId != null) 'cliAgentId': cliAgentId,
     if (model != null) 'model': model,
     if (description != null) 'description': description,
+    if (name != null) 'name': name,
+    if (role != null) 'role': role,
+    'enabled': enabled,
+    'archived': archived,
   };
 
   factory AgentMemberRecord.fromJson(Map<String, Object?> json) =>
@@ -41,7 +73,23 @@ final class AgentMemberRecord {
         cliAgentId: _optionalString(json, 'cliAgentId'),
         model: _optionalString(json, 'model'),
         description: _optionalString(json, 'description'),
+        name: _optionalString(json, 'name'),
+        role: _optionalString(json, 'role'),
+        enabled: _optionalBool(json, 'enabled') ?? true,
+        archived: _optionalBool(json, 'archived') ?? false,
       );
+}
+
+/// A member and its state derived from durable records, without side effects.
+final class AgentMemberProjection {
+  const AgentMemberProjection({required this.member, required this.state});
+
+  final AgentMemberRecord member;
+  final AgentMemberState state;
+
+  /// [AgentMemberState.standby] means its CLI context is recoverable, not
+  /// that a process or network connection is currently online.
+  bool get contextRecoverable => state == AgentMemberState.standby;
 }
 
 /// One tool call's task, isolated by both session and tool-use id.
@@ -169,7 +217,7 @@ final class AgentTaskLedger {
     final opening = _openings[resolved];
     if (opening != null) return opening;
 
-    final created = Future<AgentTaskLedger>(() async {
+    final created = Future<AgentTaskLedger>.microtask(() async {
       final ledger = await _read(File(resolved));
       _instances[resolved] = ledger;
       return ledger;
@@ -270,6 +318,68 @@ final class AgentTaskLedger {
     _members.values.where((member) => member.sessionId == sessionId),
   );
 
+  AgentMemberRecord? member(String sessionId, String memberId) =>
+      _members[_key(sessionId, memberId)];
+
+  /// Changes only the editable member fields. A bound CLI id and model are
+  /// deliberately not parameters, so an update cannot rebind its identity.
+  AgentMemberRecord updateMember(
+    String sessionId,
+    String memberId, {
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
+  }) {
+    _requireId(sessionId, 'sessionId');
+    _requireId(memberId, 'memberId');
+    final previous = _members[_key(sessionId, memberId)];
+    if (previous == null) {
+      throw StateError('Unknown member $memberId in session $sessionId');
+    }
+    final next = previous._copyWith(
+      name: name,
+      role: role,
+      enabled: enabled,
+      archived: archived,
+    );
+    if (!_memberDiffers(previous, next)) return previous;
+    _members[_key(sessionId, memberId)] = next;
+    _persist();
+    return next;
+  }
+
+  /// Projects local durable state; this never starts, stops or resumes a CLI.
+  AgentMemberProjection projectMember(String sessionId, String memberId) {
+    final member = this.member(sessionId, memberId);
+    if (member == null) {
+      throw StateError('Unknown member $memberId in session $sessionId');
+    }
+    final tasks = _tasks.values
+        .where(
+          (task) => task.sessionId == sessionId && task.memberId == memberId,
+        )
+        .toList();
+    final state = tasks.any((task) => task.status == AgentTaskStatus.running)
+        ? AgentMemberState.running
+        : !member.enabled || member.archived
+        ? AgentMemberState.disabled
+        : tasks.any((task) => task.hostStopped || task.hostCancelled)
+        ? AgentMemberState.stopped
+        : member.cliAgentId != null &&
+              tasks.isNotEmpty &&
+              tasks.last.status == AgentTaskStatus.completed
+        ? AgentMemberState.standby
+        : AgentMemberState.unverified;
+    return AgentMemberProjection(member: member, state: state);
+  }
+
+  List<AgentMemberProjection> memberStatesFor(String sessionId) =>
+      List.unmodifiable(
+        membersFor(sessionId)
+            .map((member) => projectMember(sessionId, member.memberId)),
+      );
+
   /// Records a newly started call. A completed or interrupted record is not
   /// restarted by a late start event.
   AgentTaskRecord recordStart({
@@ -328,6 +438,10 @@ final class AgentTaskLedger {
     String? cliAgentId,
     String? model,
     String? description,
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
   }) {
     _requireId(sessionId, 'sessionId');
     _requireId(memberId, 'memberId');
@@ -340,6 +454,11 @@ final class AgentTaskLedger {
       cliAgentId: cliAgentId ?? previous?.cliAgentId,
       model: model ?? previous?.model,
       description: description ?? previous?.description,
+      name: name ?? previous?.name,
+      role: role ?? previous?.role,
+      // Late metadata does not re-enable a member disabled by the host.
+      enabled: enabled ?? previous?.enabled ?? true,
+      archived: archived ?? previous?.archived ?? false,
     );
     _members[key] = next;
 
@@ -547,5 +666,12 @@ String? _optionalString(Map<String, Object?> json, String key) {
 bool _requiredBool(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! bool) throw FormatException('Missing or invalid $key');
+  return value;
+}
+
+bool? _optionalBool(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! bool) throw FormatException('Invalid $key');
   return value;
 }

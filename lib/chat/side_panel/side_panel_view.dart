@@ -478,8 +478,11 @@ class AgentSidePanelView extends StatelessWidget {
     this.titleBarInset = 0,
     this.leading,
     this.windowTitleBar = true,
+    this.section,
   });
 
+  /// A docked page uses its own outer tab bar; business state stays in panel.
+  final SidePanelSection? section;
   final AgentSidePanel panel;
   final ChatSession session;
 
@@ -611,6 +614,7 @@ class AgentSidePanelView extends StatelessWidget {
     ]),
     builder: (context, _) {
       final tabs = panel.tabsOf(session);
+      if (section case final page?) return _page(context, tabs, page);
       // Its pages' tabs on the window's color, along its top as the
       // conversation's title bar is; the page on a card under them.
       return IslandTabbedCard(
@@ -627,30 +631,36 @@ class AgentSidePanelView extends StatelessWidget {
           leading: leading,
           windowTitleBar: windowTitleBar,
         ),
-        body: switch (tabs.shown) {
-          SidePanelSection.files => _filesPage(context, tabs),
-          SidePanelSection.changes => _changesPage(context, tabs),
-          SidePanelSection.terminal => _terminalPage(context, tabs),
-          SidePanelSection.usage => ConversationUsageView(
-            key: ValueKey(('page', SidePanelSection.usage, session)),
-            session: session,
-          ),
-          SidePanelSection.plan => _planPage(context, tabs.plan!),
-          SidePanelSection.agents => AgentTasksPage(
-            panel: panel,
-            session: session,
-          ),
-          SidePanelSection.ports => switch (_portsHost(session)) {
-            final host? => PortsView(
-              key: ValueKey(('page', SidePanelSection.ports, host)),
-              host: host,
-            ),
-            null => const SizedBox.shrink(),
-          },
-        },
+        body: _page(context, tabs, tabs.shown),
       );
     },
   );
+
+  Widget _page(
+    BuildContext context,
+    SidePanelTabs tabs,
+    SidePanelSection page,
+  ) => switch (page) {
+    SidePanelSection.files => _filesPage(context, tabs),
+    SidePanelSection.changes => _changesPage(context, tabs),
+    SidePanelSection.terminal => _terminalPage(context, tabs),
+    SidePanelSection.usage => ConversationUsageView(
+      key: ValueKey(('page', SidePanelSection.usage, session)),
+      session: session,
+    ),
+    SidePanelSection.plan =>
+      tabs.plan == null
+          ? Center(child: Text(context.l10n.sidePanelPlan))
+          : _planPage(context, tabs.plan!),
+    SidePanelSection.agents => AgentTasksPage(panel: panel, session: session),
+    SidePanelSection.ports => switch (_portsHost(session)) {
+      final host? => PortsView(
+        key: ValueKey(('page', SidePanelSection.ports, host)),
+        host: host,
+      ),
+      _ => const SizedBox.shrink(),
+    },
+  };
 
   p.Context get _paths => paths ?? p.context;
 

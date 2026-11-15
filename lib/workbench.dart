@@ -68,6 +68,8 @@ import 'ide/ide_chat_title.dart';
 import 'ide/ide_color_theme_picker.dart';
 import 'ide/ide_commands.dart';
 import 'ide/ide_dialog.dart';
+import 'ide/ide_button.dart';
+import 'kernel/kernel_types.dart';
 import 'ide/ide_hover.dart';
 import 'ide/ide_menu.dart';
 import 'models/model_welcome.dart';
@@ -151,6 +153,9 @@ import 'workspace/chat_grid.dart' show PaneSide;
 import 'workspace/chat_grid_view.dart';
 import 'workspace/islands.dart';
 import 'workspace/pane_tabs.dart';
+import 'workspace/dock_layout.dart';
+import 'workspace/dock_host.dart';
+import 'chat/side_panel/agent_team_page.dart';
 import 'workspace/chat_terminal.dart';
 import 'workspace/terminal_deck.dart';
 import 'workspace/editor_launcher.dart' show openExternal;
@@ -162,6 +167,7 @@ import 'workspace/project_workspace.dart' show ProjectWorkspace;
 import 'workspace/title_bar_double_click.dart';
 import 'workspace/window_controls.dart';
 import 'workspace/window_header/window_header.dart';
+import 'workspace/window_header/header_menu.dart';
 import 'workspace/workspace.dart';
 import 'workspace/workspace_dialog.dart';
 import 'ide/host_paths.dart';
@@ -463,6 +469,33 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     if (mounted) setState(() {});
   }
 
+  late final DockController _dock = DockController()..addListener(_dockChanged);
+  bool _dockRestoring = false;
+  final Map<String, Object?> _dockPresets = {};
+  final Map<String, GlobalKey> _dockKeys = {};
+  AgentThread? _scratchThread;
+  bool _scratchOpening = false;
+  bool _scratchFocused = false;
+
+  Timer? _dockSaveTimer;
+  void _dockChanged() {
+    _dockSaveTimer?.cancel();
+    _dockSaveTimer = Timer(const Duration(milliseconds: 200), _keepDock);
+    if (mounted) setState(() {});
+  }
+
+  void _keepDock() {
+    if (!_dockRestoring && AppEdition.isAbyss) {
+      _workspace.keepWorkbenchView({
+        ...?_workspace.workbenchView,
+        'shown': _docked,
+        'width': _width.value,
+        'dock': _dock.toJson(),
+        'dockPresets': {..._dockPresets},
+      });
+    }
+  }
+
   /// The panel at the right of the conversations: the focused agent's
   /// changes and the files opened from its conversation (see
   /// [AgentSidePanel]), shown and as wide as the last run left it.
@@ -479,7 +512,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// beside their pane (see [AgentSidePanel.pane]): not one window's
   /// beside them all.
   bool get _panesSidePanels =>
-      _agentThread == null && !_replacingChat && _workspace.grid.length > 1;
+      !AppEdition.isAbyss &&
+      _agentThread == null &&
+      !_replacingChat &&
+      _workspace.grid.length > 1;
   bool _sidePanelShown = false;
   late ChatLayout _layout = _sidePanel.layout;
 
@@ -500,6 +536,9 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [_sidePanelLast]).
   void _sidePanelChanged() {
     final asked = _sidePanel.asks != _sidePanelAsks;
+    if (AppEdition.isAbyss && asked && _workspace.current != null) {
+      _dock.open(_sidePanel.tabsOf(_workspace.current!.session).shown.name);
+    }
     if (_sidePanel.isShown == _sidePanelShown &&
         _sidePanel.layout == _layout &&
         !asked) {
@@ -756,6 +795,14 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   void _restoreWorkbench() {
     if (_workspace.workbenchView case final view?) {
       _workspace.removeListener(_restoreWorkbench);
+      if (AppEdition.isAbyss && view['dock'] != null) {
+        _dockRestoring = true;
+        _dock.loadJson(view['dock']);
+        _dockRestoring = false;
+      }
+      if (view['dockPresets'] case final Map presets) {
+        _dockPresets.addAll(presets.cast<String, Object?>());
+      }
       if (_sidebarChanged) return;
       setState(() {
         if (view['shown'] case final bool shown) _docked = shown;
@@ -771,7 +818,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   void _keepSidebar() {
     _sidebarChanged = true;
-    _workspace.keepWorkbenchView({'shown': _docked, 'width': _width.value});
+    _workspace.keepWorkbenchView({
+      ...?_workspace.workbenchView,
+      'shown': _docked,
+      'width': _width.value,
+    });
   }
 
   /// The IDE moved to windows of its own (`window.ideWindows`): the main
@@ -905,6 +956,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   @override
   void dispose() {
+    _dockSaveTimer?.cancel();
+    if (AppEdition.isAbyss) _keepDock();
+    _dock.removeListener(_dockChanged);
+    _dock.dispose();
     ChannelGate.current?.removeListener(_channelGateChanged);
     for (final edits in _ideAgentEdits.values) {
       edits.dispose();
@@ -1160,6 +1215,14 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [thread]'s project's panel: shown, its terminal focused; or hidden,
   /// the keyboard back in the chat if the terminal had it.
   void _toggleTerminalOf(AgentThread thread) {
+    if (AppEdition.isAbyss) {
+      if (_dock.openPanelIds.contains('terminal')) {
+        _dock.close('terminal');
+      } else {
+        _dock.open('terminal');
+      }
+      return;
+    }
     final terminals = _terminals;
     if (terminals == null) return;
     final root = thread.project.path;
@@ -3484,6 +3547,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     final windows = _multi ? _windows : null;
     final agent = _agentThread;
     return WindowHeader(
+      windowItems: AppEdition.isAbyss ? _dockWindowItems : null,
       workspace: _workspace,
       project: project,
       ide: ide,
@@ -3868,6 +3932,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// side panel at their right.
   Widget _buildPanes({required bool showToggle}) => switch (_workspace.grid) {
     _ when _replacingChat => _buildGrid(showToggle: showToggle),
+    _ when AppEdition.isAbyss => _withSidePanel(
+      _buildGrid(showToggle: showToggle),
+      showToggle: showToggle,
+    ),
     final grid when grid.length > 1 => Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -4002,43 +4070,380 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [showToggle]: the window's sidebar hidden, the panel at the
   /// conversations' left is at the window's, under the traffic lights.
   Widget _withSidePanel(Widget child, {required bool showToggle}) =>
-      AgentSidePanelArea(
-        panel: _sidePanel,
-        bottom: Islands.belowHeight,
-        // Customize, in place of the conversations, isn't one of theirs.
-        hidden: _sidePanelHidden || _replacingChat,
-        roomComing: _sidebarGivingWay,
-        // Just under the row along the top of the conversation's card (see
-        // [AgentSidePanelArea.defaultRailTop]).
-        // Not in a narrow window, where the conversation has no room to spare
-        // (the title bar's toggle shows the panel). Agents side by side have
-        // one each, over their own pane (see [_paneRail]).
-        rail: switch (_agentThread ?? _workspace.current) {
-          final thread?
-              when _agentThread != null || _workspace.grid.length < 2 =>
-            _railFor(thread),
-          _ => null,
-        },
-        // At the window's left (no sidebar docked there), under the
-        // traffic lights; the sidebar's toggle by them where it is at the
-        // left, hidden.
-        builder: (context) => switch (_agentThread ?? _workspace.current) {
-          final thread?
-              when (showToggle || _sidebarAtRight) &&
-                  _sidePanel.atLeft &&
-                  !WindowControls.drawsHeader =>
-            _buildSidePanel(
-              thread,
-              titleBarInset: AppMetrics.trafficLightsWidth,
-              leading: showToggle && !_sidebarAtRight
-                  ? _showSidebarButton()
-                  : null,
-            ),
-          final thread? => _buildSidePanel(thread),
-          null => const SizedBox.shrink(),
-        },
-        child: child,
+      AppEdition.isAbyss && !_replacingChat
+      ? DockHost(
+          maximizeLabel: context.l10n.windowMaximize,
+          restoreLabel: context.l10n.windowRestore,
+          controller: _dock,
+          titleBuilder: (context, id) => Text(
+            _dockTitle(id),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          panelBuilder: (context, id) => KeyedSubtree(
+            key: _dockKeys.putIfAbsent(id, GlobalKey.new),
+            child: id == dockMainPanelId ? child : _buildDockPanel(id),
+          ),
+        )
+      : AgentSidePanelArea(
+          panel: _sidePanel,
+          bottom: Islands.belowHeight,
+          // Customize, in place of the conversations, isn't one of theirs.
+          hidden: _sidePanelHidden || _replacingChat,
+          roomComing: _sidebarGivingWay,
+          // Just under the row along the top of the conversation's card (see
+          // [AgentSidePanelArea.defaultRailTop]).
+          // Not in a narrow window, where the conversation has no room to spare
+          // (the title bar's toggle shows the panel). Agents side by side have
+          // one each, over their own pane (see [_paneRail]).
+          rail: switch (_agentThread ?? _workspace.current) {
+            final thread?
+                when _agentThread != null || _workspace.grid.length < 2 =>
+              _railFor(thread),
+            _ => null,
+          },
+          // At the window's left (no sidebar docked there), under the
+          // traffic lights; the sidebar's toggle by them where it is at the
+          // left, hidden.
+          builder: (context) => switch (_agentThread ?? _workspace.current) {
+            final thread?
+                when (showToggle || _sidebarAtRight) &&
+                    _sidePanel.atLeft &&
+                    !WindowControls.drawsHeader =>
+              _buildSidePanel(
+                thread,
+                titleBarInset: AppMetrics.trafficLightsWidth,
+                leading: showToggle && !_sidebarAtRight
+                    ? _showSidebarButton()
+                    : null,
+              ),
+            final thread? => _buildSidePanel(thread),
+            null => const SizedBox.shrink(),
+          },
+          child: child,
+        );
+
+  List<HeaderMenuItem> _dockWindowItems() => [
+    for (final id in dockDefaultPanelIds)
+      HeaderMenuItem(
+        _dockTitle(id),
+        checked: _dock.openPanelIds.contains(id),
+        onSelected: () => _dock.open(id),
+      ),
+    const HeaderMenuItem.rule(),
+    HeaderMenuItem(
+      context.l10n.dockFocusLayout,
+      onSelected: () => _applyDockPreset('focus'),
+    ),
+    HeaderMenuItem(
+      context.l10n.dockTeamLayout,
+      onSelected: () => _applyDockPreset('team'),
+    ),
+    HeaderMenuItem(
+      context.l10n.dockDevelopLayout,
+      onSelected: () => _applyDockPreset('development'),
+    ),
+    HeaderMenuItem(
+      context.l10n.dockResetLayout,
+      onSelected: () {
+        final defaults = DockController();
+        _dock.loadJson(defaults.toJson());
+        defaults.dispose();
+      },
+    ),
+    HeaderMenuItem(
+      context.l10n.dockSaveLayout,
+      onSelected: () => unawaited(_saveDockPreset()),
+    ),
+    if (_dockPresets.isNotEmpty)
+      HeaderMenuItem(
+        context.l10n.dockManageLayouts,
+        onSelected: () => unawaited(_manageDockPresets()),
+      ),
+    for (final name in _dockPresets.keys)
+      HeaderMenuItem(
+        name,
+        onSelected: () => _dock.loadJson(_dockPresets[name]),
+      ),
+  ];
+
+  void _applyDockPreset(String preset) {
+    final next = DockController(
+      availablePanelIds: dockDefaultPanelIds,
+      root: DockTabs(
+        groupId: 'main',
+        orderedPanelIds: const ['main-chat'],
+        active: 'main-chat',
+      ),
+    );
+    if (preset == 'team') {
+      next.open('team');
+      next.open('agents');
+      next.open('scratch');
+      next.move('scratch', target: 'team', side: DockSide.bottom);
+    } else if (preset == 'development') {
+      next.open('files');
+      next.move('files', target: 'main-chat', side: DockSide.left);
+      next.open('changes');
+      next.open('terminal');
+      next.move('terminal', target: 'main-chat', side: DockSide.bottom);
+    }
+    _dock.loadJson(next.toJson());
+    next.dispose();
+  }
+
+  Future<void> _manageDockPresets() async {
+    final l10n = context.l10n;
+    final answer = await showIdeInputDialog(
+      context,
+      message: l10n.dockManageLayouts,
+      detail: _dockPresets.keys.join('\n'),
+      inputs: [
+        IdeDialogInput(placeholder: l10n.dockLayoutName),
+        IdeDialogInput(placeholder: l10n.commonRename),
+      ],
+      buttons: [l10n.commonRename, l10n.commonDelete],
+    );
+    if (answer == null) return;
+    final old = answer.values.first.trim();
+    if (!_dockPresets.containsKey(old)) return;
+    if (answer.button == 1) {
+      _dockPresets.remove(old);
+    } else if (answer.button == 0 && answer.values[1].trim().isNotEmpty) {
+      final name = answer.values[1].trim();
+      if (_dockPresets.containsKey(name) && name != old) return;
+      _dockPresets[name] = _dockPresets.remove(old);
+    }
+    _dockChanged();
+  }
+
+  Future<void> _saveDockPreset() async {
+    final answer = await showIdeInputDialog(
+      context,
+      message: context.l10n.dockSaveLayout,
+      inputs: [IdeDialogInput(placeholder: context.l10n.dockLayoutName)],
+      buttons: [context.l10n.commonSave],
+    );
+    if (answer == null || answer.button != 0 || !mounted) return;
+    final name = answer.values.first.trim();
+    if (name.isEmpty) return;
+    if (_dockPresets.containsKey(name)) {
+      final overwrite = await showIdeDialog(
+        context,
+        message: context.l10n.dockSaveLayout,
+        detail: name,
+        buttons: [context.l10n.commonSave],
       );
+      if (overwrite != 0) return;
+    }
+    _dockPresets[name] = _dock.toJson();
+    _dockChanged();
+  }
+
+  String _dockTitle(String id) => switch (id) {
+    'main-chat' => context.l10n.dockMainChat,
+    'team' => context.l10n.dockTeam,
+    'scratch' => context.l10n.dockScratch,
+    _ =>
+      SidePanelSection.values
+              .where((s) => s.name == id)
+              .firstOrNull
+              ?.label(context) ??
+          id,
+  };
+
+  Widget _buildDockPanel(String id) {
+    final thread = _agentThread ?? _workspace.current;
+    if (id == 'scratch') return _buildScratchPanel(thread);
+    if (thread == null) return const SizedBox.shrink();
+    if (id == 'team') return _buildTeamPanel(thread);
+    final section = SidePanelSection.values
+        .where((s) => s.name == id)
+        .firstOrNull;
+    return section == null
+        ? const SizedBox.shrink()
+        : _buildSidePanel(thread, section: section, windowTitleBar: false);
+  }
+
+  Widget _buildTeamPanel(AgentThread thread) => ListenableBuilder(
+    listenable: thread.session,
+    builder: (context, _) {
+      final l10n = context.l10n;
+      return AgentTeamPage(
+        members: thread.session.agentMembers,
+        onUpdate: thread.session.updateAgentMember,
+        onShowTasks: (_) => _dock.open('agents'),
+        statusLabel: (s) => switch (s) {
+          AgentMemberStatus.running => l10n.sidePanelAgentRunning,
+          AgentMemberStatus.standby => l10n.teamStandby,
+          AgentMemberStatus.disabled => l10n.teamDisabled,
+          AgentMemberStatus.stopped => l10n.teamStopped,
+          AgentMemberStatus.unverified => l10n.teamUnverified,
+        },
+        description: l10n.teamDescription,
+        emptyLabel: l10n.teamEmpty,
+        editLabel: l10n.commonRename,
+        saveLabel: l10n.commonSave,
+        nameLabel: l10n.dockTeam,
+        roleLabel: l10n.teamRole,
+        disableLabel: l10n.teamDisable,
+        enableLabel: l10n.teamEnable,
+        archiveLabel: l10n.sidebarArchive,
+        unarchiveLabel: l10n.teamRestore,
+        showTasksLabel: l10n.teamShowTasks,
+        tasksLabel: (count) => '$count',
+      );
+    },
+  );
+
+  Future<void> _openScratch(AgentThread source, {bool empty = false}) async {
+    if (_scratchOpening) return;
+    setState(() => _scratchOpening = true);
+    final scratch = empty
+        ? await _workspace.createEmptyScratch(source)
+        : await _workspace.openScratchChat(source);
+    if (!mounted) return;
+    setState(() {
+      _scratchThread = scratch;
+      _scratchOpening = false;
+    });
+  }
+
+  Widget _buildScratchPanel(AgentThread? source) {
+    final l10n = context.l10n;
+    _scratchThread ??= source == null ? null : _workspace.scratchFor(source);
+    if (_scratchThread == null &&
+        source != null &&
+        _workspace.hasEmptyScratchDraft(source)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_scratchOpening && _scratchThread == null) {
+          unawaited(_openScratch(source, empty: true));
+        }
+      });
+    }
+    final scratch = _scratchThread;
+    final history = _workspace.scratchChats;
+    if (scratch == null) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(l10n.scratchDescription),
+            if (history.isNotEmpty)
+              DropdownButton<AgentThread>(
+                isExpanded: true,
+                hint: Text(l10n.dockScratch),
+                items: [
+                  for (final item in history)
+                    DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        item.localizedTitle(l10n),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (item) => setState(() => _scratchThread = item),
+              ),
+            const SizedBox(height: 12),
+            if (_scratchOpening)
+              const LinearProgressIndicator()
+            else if (source != null) ...[
+              IdeButton(
+                label: l10n.scratchCreate,
+                onPressed: source.session.canFork && source.id != null
+                    ? () => unawaited(_openScratch(source))
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              if (!source.session.canFork || source.id == null)
+                Text(l10n.scratchUnavailable),
+              IdeButton(
+                label: l10n.scratchEmpty,
+                secondary: true,
+                onPressed: () => unawaited(_openScratch(source, empty: true)),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    final origin = _workspace.scratchOrigin(scratch);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              Expanded(
+                child: history.length > 1
+                    ? DropdownButton<AgentThread>(
+                        value: scratch,
+                        isExpanded: true,
+                        items: [
+                          for (final item in history)
+                            DropdownMenuItem(
+                              value: item,
+                              child: Text(
+                                item.localizedTitle(l10n),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (item) =>
+                            setState(() => _scratchThread = item),
+                      )
+                    : Text(
+                        '${l10n.scratchSnapshot}: ${origin?.localizedTitle(l10n) ?? l10n.scratchEmpty}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+              ),
+              IdeHover(
+                message:
+                    '${l10n.scratchDescription}\n${_workspace.scratchBoundary(scratch) ?? ''}',
+                child: const Icon(Icons.info_outline, size: 14),
+              ),
+              IdeButton(
+                label: l10n.scratchNew,
+                secondary: true,
+                onPressed: () async {
+                  final result = await showIdeDialog(
+                    context,
+                    message: l10n.scratchNew,
+                    detail: l10n.scratchDescription,
+                    buttons: [l10n.commonOk],
+                  );
+                  if (result != 0 || !mounted) return;
+                  final next = await _workspace.resetScratchChat(scratch);
+                  if (mounted) setState(() => _scratchThread = next);
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Focus(
+            onFocusChange: (focused) {
+              if (mounted && _scratchFocused != focused) {
+                setState(() => _scratchFocused = focused);
+              }
+            },
+            child: ChatScreen(
+              key: ValueKey(('scratch-chat', scratch)),
+              session: scratch.session,
+              title: l10n.dockScratch,
+              embedded: true,
+              autofocus: false,
+              focused: _scratchFocused,
+              windowTitleBar: false,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   /// [_sidePanelRail] for [thread], where it has one: not in a narrow
   /// window, in place of the conversations, nor for an agent not begun.
@@ -4083,6 +4488,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     double titleBarInset = 0,
     Widget? leading,
     bool windowTitleBar = true,
+    SidePanelSection? section,
   }) {
     final location = thread.project.path;
     final multi = _workspace.multiRootAt(location);
@@ -4096,6 +4502,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           titleBarInset: titleBarInset,
           leading: leading,
           windowTitleBar: windowTitleBar,
+          section: section,
         ),
       );
     }
@@ -4104,6 +4511,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       titleBarInset: titleBarInset,
       leading: leading,
       windowTitleBar: windowTitleBar,
+      section: section,
     );
   }
 
@@ -4112,6 +4520,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     double titleBarInset = 0,
     Widget? leading,
     bool windowTitleBar = true,
+    SidePanelSection? section,
   }) => ListenableBuilder(
     listenable: _worktreeSignals(thread),
     builder: (context, _) => _sidePanelViewOf(
@@ -4119,6 +4528,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       titleBarInset: titleBarInset,
       leading: leading,
       windowTitleBar: windowTitleBar,
+      section: section,
     ),
   );
 
@@ -4127,11 +4537,13 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     double titleBarInset = 0,
     Widget? leading,
     bool windowTitleBar = true,
+    SidePanelSection? section,
   }) {
     final (:files, :paths) = _projectFiles(thread);
     final location = thread.project.path;
     final multi = _workspace.multiRootAt(location);
     return AgentSidePanelView(
+      section: section,
       panel: _sidePanel,
       session: thread.session,
       files: files,
@@ -4580,6 +4992,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// the first of its project's panes, so two panes of one project show
   /// them once (a terminal shows in one place at a time).
   bool _showsTerminals(AgentThread thread) {
+    if (AppEdition.isAbyss) return false;
     final panes = _workspace.grid.panes;
     return panes.isEmpty ||
         panes.firstWhere(
@@ -4595,19 +5008,21 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [foot]: the branch under the terminals while they show; not for a
   /// pane among others, which has it on its card.
   Widget _withTerminal(Widget child, AgentThread thread, {bool foot = true}) =>
-      switch (_terminals) {
-        final terminals? => ChatTerminalArea(
-          terminals: terminals,
-          root: thread.project.path,
-          tasks: SessionTerminalTasks(thread.session),
-          files: _projectFiles(thread).files,
-          onOpenLink: _openTerminalLink,
-          // The branch under the terminals while they show.
-          below: foot ? _branchBar(thread) : null,
-          child: child,
-        ),
-        null => child,
-      };
+      AppEdition.isAbyss
+      ? child
+      : switch (_terminals) {
+          final terminals? => ChatTerminalArea(
+            terminals: terminals,
+            root: thread.project.path,
+            tasks: SessionTerminalTasks(thread.session),
+            files: _projectFiles(thread).files,
+            onOpenLink: _openTerminalLink,
+            // The branch under the terminals while they show.
+            below: foot ? _branchBar(thread) : null,
+            child: child,
+          ),
+          null => child,
+        };
 
   Widget _buildGrid({required bool showToggle}) {
     if (_stashing) {
@@ -5200,7 +5615,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         layered: false,
       ),
     );
-    if (place.alone || embedded) return shown;
+    if (place.alone || embedded || AppEdition.isAbyss) return shown;
     return _paneSidePanel(thread, shown);
   }
 

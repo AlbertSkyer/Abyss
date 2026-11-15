@@ -475,6 +475,32 @@ class KernelActivity {
   final DateTime since;
 }
 
+enum AgentMemberStatus { running, standby, disabled, stopped, unverified }
+
+/// Host-managed identity, separate from each task and its transcript card.
+class KernelAgentMember {
+  const KernelAgentMember({
+    required this.id,
+    this.cliAgentId,
+    required this.name,
+    this.role = '',
+    this.model,
+    required this.status,
+    this.enabled = true,
+    this.archived = false,
+    this.tasks = 0,
+  });
+  final String id;
+  final String? cliAgentId;
+  final String name;
+  final String role;
+  final String? model;
+  final AgentMemberStatus status;
+  final bool enabled;
+  final bool archived;
+  final int tasks;
+}
+
 /// Where an MCP server stands, as its kernel reports it.
 enum McpServerStatus { connected, pending, failed, needsAuth, disabled }
 

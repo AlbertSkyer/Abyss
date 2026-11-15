@@ -353,6 +353,24 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     );
   }
 
+  Future<void> _editCapabilities(String ref) async {
+    final l10n = context.l10n;
+    final result = await showIdeInputDialog(
+      context,
+      message: l10n.agentCapabilitiesTitle,
+      detail: l10n.agentCapabilitiesDescription,
+      inputs: [
+        IdeDialogInput(value: _providers.subagentCapabilities(ref).join(', ')),
+      ],
+      buttons: [l10n.commonSave],
+    );
+    if (result == null || result.button != 0) return;
+    await _providers.setSubagentCapabilities(
+      ref,
+      result.values.first.split(RegExp(r'[,，\n]')),
+    );
+  }
+
   /// Abyss offers the pool at CLI task approval; BaoCode's own core takes
   /// models in turn when no explicit or configured subagent model applies.
   Widget _subagentPool(BuildContext context) {
@@ -376,6 +394,10 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
                   unawaited(_providers.moveSubagentModel(entry.ref, to)),
               onRemove: () =>
                   unawaited(_providers.removeSubagentModel(entry.ref)),
+              tags: _providers.subagentCapabilities(entry.ref),
+              onEditTags: AppEdition.isAbyss
+                  ? () => unawaited(_editCapabilities(entry.ref))
+                  : null,
             ),
         SettingsRow(
           label: l10n.modelsSubagentPoolAdd,
@@ -583,8 +605,12 @@ class _SubagentPoolRow extends StatelessWidget {
     required this.count,
     required this.onMove,
     required this.onRemove,
+    this.tags = const [],
+    this.onEditTags,
   });
 
+  final List<String> tags;
+  final VoidCallback? onEditTags;
   final SubagentPoolEntry entry;
   final int index;
   final int count;
@@ -598,7 +624,10 @@ class _SubagentPoolRow extends StatelessWidget {
     final l10n = context.l10n;
     return SettingsRow(
       label: entry.modelName,
-      description: entry.providerName,
+      description: [
+        entry.providerName,
+        if (tags.isNotEmpty) tags.join(' · '),
+      ].join(' — '),
       below: [
         if (entry.missing)
           Row(
@@ -633,6 +662,14 @@ class _SubagentPoolRow extends StatelessWidget {
               tooltip: l10n.modelsSubagentPoolMissingTooltip,
             ),
             const SizedBox(width: 10),
+          ],
+          if (onEditTags != null) ...[
+            IdeActionButton(
+              icon: Codicons.tag,
+              tooltip: l10n.agentCapabilitiesTitle,
+              onPressed: onEditTags,
+            ),
+            const SizedBox(width: 4),
           ],
           IdeActionButton(
             icon: Codicons.arrowUp,

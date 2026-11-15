@@ -5,6 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/build_windows.dart' show mergeBuildEnvironment;
 
 void main() {
+  test('Abyss installer packages the bundle without BaoCode identity', () {
+    final installer = File('tool/baocode.iss').readAsStringSync();
+    expect(installer, contains('#define BinaryName "Abyss.exe"'));
+    expect(installer, contains('#define UrlScheme "abyss"'));
+    expect(installer, contains('#define BundleBrowser 0'));
+    expect(installer, contains('PrivilegesRequired=lowest'));
+    expect(installer, contains('recursesubdirs createallsubdirs'));
+    final builder = File('tool/build_windows.dart').readAsStringSync();
+    expect(builder, contains("arguments.indexOf('--iscc')"));
+    expect(builder, contains('isccOverride ?? _findIscc()'));
+  });
   test('installer defaults retain concrete BaoCode request flags', () {
     final installer = File('tool/baocode.iss').readAsStringSync();
     expect(installer, contains('#define CliFlag "--baocode-cli"'));

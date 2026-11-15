@@ -24,6 +24,9 @@ import 'package:baocode/workspace/editor_launcher.dart';
 import 'package:baocode/chat/side_panel/side_panel_view.dart';
 import 'package:baocode/workspace/open_in_editor_button.dart';
 import 'package:baocode/workspace/pane_tabs.dart';
+import 'package:baocode/workspace/dock_host.dart';
+import 'package:baocode/workspace/dock_layout.dart';
+import 'package:baocode/chat/side_panel/agent_team_page.dart';
 import 'package:baocode/workspace/title_bar_double_click.dart';
 import 'package:baocode/workspace/workspace.dart';
 import 'package:baocode/workspace/chat_terminal.dart';
@@ -135,6 +138,29 @@ Offset near(Rect rect, PaneSide side) => switch (side) {
 };
 
 void main() {
+  group('Abyss dock workbench', skip: !AppEdition.isAbyss, () {
+    testWidgets('real panels open from Window and move without replacing chat', (tester) async {
+      await pumpApp(tester);
+      final host = tester.widget<DockHost>(find.byType(DockHost));
+      expect(find.byType(ChatScreen), findsOneWidget);
+      for (final id in ['changes', 'terminal', 'usage', 'plan', 'agents', 'team', 'scratch']) {
+        host.controller.open(id);
+        await tester.pump();
+        expect(host.controller.openPanelIds, contains(id));
+        host.controller.move(id, target: 'main-chat', side: DockSide.bottom);
+        await tester.pump();
+        expect(host.controller.openPanelIds, contains('main-chat'));
+        host.controller.close(id);
+        await tester.pump();
+      }
+      expect(find.byType(ChatScreen), findsOneWidget);
+      host.controller.open('team');
+      await tester.pump();
+      expect(find.byType(AgentTeamPage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('Abyss session tabs', skip: !AppEdition.isAbyss, () {
     testWidgets('sidebar opens fixed tabs and two real sessions side by side', (
       tester,

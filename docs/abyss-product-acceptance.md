@@ -202,4 +202,43 @@
 
 ### 仍未完成
 
-模型能力标签与基于事实的调度记录、成员待命/禁用管理 UI、完整任务证据卡、持久化并发排队与配置、跨 provider 有限故障切换、用户停止后的全调度路径防替代、通用停靠、浮动多屏、跨重启阅读锚点、范围冲突提示及执行记录面板均未完成。三次心算/记忆任务证明实际续接，不证明长期工程质量或持续高吞吐。
+此处为自动派工增量结束时的边界；成员管理、能力标签与通用停靠的后续状态见下节。完整任务证据卡、持久化并发排队与配置、跨 provider 有限故障切换、用户停止后的全调度路径防替代、浮动多屏、跨重启阅读锚点、范围冲突提示及执行记录面板仍未完成。三次心算/记忆任务证明实际续接，不证明长期工程质量或持续高吞吐。
+
+## 1.9.7：成员管理、内部停靠与临时聊天（2026-11-15）
+
+### 已交付范围
+
+- 成员团队面板复用宿主账本：显示真实成员、职责、绑定模型、任务数量及 running/standby/disabled/stopped/unverified 投影；支持改名/职责、启用禁用、归档。待命是可复用上下文，不是常驻推理进程；禁用不停止已经运行的任务。
+- 模型池可维护能力标签，保存时规范化并去重；调度上下文含标签、职责和真实成员状态。主代理作选择，宿主强校验模型池、绑定、禁用/归档、停止与忙碌；不按模型名猜能力，不承诺性能排行。
+- 单一 dock 树管理会话工作区、文件、变更、终端、用量、计划、智能体、端口、代理团队和临时聊天。支持四边拆分、标签合并/排序、分隔调整、关闭找回、最大化/还原。
+- 窗口菜单统一打开面板，提供专注对话、多代理协作、开发布局、默认重置，以及命名布局保存/应用/重命名/删除。结构与活动项持久化；坏布局过滤/回退，不序列化业务对象。面板移动不另建 session/TerminalService。
+- 临时聊天通过真实 fork 继承已完成上下文快照，之后独立保存、不自动回写主会话；显示来源/快照边界，可从历史找回，新聊天不删除旧记录。不能 fork 时明确提示并允许空独立聊天。
+- 持久化 chatOnly 硬策略：最终启动 tools 和 MCP 列表为空、不启用用户 MCP，不注入派工上下文；控制边界拒绝 Agent、SendMessage 及其他工具。继承历史中的 tool_use 不等于新会话具有工具权限。
+- 本批仅主窗口内停靠；原生浮动窗口/多屏保留为后续目标。
+
+### 定向测试与静态检查
+
+- 最终定向组合 **44 项通过**：dock 状态与组件、scratch fork/恢复、chatOnly、成员投影/管理/授权、能力标签、安装脚本。日志 `build/abyss-1.9.7-final-tests.log`。
+- 版本一致性测试另 **5 项通过**；工作台真实面板接线与中英文键/翻译组合另 **3 项通过**，日志 `build/abyss-1.9.7-final-integration-tests.log`。复核发现应用内版本常量仍为 1.9.6+32，已同步为 1.9.7+33，随后重新 Release 构建并打包；未交付修正前安装器。
+- 修改业务模块定向 analyze 无问题：`build/abyss-1.9.7-final-analyze.log`；git diff --check 无空白错误。共享工作台的 BaoCode 焦点/侧栏兼容用例另 **2 项通过**，日志 `build/abyss-1.9.7-baocode-compat-tests.log`。未运行全套测试。
+- 组件/协议测试覆盖禁用成员续接拒绝及持久化、能力标签规范化/存储、工具边界、fork 独立与恢复；调度文本含能力标签由代码接线复核，未另做真实上游按标签选模实验。不把 mock 测试称作真实上游验证。
+
+### 实际运行证据
+
+- beta 包中实际将文件、变更、终端、用量、计划、团队及临时聊天拖动到不同组/边缘；已查看截图 `build/abyss-dock-{files-bottom,changes-bottom,terminal-moved,usage-moved,plan-moved,team-scratch-moved,restored}.png`。终端页面本次为空，证明页面移动不重复创建实例，**未用运行中的真实终端输出验证状态保留**。
+- 实际团队最大化/还原，关闭后从窗口菜单找回，数据保留；证据 `build/abyss-dock-{maximized,restored,team-reopened}.png`。
+- 真实成员先显示待命，编辑职责为“心算与上下文记忆验收”，点击禁用后为已禁用；正常退出并启动最终 1.9.7 后仍保持职责与禁用状态。证据 `build/abyss-team-edit-dialog.png`、`build/abyss-team-disabled-real.png`、`build/abyss-1.9.7-final-disabled-persisted.png`。禁用后的真实付费续派拒绝未再次发起，拒绝路径有定向测试证据。
+- 从 Test 创建临时快照，真实上游正确回忆继承历史中的 CEDAR-824，未新建成员；本次临时请求实际 init tools=[]，无新工具调用，结果只在临时会话。证据 `build/abyss-scratch-live-answer.png`。没有把继承历史里的旧工具调用误算作临时会话的新执行。双向追加不同标记的完整真实上游独立性实验未执行；fork 独立性有定向测试证据。
+- 保存命名布局“Tonight acceptance”，切换专注布局后实际应用恢复。最终包正常重启恢复复杂停靠树、主会话标签、成员禁用状态、临时聊天内容；命名预设重启后仍可应用。证据 `build/abyss-1.9.7-final-{restored,scratch-restored,preset-applied}.png`。
+- 用户实例已正常切换并运行 `dist/Abyss-1.9.7-windows-x64-final/Abyss.exe`，Abyss.OpenRequests=1、BaoCode.OpenRequests=0。原版 BaoCode 未关闭、仍响应；未复制其凭据。旧发行目录保留。禁用重启验收后已重新启用该测试成员，显示待命，避免把临时验收禁用留给用户；截图 `build/abyss-1.9.7-final-member-restored.png`。
+
+### Windows 安装包与交付边界
+
+- 最终版本 **1.9.7+33，Windows x64**；构建日志 `build/abyss-1.9.7-release-final.log`。不是单独主程序，setup 包含 Flutter、assets、app.so、插件、VC 运行库及 OpenSSH。
+- 安装器 `build/installers/Abyss-1.9.7-setup.exe`，**25,992,365 字节**。
+- 安装器 SHA-256：`416E5C1BA9A5A67283B1F4EF3AC360A6FCF030F8ABA0A911F61D10B56B33E0D8`。
+- 最终 Abyss.exe SHA-256：`166CE0F9CD6E703559CCD0AB59B6EF9F4864327A3A884E9A70F0B1C6711A6DEF`；app.so：`5262278E87729BAEB2FA3F049D4E87B559F8FA5F84469381B7BE4D7998A40DA1`。
+- 构建器的原生/AOT Abyss-only 身份检查、bundle 完整性检查通过。独立 GUID、abyss 协议，默认当前用户安装；未包含 BaoCode 主程序/浏览器宿主或用户凭据，不注册 BaoCode Native Messaging。
+- 实际启动 setup，看到“Setup - Abyss 1.9.7”及默认 `%LOCALAPPDATA%/Programs/Abyss` 目标目录，截图 `build/abyss-1.9.7-installer-welcome.png`；在写入前取消。**无可用隔离安装环境，完整安装/卸载及其他电脑首次运行未实测**；未在当前用户下安装再卸载，以免覆盖现有注册。
+- 安装器 **未签名**，可能出现 SmartScreen/未知发布者提示；不建议关闭系统保护。无需开发机 Flutter/Dart/Rust SDK；首次 CLI 下载和模型服务配置需要网络及用户自己的账号/API。Git 功能需要目标机安装 Git，语言开发工具另行安装；远程服务端首次使用需下载。不能称完全离线包。
+- 本批不等于整个产品完成：原生浮动多屏、完整队列/故障切换、跨重启阅读锚点及完整任务证据仍待后续。

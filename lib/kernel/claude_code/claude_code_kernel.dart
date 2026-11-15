@@ -123,7 +123,8 @@ class ClaudeCodeKernel
         ManagesMcpServers,
         ConfirmsModelSwitch,
         WatchesEdits,
-        LoadsHistory {
+        LoadsHistory,
+        ManagesAgentMembers {
   ClaudeCodeKernel(
     this.descriptor,
     this._context, {
@@ -668,8 +669,12 @@ class ClaudeCodeKernel
       _launchedWindow = _autocompact;
       _launchedSuggestions = PromptSuggestions.current();
       _appliedSwitches = ExtensionSwitches.current();
-      final sdkServers = ClaudeSdkTools.serversFor(_cwd);
-      final subagentPool = _launchSubagentPool(custom?.$1);
+      final sdkServers = _context.chatOnly
+          ? const <String>[]
+          : ClaudeSdkTools.serversFor(_cwd);
+      final subagentPool = _context.chatOnly
+          ? const <String>[]
+          : _launchSubagentPool(custom?.$1);
       _cliAgentModels.clear();
       if (AppEdition.isAbyss && env != null && !RemoteLocation.isRemote(_cwd)) {
         const roles = {
@@ -716,8 +721,10 @@ class ClaudeCodeKernel
               : [?PasteStore.directory],
           instructions: workspace?.instructions,
           ownPrompt: workspace?.ownPrompt ?? false,
-          tools: workspace?.tools,
-          userServers: workspace?.userServers ?? false,
+          tools: _context.chatOnly ? const [] : workspace?.tools,
+          userServers: _context.chatOnly
+              ? false
+              : workspace?.userServers ?? false,
           allowed: workspace?.allowedTools ?? const [],
           models: switch (custom) {
             (final provider, _) => _requestedModels(provider),
@@ -754,7 +761,18 @@ class ClaudeCodeKernel
       final initialized = await control.request('initialize', {
         'promptSuggestions': _launchedSuggestions,
         if (sdkServers.isNotEmpty) 'sdkMcpServers': sdkServers,
-        if (_editWatch != null || AppEdition.isAbyss) 'hooks': _hooks,
+        if (_editWatch != null || AppEdition.isAbyss)
+          'hooks': _context.chatOnly
+              ? {
+                  'PreToolUse': [
+                    {
+                      'matcher': '.*',
+                      'hookCallbackIds': [_approveAgent],
+                      'onFailure': 'block',
+                    },
+                  ],
+                }
+              : _hooks,
       });
       if (AppEdition.isAbyss && initialized['hooks_applied'] != true) {
         throw const ClaudeUnavailable(
@@ -765,7 +783,9 @@ class ClaudeCodeKernel
         );
       }
       _translator.hostAgentApprovals =
-          AppEdition.isAbyss && initialized['hooks_applied'] == true;
+          AppEdition.isAbyss &&
+          !_context.chatOnly &&
+          initialized['hooks_applied'] == true;
       _applyInitialize(initialized);
       if (_mode != _cliMode) {
         _cliMode = _mode;
@@ -1172,7 +1192,7 @@ class ClaudeCodeKernel
                 },
               },
             ],
-            if (AppEdition.isAbyss)
+            if (AppEdition.isAbyss && !_context.chatOnly)
               {'type': 'text', 'text': _dispatchContext()},
             for (final note in turn.notes) {'type': 'text', 'text': note},
             if (ask)
@@ -1931,13 +1951,17 @@ class ClaudeCodeKernel
         '${AbyssWorkbenchSettings.automatic() ? 'automatic' : 'manual approval'}. '
         'Allowed child models supported by this CLI session: ${jsonEncode(pool)}. '
         'CLI model aliases: ${jsonEncode({for (final ref in pool) ref: _cliAgentModels[ref]})}. '
+        'User-configured capability tags (preferences, not guarantees): ${jsonEncode({for (final ref in pool) ref: _providers.subagentCapabilities(ref)})}. '
+        'Prefer related standby members; match task requirements to explicit tags. '
+        'Use independent context for review, and spread independent tasks across '
+        'providers when task fit is comparable. Never invent capability scores. '
         'For a new Agent call, select a pool entry based on task fit and put its '
         'listed alias into Agent.model (the CLI schema accepts aliases, not full refs). Do not choose outside '
         'this list or invent model capabilities from names. If no model is available, '
         'work yourself or report the limitation; do not repeatedly retry rejected calls. '
         'Prefer an existing related idle member via SendMessage; keep its bound model. '
         'Member inventory: ${jsonEncode([
-          for (final m in members) {'id': m.cliAgentId, 'description': m.description, 'model': m.model, 'stopped': _taskLedger!.tasksFor(_sessionId!).any((t) => t.memberId == m.memberId && (t.hostStopped || t.hostCancelled))},
+          for (final m in members) {'id': m.cliAgentId, 'name': m.name, 'role': m.role, 'description': m.description, 'model': m.model, 'enabled': m.enabled && !m.archived, 'state': _taskLedger!.projectMember(_sessionId!, m.memberId).state.name, 'stopped': _taskLedger!.tasksFor(_sessionId!).any((t) => t.memberId == m.memberId && (t.hostStopped || t.hostCancelled))},
         ])}. Never resume a user-stopped member or create a replacement to bypass '
         'a stop. Dispatch creates work; closing a display does not stop it. '
         'Tool permissions remain unchanged.</system-reminder>';
@@ -1972,6 +1996,14 @@ class ClaudeCodeKernel
   }) {
     final control = _control;
     if (control == null) return;
+    if (_context.chatOnly) {
+      control.respond(requestId, {
+        'behavior': 'deny',
+        'message':
+            'Agent dispatch is unavailable in this chat-only conversation.',
+      });
+      return;
+    }
     final input =
         (request['tool_input'] as Map?)?.cast<String, Object?>() ?? request;
     final continuation = hook && request['tool_name'] == 'SendMessage';
@@ -2035,6 +2067,15 @@ class ClaudeCodeKernel
     final description = '${input['description'] ?? input['summary'] ?? ''}';
     if (hook && continuation && member == null) {
       _denyDispatch(requestId, 'Unknown member; no continuation was started.');
+      return;
+    }
+    if (continuation &&
+        member != null &&
+        (!member.enabled || member.archived)) {
+      _denyDispatch(
+        requestId,
+        'This member is disabled or archived. No continuation was started.',
+      );
       return;
     }
     if (hook &&
@@ -2178,6 +2219,13 @@ class ClaudeCodeKernel
     final tool = request['tool_name'] as String? ?? 'Tool';
     final input = (request['input'] as Map?)?.cast<String, Object?>() ?? {};
     final suggestions = request['permission_suggestions'] as List? ?? const [];
+    if (_context.chatOnly) {
+      _control!.respond(requestId, {
+        'behavior': 'deny',
+        'message': 'Tools are unavailable in this chat-only conversation.',
+      });
+      return;
+    }
     // The plan is put to the user without waiting on them: its card
     // awaits, the turn ends, and their next message starts it (see
     // startBuilding) or says what should change. The CLI stays in Plan.
@@ -2368,6 +2416,50 @@ class ClaudeCodeKernel
   static String? _clean(String? text) =>
       text?.replaceAll(RegExp(r'\x1B\[[0-9;]*m'), '').trim();
 
+  @override
+  List<KernelAgentMember> get agentMembers {
+    final id = _sessionId;
+    if (id == null || _taskLedger == null || _context.chatOnly) return const [];
+    final tasks = _taskLedger!.tasksFor(id);
+    return [
+      for (final state in _taskLedger!.memberStatesFor(id))
+        KernelAgentMember(
+          id: state.member.memberId,
+          cliAgentId: state.member.cliAgentId,
+          name:
+              state.member.name ??
+              state.member.description ??
+              state.member.memberId,
+          role: state.member.role ?? '',
+          model: state.member.model,
+          enabled: state.member.enabled,
+          archived: state.member.archived,
+          tasks: tasks.where((t) => t.memberId == state.member.memberId).length,
+          status: AgentMemberStatus.values.byName(state.state.name),
+        ),
+    ];
+  }
+
+  @override
+  void updateAgentMember(
+    String id, {
+    String? name,
+    String? role,
+    bool? enabled,
+    bool? archived,
+  }) {
+    if (_context.chatOnly || _sessionId == null || _taskLedger == null) return;
+    _taskLedger!.updateMember(
+      _sessionId!,
+      id,
+      name: name,
+      role: role,
+      enabled: enabled,
+      archived: archived,
+    );
+    emitInfoChanged();
+  }
+
   AgentTaskLedger? _taskLedger;
   late final Future<void> _ledgerReady;
   final Map<String, String> _memberCalls = {};
@@ -2376,7 +2468,11 @@ class ClaudeCodeKernel
   final Set<String> _dispatchReservations = {};
 
   Future<void> _loadTaskLedger(Future<AgentTaskLedger>? injected) async {
-    if (!AppEdition.isAbyss || RemoteLocation.isRemote(_cwd)) return;
+    if (!AppEdition.isAbyss ||
+        _context.chatOnly ||
+        RemoteLocation.isRemote(_cwd)) {
+      return;
+    }
     try {
       _taskLedger = await (injected ?? AgentTaskLedger.open());
       if (_disposed) return;
@@ -2739,6 +2835,17 @@ class ClaudeCodeKernel
   /// One of [_hooks] called back: the watch told of the edit, and the
   /// CLI answered once it is done with it (the edit waits on that).
   Future<void> _hookCallback(String id, Map<String, Object?> request) async {
+    if (_context.chatOnly) {
+      _control?.respond(id, const {
+        'hookSpecificOutput': {
+          'hookEventName': 'PreToolUse',
+          'permissionDecision': 'deny',
+          'permissionDecisionReason':
+              'Tools are unavailable in this chat-only conversation.',
+        },
+      });
+      return;
+    }
     final input = (request['input'] as Map?)?.cast<String, Object?>();
     if (request['callback_id'] == _approveAgent && AppEdition.isAbyss) {
       _agentApproval(id, input ?? const {}, hook: true);
@@ -2769,6 +2876,13 @@ class ClaudeCodeKernel
   /// What the agent says to one of the app's own MCP servers (see
   /// claude_sdk_tools.dart), answered.
   Future<void> _mcpMessage(String id, Map<String, Object?> request) async {
+    if (_context.chatOnly) {
+      _control?.refuse(
+        id,
+        'MCP is unavailable in this chat-only conversation.',
+      );
+      return;
+    }
     final message = (request['message'] as Map?)?.cast<String, Object?>();
     if (request['server_name'] != ClaudeSdkTools.server || message == null) {
       _control?.refuse(id, 'No such server');
