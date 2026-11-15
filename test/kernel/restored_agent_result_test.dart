@@ -4,6 +4,30 @@ import 'package:baocode/kernel/transcript.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('acknowledged host approvals do not claim private task controls', () {
+    final transcript = Transcript();
+    var seq = 0;
+    final translator = ClaudeTranslator(
+      emit: transcript.apply,
+      nextSeq: () => ++seq,
+    )..hostAgentApprovals = true;
+    translator.translate({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 'root',
+      'task_type': 'local_agent',
+      'description': 'Prior approved task',
+      'read_only': true,
+      'status': 'completed',
+    });
+    final agent = [
+      for (final (_, item) in transcript.liveItems)
+        if (item is AgentItem) item,
+    ].single;
+    expect(agent.approvalStatus, isNot('unsupported'));
+    expect(translator.managedAgentTasks, isFalse);
+  });
+
   for (final status in ['completed', 'failed', 'interrupted']) {
     test('restored root agent retains its $status report', () {
       final transcript = Transcript();

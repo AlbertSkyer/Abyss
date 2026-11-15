@@ -29,10 +29,12 @@ class ClaudeTranslator {
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
 
-  /// Whether the running core offers its explicit child approval protocol.
-  /// The stock CLI does not: its cards state that approval is unavailable,
-  /// while any task-stop capability it actually supports remains usable.
+  /// Whether the running core offers its explicit child management protocol.
   bool managedAgentTasks = false;
+
+  /// The external CLI acknowledged the host's pre-start approval hooks.
+  /// This grants approval UI only, not private retry/queue capabilities.
+  bool hostAgentApprovals = false;
 
   /// A subagent's model, as its upstream answered it (a bare id), as the
   /// session's upstream's [modelRef] where that upstream has it: another
@@ -1995,7 +1997,7 @@ class ClaudeTranslator {
             queued: queued,
             approvalStatus:
                 _string(message['approval_status']) ??
-                (managedAgent ? null : 'unsupported'),
+                (managedAgent || hostAgentApprovals ? null : 'unsupported'),
             readOnly:
                 restored || _tasks[taskId]?.status == CommandStatus.interrupted,
             result: restored ? _string(message['result']) : null,

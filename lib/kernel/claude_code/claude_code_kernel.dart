@@ -752,6 +752,8 @@ class ClaudeCodeKernel
               'No task was started.',
         );
       }
+      _translator.hostAgentApprovals =
+          AppEdition.isAbyss && initialized['hooks_applied'] == true;
       _applyInitialize(initialized);
       if (_mode != _cliMode) {
         _cliMode = _mode;
@@ -841,6 +843,7 @@ class ClaudeCodeKernel
   }
 
   void _teardown({bool answering = true}) {
+    _translator.hostAgentApprovals = false;
     _usage?.close();
     _usage = null;
     unawaited(_subscription?.cancel());
