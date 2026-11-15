@@ -2087,6 +2087,7 @@
   "sidePanelAgentQueued": "Queued",
   "sidePanelAgentInterrupted": "Interrupted",
   "sidePanelAgentCancelled": "Cancelled",
+  "sidePanelAgentApprovalUnsupported": "This runtime started the child without an interactive approval request to Abyss. Approval status is unavailable.",
   "sidePanelAgentRetry": "Retry",
   "sidePanelAgentRetryUnsupported": "Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.",
   "sidePanelAgentDone": "Done",

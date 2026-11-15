@@ -1535,6 +1535,8 @@ class _ChatScreenState extends State<ChatScreen>
             backFocusNode: layer.backFocus,
             retry:
                 layer.feed.agent != null &&
+                    layer.feed.path.length == 1 &&
+                    !layer.feed.agent!.readOnly &&
                     layer.feed.agent!.status != CommandStatus.running
                 ? () => unawaited(
                     confirmAgentRetry(context, _session, layer.feed),

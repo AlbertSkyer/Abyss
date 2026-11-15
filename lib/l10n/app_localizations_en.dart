@@ -3203,6 +3203,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sidePanelAgentCancelled => 'Cancelled';
 
   @override
+  String get sidePanelAgentApprovalUnsupported =>
+      'This runtime started the child without an interactive approval request to Abyss. Approval status is unavailable.';
+
+  @override
   String get sidePanelAgentRetry => 'Retry';
 
   @override

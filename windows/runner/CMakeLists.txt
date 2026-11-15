@@ -52,14 +52,11 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # from one cache, where CMAKE_BUILD_TYPE is empty.
 target_compile_definitions(${BINARY_NAME} PRIVATE "$<$<CONFIG:Debug>:BAOCODE_DEV_ICON>")
 
-target_compile_definitions(${BINARY_NAME} PRIVATE
-  "APP_PRODUCT_NAME=L\"${APP_PRODUCT}\""
-  "APP_DATA_FOLDER=L\"${APP_DATA_FOLDER}\""
-  "APP_REGISTRY_ROOT=L\"${APP_REGISTRY_ROOT}\""
-  "APP_MUTEX=L\"${APP_MUTEX}\""
-  "APP_OPEN_PROPERTY=L\"${APP_OPEN_PROPERTY}\""
-  "APP_LOGIN_PROFILE=L\"${APP_LOGIN_PROFILE}\""
-  "APP_WER_MODULE=L\"${APP_WER_NAME}.dll\"")
+# Write identity literals rather than passing quoted strings through
+# Visual Studio's C++ or resource-compiler command-line parsing.
+configure_file("edition.h.in" "${CMAKE_CURRENT_BINARY_DIR}/edition.h" @ONLY)
+configure_file("edition.rc.in" "${CMAKE_CURRENT_BINARY_DIR}/edition.rc" @ONLY)
+target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")

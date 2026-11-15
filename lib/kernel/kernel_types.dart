@@ -550,6 +550,8 @@ class KernelTask {
     required this.startedAt,
     this.toolUseId,
     this.background = true,
+    this.queued = false,
+    this.readOnly = false,
     this.summary,
     this.outputFile,
   });
@@ -565,6 +567,12 @@ class KernelTask {
   final String? toolUseId;
   final bool background;
 
+  /// Waiting for a slot rather than running. It can still be cancelled.
+  final bool queued;
+
+  /// An index recovered from a previous process: inspect, never control.
+  final bool readOnly;
+
   /// Its last progress line, or how it ended.
   final String? summary;
 
@@ -575,6 +583,8 @@ class KernelTask {
     CommandStatus? status,
     String? summary,
     bool? background,
+    bool? queued,
+    bool? readOnly,
     String? description,
     String? outputFile,
   }) => KernelTask(
@@ -585,6 +595,8 @@ class KernelTask {
     startedAt: startedAt,
     toolUseId: toolUseId,
     background: background ?? this.background,
+    queued: queued ?? this.queued,
+    readOnly: readOnly ?? this.readOnly,
     summary: summary ?? this.summary,
     outputFile: outputFile ?? this.outputFile,
   );

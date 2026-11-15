@@ -1,0 +1,19 @@
+#ifndef RUNNER_EDITION_H_
+#define RUNNER_EDITION_H_
+
+// Native identity selected by APP_EDITION / APP_PRODUCT at build time.
+// Flutter channel names and command-line request flags intentionally stay
+// under lib/'s and open_requests.h's existing BaoCode protocol.
+namespace edition {
+
+constexpr wchar_t kName[] = L"@APP_PRODUCT@";
+constexpr wchar_t kDataFolder[] = L"@APP_DATA_FOLDER@";
+constexpr wchar_t kRegistryRoot[] = L"@APP_REGISTRY_ROOT@";
+constexpr wchar_t kSingleInstanceMutex[] = L"@APP_MUTEX@";
+constexpr wchar_t kOpenRequestProperty[] = L"@APP_OPEN_PROPERTY@";
+constexpr wchar_t kLoginProfile[] = L"@APP_LOGIN_PROFILE@";
+constexpr wchar_t kWerModule[] = L"@APP_WER_NAME@.dll";
+
+}  // namespace edition
+
+#endif  // RUNNER_EDITION_H_

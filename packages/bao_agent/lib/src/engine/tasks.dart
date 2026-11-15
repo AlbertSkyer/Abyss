@@ -36,6 +36,7 @@ class BackgroundTask {
     this.model,
     this.requestedModel,
     this.modelSource,
+    this.approvalStatus,
     this.parentId,
   }) : queuedAt = DateTime.now();
 
@@ -54,6 +55,7 @@ class BackgroundTask {
   String? model;
   String? requestedModel;
   String? modelSource;
+  String? approvalStatus;
   final String? parentId;
 
   /// When this attempt was queued, and when it actually started.
@@ -114,6 +116,7 @@ class BackgroundTask {
     'model': ?model,
     'requested_model': ?requestedModel,
     'model_source': ?modelSource,
+    'approval_status': ?approvalStatus,
     'parent_id': ?parentId,
     'agent_type': ?agentType,
     'command': ?command,
@@ -184,6 +187,7 @@ class TaskManager {
     String? model,
     String? requestedModel,
     String? modelSource,
+    String? approvalStatus,
     String? parentId,
     String? id,
     void Function()? admit,
@@ -203,6 +207,7 @@ class TaskManager {
       model: model,
       requestedModel: requestedModel,
       modelSource: modelSource,
+      approvalStatus: approvalStatus,
       parentId: parentId,
     );
     if (session.options.persist) {
@@ -241,6 +246,7 @@ class TaskManager {
       'model': ?task.model,
       'requested_model': ?task.requestedModel,
       'model_source': ?task.modelSource,
+      'approval_status': ?task.approvalStatus,
     });
   }
 
@@ -258,6 +264,7 @@ class TaskManager {
       'model': ?task.model,
       'requested_model': ?task.requestedModel,
       'model_source': ?task.modelSource,
+      'approval_status': ?task.approvalStatus,
     });
   }
 
@@ -422,6 +429,7 @@ class TaskManager {
     String? model,
     String? requestedModel,
     String? modelSource,
+    String? approvalStatus,
     String? parentId,
     bool background = true,
     void Function()? admit,
@@ -434,6 +442,7 @@ class TaskManager {
       model: model,
       requestedModel: requestedModel,
       modelSource: modelSource,
+      approvalStatus: approvalStatus,
       parentId: parentId,
       id: agentId,
       admit: admit,
@@ -552,6 +561,7 @@ class TaskManager {
               model: record['model'] as String?,
               requestedModel: record['requested_model'] as String?,
               modelSource: record['model_source'] as String?,
+              approvalStatus: record['approval_status'] as String?,
               parentId: record['parent_id'] as String?,
             )
             ..status = recovered ? TaskStatus.interrupted : status

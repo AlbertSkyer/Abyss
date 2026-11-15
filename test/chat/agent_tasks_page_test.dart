@@ -187,7 +187,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await pumpBoard(tester, session, panel);
     expect(find.text('Queued'), findsOneWidget);
-    expect(find.byIcon(Icons.stop_rounded), findsNothing);
+    expect(find.byIcon(Icons.stop_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.stop_rounded));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      cli.requests('stop_task').map((request) => request['task_id']),
+      contains('t1'),
+    );
 
     cli.push({
       'type': 'system',
@@ -197,6 +203,9 @@ void main() {
       'description': 'Compare the games',
       'task_type': 'local_agent',
       'status': 'interrupted',
+      'model': 'claude-opus-5-5',
+      'model_source': 'pool',
+      'approval_status': 'approved',
       'read_only': true,
       'is_backgrounded': true,
     });
@@ -214,6 +223,9 @@ void main() {
     expect(find.text('Interrupted'), findsOneWidget);
     expect(find.text('Failed'), findsNothing);
     expect(session.agentTree.single.agent.readOnly, isTrue);
+    expect(session.agentTree.single.agent.assignedModel, 'claude-opus-5-5');
+    expect(session.agentTree.single.agent.modelSource, 'pool');
+    expect(session.agentTree.single.agent.approvalStatus, 'approved');
     expect(find.byIcon(Icons.refresh_rounded), findsNothing);
     expect(cli.requests('retry_agent'), isEmpty);
 
@@ -273,8 +285,73 @@ void main() {
     await pumpBoard(tester, session, panel);
     expect(find.text('Queued'), findsOneWidget);
     expect(find.text('Interrupted'), findsNothing);
-    expect(find.byIcon(Icons.stop_rounded), findsNothing);
+    expect(find.byIcon(Icons.stop_rounded), findsOneWidget);
     expect(find.byIcon(Icons.refresh_rounded), findsNothing);
+  });
+
+  testWidgets('nested children expose no controls; restored metadata is kept', (
+    tester,
+  ) async {
+    final (:session, :cli) = await scripted(tester);
+    final panel = AgentSidePanel();
+    cli
+      ..push(
+        assistant('toolu_a', 'toolu_nested', {
+          'name': 'Agent',
+          'input': {'description': 'Nested child', 'subagent_type': 'Explore'},
+        }),
+      )
+      ..push({
+        'type': 'system',
+        'subtype': 'task_started',
+        'task_id': 'nested-live',
+        'tool_use_id': 'toolu_nested',
+        'description': 'Nested child',
+        'task_type': 'local_agent',
+        'is_backgrounded': true,
+      })
+      ..push({
+        'type': 'system',
+        'subtype': 'task_started',
+        'task_id': 'nested-restored',
+        'description': 'Restored nested child',
+        'task_type': 'local_agent',
+        'status': 'interrupted',
+        'read_only': true,
+        'parent_id': 't1',
+        'agent_type': 'general-purpose',
+        'model': 'claude-haiku-5-5',
+        'requested_model': 'haiku',
+        'model_source': 'requested',
+        'is_backgrounded': true,
+      });
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpBoard(tester, session, panel);
+    expect(find.text('Nested child'), findsOneWidget);
+    expect(find.text('Restored nested child'), findsOneWidget);
+    expect(session.agentTree.length, 3);
+    expect(session.agentTree.where((entry) => entry.depth == 1).length, 2);
+    final restored = session.agentTree.last.agent;
+    expect(restored.assignedModel, 'claude-haiku-5-5');
+    expect(restored.requestedModel, 'haiku');
+    expect(restored.modelSource, 'requested');
+    expect(restored.readOnly, isTrue);
+    // Only the running root may be stopped; neither nested child has a
+    // retry or stop action that could be routed to its parent's task.
+    expect(find.byIcon(Icons.stop_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.refresh_rounded), findsNothing);
+  });
+
+  testWidgets('external CLI child approval is honestly unavailable', (
+    tester,
+  ) async {
+    final (:session, cli: _) = await scripted(tester);
+    await pumpBoard(tester, session, AgentSidePanel());
+    expect(
+      find.textContaining('Approval status is unavailable'),
+      findsOneWidget,
+    );
+    expect(session.agentTree.single.agent.approvalStatus, 'unsupported');
   });
 
   testWidgets('with no child, it says so', (tester) async {

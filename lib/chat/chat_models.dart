@@ -282,6 +282,7 @@ class AgentItem extends ChatItem {
     this.assignedModel,
     this.requestedModel,
     this.modelSource,
+    this.approvalStatus,
     this.outcome,
     this.children = const [],
     this.result,
@@ -332,6 +333,12 @@ class AgentItem extends ChatItem {
   /// Where its assigned model came from (`pool`, `requested`, …).
   final String? modelSource;
 
+  /// What is known about the user's leave to start: `approved` only when
+  /// the host explicitly asked, `automatic` for a declared unattended mode,
+  /// `unsupported` for the stock CLI, or `denied`. Never inferred from a
+  /// completed child run.
+  final String? approvalStatus;
+
   /// `completed`, `failed`, or `cancelled`, if its result says. The legacy
   /// [status] stays the visual running/succeeded/failed projection, with
   /// [CommandStatus.interrupted] for restored work that never restarted.
@@ -366,6 +373,7 @@ class AgentItem extends ChatItem {
     String? assignedModel,
     String? requestedModel,
     String? modelSource,
+    String? approvalStatus,
     String? outcome,
     List<ChatItem>? children,
     String? result,
@@ -388,6 +396,7 @@ class AgentItem extends ChatItem {
     assignedModel: assignedModel ?? this.assignedModel,
     requestedModel: requestedModel ?? this.requestedModel,
     modelSource: modelSource ?? this.modelSource,
+    approvalStatus: approvalStatus ?? this.approvalStatus,
     outcome: outcome ?? this.outcome,
     children: children ?? this.children,
     result: result ?? this.result,

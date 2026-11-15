@@ -241,6 +241,13 @@ class ClaudeCodeKernel
 
   ClaudeCodeTransport? _transport;
   ControlChannel? _control;
+
+  /// Set by the process's init; the translator applies the same capability
+  /// contract to task controls as the control-request handler.
+  set _taskCapabilities(Set<String> capabilities) =>
+      _translator.managedAgentTasks = capabilities.contains(
+        'agent_approval_v1',
+      );
   StreamSubscription<Map<String, Object?>>? _subscription;
 
   /// Keeps the calls of a process on Claude Code's own models (Settings →
@@ -1813,7 +1820,11 @@ class ClaudeCodeKernel
         if (raw is String && raw.isNotEmpty) raw,
     ];
     if (!retry && (_workspace?.approvesAll ?? false)) {
-      control.respond(requestId, {'behavior': 'allow', 'model': model});
+      control.respond(requestId, {
+        'behavior': 'allow',
+        'model': model,
+        'approval_status': 'automatic',
+      });
       return;
     }
     // Don't ask asks no one: the child is not started, as anything else
@@ -2083,6 +2094,7 @@ class ClaudeCodeKernel
           for (final capability in message['capabilities'] as List? ?? const [])
             if (capability is String) capability,
         };
+        _taskCapabilities = _capabilities;
         _sendsNow = (message['capabilities'] as List? ?? const []).contains(
           'interrupt_send_now_v1',
         );
@@ -3262,6 +3274,7 @@ class ClaudeCodeKernel
       for (final capability in response['capabilities'] as List? ?? const [])
         if (capability is String) capability,
     };
+    _taskCapabilities = _capabilities;
     // Claude Code's own models are those it lists set up as the user has
     // it: one on a provider lists what the provider's names stand in for.
     final own = _launchedProvider.isEmpty;

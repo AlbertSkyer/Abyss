@@ -29,6 +29,11 @@ class ClaudeTranslator {
   final void Function(KernelEvent event) emit;
   final int Function() nextSeq;
 
+  /// Whether the running core offers its explicit child approval protocol.
+  /// The stock CLI does not: its cards state that approval is unavailable,
+  /// while any task-stop capability it actually supports remains usable.
+  bool managedAgentTasks = false;
+
   /// A subagent's model, as its upstream answered it (a bare id), as the
   /// session's upstream's [modelRef] where that upstream has it: another
   /// upstream of a model of that id is not the one it ran on.
@@ -1893,6 +1898,14 @@ class ClaudeTranslator {
             streaming: true,
           ),
         );
+      case 'agent_approval' when !replaying:
+        final call = _string(message['tool_use_id']);
+        if (_agents[call] case final agent?) {
+          agent.item = agent.item.copyWith(
+            approvalStatus: _string(message['status']),
+          );
+          _putAgent(call!);
+        }
       case 'task_started' when !replaying:
         final taskId = message['task_id'] as String;
         final agent = message['task_type'] == 'local_agent';
@@ -1925,26 +1938,64 @@ class ClaudeTranslator {
             }
           }
         }
+        final managedAgent = agent && managedAgentTasks;
         final restored = message['read_only'] == true;
         final queued = message['queue_state'] == 'queued';
-        final restoredCard = restored && agent && _agents[card] == null;
-        final taskCard = restoredCard ? taskId : card;
+        final parentId = _string(message['parent_id']);
+        final restoredParent =
+            restored && parentId != null && parentId.isNotEmpty
+            ? _agents[_agentCard(parentId, null)]
+            : null;
+        final restoredCard =
+            restored &&
+            agent &&
+            _agents[card] == null &&
+            restoredParent == null;
+        final taskCard = restoredParent == null
+            ? (restoredCard ? taskId : card)
+            : null;
         if (restoredCard) {
           _agents[taskId] = _Agent(
             AgentItem(
               description: _string(message['description']) ?? '',
               id: taskId,
               agentType: _string(message['agent_type']),
+              assignedModel: _ownModelOf(_string(message['model'])),
+              requestedModel: _string(message['requested_model']),
+              modelSource: _string(message['model_source']),
+              approvalStatus: _string(message['approval_status']),
               background: message['is_backgrounded'] != false,
               readOnly: true,
             ),
           );
           _agentCalls[taskId] = taskId;
         }
+        if (restoredParent case final parent?) {
+          final id = taskId;
+          parent.children[id] = AgentItem(
+            description: _string(message['description']) ?? '',
+            id: id,
+            agentType: _string(message['agent_type']),
+            assignedModel: _ownModelOf(_string(message['model'])),
+            approvalStatus: _string(message['approval_status']),
+            requestedModel: _string(message['requested_model']),
+            modelSource: _string(message['model_source']),
+            status: _taskStatus(message['status']) ?? CommandStatus.interrupted,
+            background: message['is_backgrounded'] != false,
+            readOnly: true,
+            result: _string(message['result']),
+            activity:
+                'Restored read-only from the previous session; not restarted',
+          );
+          _putAgent(parent.item.id!);
+        }
         if (_agents[taskCard] case final agent?) {
           agent.item = agent.item.copyWith(
             status: _taskStatus(message['status']),
             queued: queued,
+            approvalStatus:
+                _string(message['approval_status']) ??
+                (managedAgent ? null : 'unsupported'),
             readOnly:
                 restored || _tasks[taskId]?.status == CommandStatus.interrupted,
             activity: restored
@@ -1966,6 +2017,8 @@ class ClaudeTranslator {
           status: _taskStatus(message['status']) ?? CommandStatus.running,
           startedAt: DateTime.now(),
           toolUseId: taskCard ?? call,
+          queued: queued,
+          readOnly: restored,
           // A workflow runs in the background, whatever it says.
           background: workflow || message['is_backgrounded'] == true,
           outputFile: _string(message['output_file']) ?? _taskOutputs[taskId],
@@ -2016,7 +2069,7 @@ class ClaudeTranslator {
             summary: _string(patch['error']),
           );
           _reportTasks();
-          if (patch['queue_state'] == 'running') {
+          if (patch['queue_state'] == 'running' && !task.readOnly) {
             if (_agents[task.toolUseId] case final agent?) {
               agent.item = agent.item.copyWith(queued: false);
               _putAgent(task.toolUseId!);
@@ -2078,6 +2131,7 @@ class ClaudeTranslator {
     final task? =>
       task.kind == KernelTaskKind.agent &&
           task.background &&
+          !task.readOnly &&
           task.status != CommandStatus.running &&
           task.status != CommandStatus.interrupted,
     _ => false,

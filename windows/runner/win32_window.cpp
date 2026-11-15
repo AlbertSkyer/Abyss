@@ -150,7 +150,7 @@ static std::optional<bool> g_dark_appearance;
 
 /// Where the windows' blur is kept (SetWindowBlur), as the app's other
 /// words for the next start (see app_windows.cpp).
-constexpr wchar_t kSettingsKey[] = edition::kRegistryRoot;
+constexpr auto& kSettingsKey = edition::kRegistryRoot;
 constexpr wchar_t kWindowBlurValue[] = L"WindowBlur";
 static std::optional<bool> g_window_blur;
 

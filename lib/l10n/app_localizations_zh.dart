@@ -3090,6 +3090,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sidePanelAgentCancelled => '已取消';
 
   @override
+  String get sidePanelAgentApprovalUnsupported =>
+      '此运行时未向 Abyss 发出交互式子智能体审批请求；无法确认其审批状态。';
+
+  @override
   String get sidePanelAgentRetry => '重试';
 
   @override

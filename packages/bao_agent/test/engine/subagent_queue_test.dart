@@ -104,6 +104,10 @@ void main() {
         description: id,
         agentId: id,
         parentId: status == TaskStatus.queued ? 'p' : null,
+        model: 'provider/claude-sonnet-5-5',
+        requestedModel: 'sonnet',
+        modelSource: 'pool',
+        approvalStatus: 'approved',
       );
       if (status != TaskStatus.queued) tasks.finish(task, status);
     }
@@ -163,6 +167,11 @@ void main() {
       expect(restored[id]?.status, TaskStatus.interrupted, reason: id);
     }
     expect(restored['finished']?.status, TaskStatus.completed);
+    expect(restored['finished']?.model, 'provider/claude-sonnet-5-5');
+    expect(restored['finished']?.requestedModel, 'sonnet');
+    expect(restored['finished']?.modelSource, 'pool');
+    expect(restored['finished']?.approvalStatus, 'approved');
+    expect(restored['live-queued']?.parentId, 'p');
     expect(restored['errored']?.status, TaskStatus.failed);
     expect(restored.agentQueueStatus('p')['running'], 0);
     expect(restored.agentQueueStatus('p')['queued'], 0);
@@ -177,6 +186,66 @@ void main() {
     expect(events.every((event) => event['read_only'] == true), isTrue);
     expect(events.where((event) => event['status'] == 'queued'), isEmpty);
   });
+
+  test(
+    'cancelling an admitted queued call completes its tool exactly once',
+    () async {
+      h = await Harness.start(
+        script: [
+          Reply.tool('Agent', {
+            'description': 'Waiting child',
+            'prompt': 'CHILD: must never run.',
+            'run_in_background': false,
+          }),
+          Reply.text('Cancellation reported.'),
+        ],
+      );
+      await h.request('initialize');
+      final manager = h.engine.session.tasks;
+      manager.registerAgent(
+        description: 'Occupies slot',
+        agentId: 'one',
+        parentId: '',
+      );
+      manager.registerAgent(
+        description: 'Occupies slot',
+        agentId: 'two',
+        parentId: '',
+      );
+      final approved = h.messages
+          .where(
+            (message) =>
+                message['type'] == 'system' &&
+                message['subtype'] == 'agent_approval' &&
+                message['status'] == 'approved',
+          )
+          .first
+          .timeout(const Duration(seconds: 10));
+      h.send('Start the child');
+      await approved;
+      final waiting = manager.tasks.values
+          .where((task) => task.description == 'Waiting child')
+          .single;
+      expect(waiting.status, TaskStatus.queued);
+      await manager.stop(waiting.id);
+      await h.nextIdle();
+      expect(waiting.status, TaskStatus.killed);
+      expect(manager.agentQueueStatus('')['running'], 2);
+      expect(
+        h.toolResults.where((result) => result['tool_use_id'] != ''),
+        hasLength(1),
+      );
+      expect(h.model.turns, hasLength(2));
+      expect(
+        h.model.turns.where((request) {
+          final messages = request.body['messages'] as List;
+          return messages.isNotEmpty &&
+              jsonEncode(messages.first).contains('CHILD:');
+        }),
+        isEmpty,
+      );
+    },
+  );
 
   test('limit is configurable and clamped', () async {
     h = await Harness.start(environment: {'BAOCODE_SUBAGENT_CONCURRENCY': '1'});

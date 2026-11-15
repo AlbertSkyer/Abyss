@@ -973,7 +973,8 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
             .where(
               (task) =>
                   task.toolUseId == toolUseId &&
-                  task.status == CommandStatus.running,
+                  task.status == CommandStatus.running &&
+                  !task.readOnly,
             )
             .firstOrNull;
 

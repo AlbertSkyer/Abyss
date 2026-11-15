@@ -20,6 +20,7 @@ abstract final class AppEdition {
       ? r'Software\Abyss'
       : r'Software\BaoCode';
   static const windowsContextMenu = isAbyss ? 'Abyss' : 'BaoCode';
+  static const urlScheme = isAbyss ? 'abyss' : 'baocode';
 
   /// Abyss has neither a signed update feed nor an extension of its own yet.
   /// Do not silently take BaoCode's, whose installer and browser host would

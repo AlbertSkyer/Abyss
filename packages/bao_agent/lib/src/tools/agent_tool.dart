@@ -246,6 +246,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         context.run.isMain &&
         input['run_in_background'] != false &&
         !_truthy(session.environment['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS']);
+    var approvalStatus = 'automatic';
     // The host puts each child to the user before it starts: what it is to
     // do, and the model it runs on. Without a host to ask, it starts as
     // before.
@@ -276,6 +277,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         );
       }
       if (answer['behavior'] != 'allow') {
+        session.agentApprovals.record('denied', toolUseId: context.toolUseId);
         return ToolOutput.error(
           asText(answer['message']) ??
               'The user did not approve this agent, so it was not started. '
@@ -288,6 +290,13 @@ When the task fits a kind of agent; when there is work to run side by side; or w
           },
         );
       }
+      approvalStatus = answer['approval_status'] == 'automatic'
+          ? 'automatic'
+          : 'approved';
+      session.agentApprovals.record(
+        approvalStatus,
+        toolUseId: context.toolUseId,
+      );
       // A model picked in the confirmation is the call's own: it goes
       // through the same path as one the model asked for in `model`. A
       // forced model wins over it, as over everything else.
@@ -320,6 +329,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       model: assignment.model,
       requestedModel: assignment.requested,
       modelSource: assignment.source.name,
+      approvalStatus: approvalStatus,
       parentId: job.parentId,
       background: background,
       admit: () {

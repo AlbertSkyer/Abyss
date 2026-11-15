@@ -5516,6 +5516,12 @@ abstract class AppLocalizations {
   /// **'Cancelled'**
   String get sidePanelAgentCancelled;
 
+  /// No description provided for @sidePanelAgentApprovalUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This runtime started the child without an interactive approval request to Abyss. Approval status is unavailable.'**
+  String get sidePanelAgentApprovalUnsupported;
+
   /// No description provided for @sidePanelAgentRetry.
   ///
   /// In en, this message translates to:

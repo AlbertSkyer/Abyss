@@ -689,6 +689,7 @@ class AgentEngine {
       'capabilities': const [
         'interrupt_send_now_v1',
         'ui_surface_v1',
+        'agent_approval_v1',
         'agent_retry_v1',
       ],
     };

@@ -7,6 +7,7 @@
 /// environment), and not ChatGPT (Codex), which signs in with accounts.
 library;
 
+import '../platform/app_edition.dart';
 import 'model_provider.dart';
 import 'upstream.dart';
 
@@ -49,7 +50,7 @@ class UpstreamImport {
   }
 
   /// The app's URL scheme (Info.plist, tool/baocode.iss).
-  static const scheme = 'baocode';
+  static const scheme = AppEdition.urlScheme;
 
   static const maxNameLength = 64;
   static const maxKeyLength = 512;

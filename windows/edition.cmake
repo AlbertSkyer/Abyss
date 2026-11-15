@@ -1,13 +1,18 @@
 # Read APP_EDITION out of Flutter's generated config for direct flutter builds.
 include("${CMAKE_CURRENT_LIST_DIR}/flutter/ephemeral/generated_config.cmake")
 set(APP_PRODUCT "BaoCode" CACHE STRING "Native product edition (BaoCode or Abyss)")
+
+# DART_DEFINES is a comma-separated environment value, not a CMake list.
+# Older Visual Studio CMake versions have no BASE64_DECODE, and these are the
+# only edition tokens this build accepts, so decode them explicitly.
 foreach(TOOL_VARIABLE IN LISTS FLUTTER_TOOL_ENVIRONMENT)
   if(TOOL_VARIABLE MATCHES "^DART_DEFINES=(.*)$")
     string(REPLACE "," ";" DART_DEFINE_LIST "${CMAKE_MATCH_1}")
     foreach(DART_DEFINE_BASE64 IN LISTS DART_DEFINE_LIST)
-      string(BASE64_DECODE "${DART_DEFINE_BASE64}" DART_DEFINE)
-      if(DART_DEFINE MATCHES "^APP_EDITION=(BaoCode|Abyss)$")
-        set(APP_PRODUCT "${CMAKE_MATCH_1}")
+      if(DART_DEFINE_BASE64 STREQUAL "QVBQX0VESVRJT049QWJ5c3M=")
+        set(APP_PRODUCT "Abyss")
+      elseif(DART_DEFINE_BASE64 STREQUAL "QVBQX0VESVRJT049QmFvQ29kZQ==")
+        set(APP_PRODUCT "BaoCode")
       endif()
     endforeach()
   endif()

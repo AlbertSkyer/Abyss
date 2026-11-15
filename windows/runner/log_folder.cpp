@@ -15,7 +15,7 @@
 namespace log_folder {
 namespace {
 
-constexpr wchar_t kSettingsKey[] = edition::kRegistryRoot;
+constexpr auto& kSettingsKey = edition::kRegistryRoot;
 constexpr wchar_t kFolderValue[] = L"LogsFolder";
 
 // Windows' own lock, not std::mutex: built with MSVC 14.40 or later, a

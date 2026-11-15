@@ -15,10 +15,11 @@ import '../widgets/hover_builder.dart';
 import '../widgets/pixel_loader.dart';
 import 'side_panel_controller.dart';
 
-/// The conversation's child agents (Agent/Task), read-only: one row for
-/// each, under the one it was started by, with how it went and whether it
-/// is unread. A click opens the child's own conversation, where it has no
-/// composer: nothing there is the user's to send it.
+/// The conversation's child agents (Agent/Task): one row for each, under
+/// the one it was started by, with how it went and whether it is unread.
+/// A click opens the child's own conversation, where it has no composer:
+/// nothing there is the user's to send it. Only a root's live task has
+/// controls; nested agents and restored ones are read-only observations.
 ///
 /// The groups fold, one by one or all at once (the bar's button); which
 /// are folded is kept between runs ([AgentSidePanel]).
@@ -79,13 +80,14 @@ class AgentTasksPage extends StatelessWidget {
                         : null,
                     onOpen: () => session.openAgentPath(entry.path),
                     onStop:
-                        entry.agent.status == CommandStatus.running &&
-                            !entry.agent.queued &&
+                        entry.depth == 0 &&
+                            entry.agent.status == CommandStatus.running &&
                             !entry.agent.readOnly
                         ? session.stopOf(entry.agent.id)
                         : null,
                     onRetry:
-                        entry.agent.status == CommandStatus.running ||
+                        entry.depth != 0 ||
+                            entry.agent.status == CommandStatus.running ||
                             entry.agent.readOnly
                         ? null
                         : () => confirmAgentRetry(
@@ -365,12 +367,21 @@ class _AgentRow extends StatelessWidget {
                       if (model != null)
                         upstream == null ? label : '$label · $upstream',
                     ].join(' · '),
+                    key: ValueKey('task-model-${agent.id}'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: AppColors.textFaint,
                       fontSize: 10.5,
                     ),
+                  ),
+                ),
+              if (agent.approvalStatus == 'unsupported')
+                Padding(
+                  padding: const EdgeInsets.only(left: 42, top: 3),
+                  child: Text(
+                    l10n.sidePanelAgentApprovalUnsupported,
+                    style: TextStyle(color: AppColors.textFaint, fontSize: 11),
                   ),
                 ),
               if (detail != null && detail.trim().isNotEmpty)

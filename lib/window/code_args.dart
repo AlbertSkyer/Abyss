@@ -1,5 +1,7 @@
 import 'package:path/path.dart' as p;
 
+import '../platform/app_edition.dart';
+
 /// What the `code` command asks, as VS Code's CLI takes it: the paths to
 /// open (relative ones from [cwd]) and how.
 ///
@@ -264,7 +266,9 @@ abstract final class FileLink {
   /// link, or names no absolute path.
   static CodeArgs? parse(String link) {
     final uri = Uri.tryParse(link.trim());
-    if (uri == null || uri.scheme != 'baocode' || uri.host != 'file') {
+    if (uri == null ||
+        uri.scheme != AppEdition.urlScheme ||
+        uri.host != 'file') {
       return null;
     }
     final String path;

@@ -1,7 +1,15 @@
 // Builds the Windows distribution: the Release bundle, then the installer
 // Inno Setup makes of it. Run from anywhere in the repository:
 //
-//   dart run tool/build_windows.dart                build, then package
+//   dart run tool/build_windows.dart --abyss        independent Abyss product,
+//                                                  Abyss.exe and its own AppId,
+//                                                  install directory and scheme
+//   dart run tool/build_windows.dart --abyss --portable-only
+//                                                  complete portable bundle;
+//                                                  no Inno compiler required
+//   dart run tool/build_windows.dart --abyss --build-dir build\abyss
+//                                                  build below a separate root
+//                                                  (must not be a network path)
 //   dart run tool/build_windows.dart --skip-build   package what is built
 //   dart run tool/build_windows.dart --build-only   build, not package (CI,
 //                                                  while the remote server
@@ -60,7 +68,8 @@ import 'package:crypto/crypto.dart';
 /// Where the bundle flutter leaves behind goes (for [arch]), and where the
 /// installer is written. Under build/, which the repository already ignores
 /// and flutter clean already removes.
-String _bundleRelative(String arch) => 'build\\windows\\$arch\\runner\\Release';
+String _bundleRelative(String buildRoot, String arch) =>
+    '$buildRoot\\windows\\$arch\\runner\\Release';
 const _installersRelative = r'build\installers';
 const _symbolsRelative = r'build\symbols';
 
@@ -68,15 +77,17 @@ const _symbolsRelative = r'build\symbols';
 /// fails at the link step (a running baocode.exe holding the output file) still
 /// leaves a baocode.exe behind — but data\ is written by the install step that
 /// failure skipped, and the executable cannot start without it.
-const _required = [
-  'baocode.exe',
+List<String> _required(String product) => [
+  product == 'Abyss' ? 'Abyss.exe' : 'baocode.exe',
   'flutter_windows.dll',
-  // The browsers' native messaging host and its manifest, which the
-  // installer's keys point the browsers to (windows/BrowserBridge).
-  'baocode-browser-host.exe',
-  'dev.baocode.browser.json',
+  // The browsers' native messaging host belongs only to BaoCode. Abyss has
+  // no extension and must not register, replace or stop BaoCode's host.
+  if (product == 'BaoCode') ...[
+    'baocode-browser-host.exe',
+    'dev.baocode.browser.json',
+  ],
   // What writes down a fast fail (windows/wer), which the app registers.
-  'baocode_wer.dll',
+  product == 'Abyss' ? 'abyss_wer.dll' : 'baocode_wer.dll',
   // The VC++ runtime, carried rather than taken from System32, which may
   // be older than the build's (see windows/CMakeLists.txt).
   'msvcp140.dll',
@@ -88,6 +99,17 @@ const _required = [
   r'data\icudtl.dat',
   r'data\flutter_assets',
 ];
+
+const _editionRequired = <String, List<String>>{
+  'Abyss': [
+    'Abyss.exe',
+    'abyss_wer.dll',
+    r'data\app.so',
+    r'data\icudtl.dat',
+    r'data\flutter_assets',
+    'flutter_windows.dll',
+  ],
+};
 
 /// The OpenSSH for Windows release the bundle carries (Win32-OpenSSH's
 /// OpenSSH-Win64.zip, OpenSSH-ARM64.zip for arm64), their SHA-256, and what
@@ -129,6 +151,19 @@ Future<void> main(List<String> arguments) async {
     );
   }
   final skipBuild = arguments.contains('--skip-build');
+  final abyss = arguments.contains('--abyss');
+  final product = abyss ? 'Abyss' : 'BaoCode';
+  final portableOnly = arguments.contains('--portable-only');
+  if (!abyss && portableOnly) {
+    _fail('--portable-only is only for the independent --abyss build.');
+  }
+  final buildDirAt = arguments.indexOf('--build-dir');
+  final buildRoot = buildDirAt >= 0 && buildDirAt + 1 < arguments.length
+      ? arguments[buildDirAt + 1]
+      : 'build';
+  if (buildRoot.isEmpty || buildRoot.startsWith('\\\\')) {
+    _fail('--build-dir must be a local folder below the repository.');
+  }
   final buildOnly = arguments.contains('--build-only');
   if (skipBuild && buildOnly) {
     _fail('--skip-build and --build-only leave nothing to do.');
@@ -159,7 +194,7 @@ Future<void> main(List<String> arguments) async {
 
   // The script lives in tool/, so the repository is one level above it.
   final root = File.fromUri(Platform.script).parent.parent.absolute;
-  final bundle = Directory('${root.path}\\${_bundleRelative(arch)}');
+  final bundle = Directory('${root.path}\\${_bundleRelative(buildRoot, arch)}');
   final installers = Directory('${root.path}\\$_installersRelative');
   final version = _readVersion(File('${root.path}\\pubspec.yaml'));
 
@@ -170,22 +205,63 @@ Future<void> main(List<String> arguments) async {
     );
     final symbols = Directory('${root.path}\\$_symbolsRelative')
       ..createSync(recursive: true);
-    await _run('flutter', [
-      'build',
-      'windows',
-      '--release',
-      if (channel) '--dart-define=BAOCODE_CHANNEL=true',
-      // Not --split-debug-info, which would also leave the app's stack
-      // traces (errors.log) unnamed, as offsets.
-      '--extra-gen-snapshot-options=--save-debugging-info='
-          '${symbols.path}\\app.windows-$arch.symbols',
-    ], root.path);
+    final environment = <String, String>{};
+    if (buildRoot != 'build') {
+      // `flutter build windows` has no --build-dir. Its supported config
+      // setting lives under APPDATA, so isolate it rather than modifying
+      // the developer's Flutter settings or reusing BaoCode's CMake cache.
+      final appData = Directory('${root.path}\\build\\edition-build-config')
+        ..createSync(recursive: true);
+      File('${appData.path}\\.flutter_settings')
+          .writeAsStringSync('{"build-dir":"$buildRoot"}');
+      environment['APPDATA'] = appData.absolute.path;
+    }
+    await _run(
+      'flutter',
+      [
+        'config',
+        '--no-analytics',
+        if (environment.isNotEmpty) '--build-dir=$buildRoot',
+      ],
+      root.path,
+      environment: environment,
+    );
+    await _run(
+      'flutter',
+      [
+        'build',
+        'windows',
+        '--release',
+        if (channel) '--dart-define=BAOCODE_CHANNEL=true',
+        if (abyss) '--dart-define=APP_EDITION=Abyss',
+        // Not --split-debug-info, which would also leave the app's stack
+        // traces (errors.log) unnamed, as offsets.
+        '--extra-gen-snapshot-options=--save-debugging-info='
+            '${symbols.path}\\app.windows-$arch.symbols',
+      ],
+      root.path,
+      environment: environment,
+    );
   } else {
     _step('Using the bundle already built');
   }
 
   _step('Checking the bundle');
-  _checkBundle(bundle, _required);
+  _checkBundle(bundle, _required(product));
+  if (abyss) _checkBundle(bundle, _editionRequired[product]!);
+  if (abyss) {
+    for (final foreign in [
+      'baocode.exe',
+      'baocode_wer.dll',
+      'baocode-browser-host.exe',
+      'dev.baocode.browser.json',
+    ]) {
+      if (FileSystemEntity.typeSync('${bundle.path}\\$foreign') !=
+          FileSystemEntityType.notFound) {
+        _fail('The independent Abyss bundle contains BaoCode-only $foreign.');
+      }
+    }
+  }
   if (buildOnly) {
     _step('Built: --skip-build packages it');
     return;
@@ -245,6 +321,10 @@ Future<void> main(List<String> arguments) async {
   await _putOpenSsh(root, bundle, arch);
   _checkBundle(bundle, [for (final name in _openSshFiles) 'openssh\\$name']);
 
+  if (portableOnly) {
+    _step('Portable Abyss bundle ready: ${bundle.path}');
+    return;
+  }
   _step('Compiling the installer');
   final iscc = _findIscc();
   installers.createSync(recursive: true);
@@ -252,6 +332,7 @@ Future<void> main(List<String> arguments) async {
     '/DBundleDir=${bundle.path}',
     '/DAppVersion=${version.full}',
     '/DOutDir=${installers.path}',
+    '/DAppEdition=$product',
     '/DArch=$arch',
     if (channel) '/DEdition=-channel',
     '${root.path}\\tool\\baocode.iss',
@@ -274,7 +355,7 @@ Future<void> main(List<String> arguments) async {
 
   _step('Done');
   final installer = File(
-    '${installers.path}\\BaoCode-${version.marketing}-setup'
+    '${installers.path}\\$product-${version.marketing}-setup'
     '${arch == 'x64' ? '' : '-$arch'}${channel ? '-channel' : ''}.exe',
   );
   for (final file in [installer, ...servers]) {
@@ -463,13 +544,15 @@ String _findIscc() {
 Future<void> _run(
   String executable,
   List<String> arguments,
-  String workingDirectory,
-) async {
+  String workingDirectory, {
+  Map<String, String>? environment,
+}) async {
   stdout.writeln('  \$ $executable ${arguments.join(' ')}');
   final result = await Process.run(
     executable,
     arguments,
     workingDirectory: workingDirectory,
+    environment: environment,
     runInShell: executable == 'flutter',
   );
   final output = '${result.stdout}'.trim();

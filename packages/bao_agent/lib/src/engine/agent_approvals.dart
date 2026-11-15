@@ -43,4 +43,13 @@ class AgentApprovals {
       release.complete();
     }
   }
+
+  /// Provenance for the host, kept separately from permission decisions.
+  /// `automatic` is not a claim that the user individually approved it.
+  void record(String status, {String? toolUseId}) {
+    session.emitSystem('agent_approval', {
+      'status': status,
+      'tool_use_id': ?toolUseId,
+    });
+  }
 }
