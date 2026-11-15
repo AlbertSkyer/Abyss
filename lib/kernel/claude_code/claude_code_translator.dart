@@ -55,6 +55,12 @@ class ClaudeTranslator {
 
   String? _ownModelOf(String? model) => model == null ? null : _ownModel(model);
 
+  /// The model a subagent's result says it was assigned: `assignedModel`,
+  /// or the older `resolvedModel` when there is none.
+  String? _assignedOf(Map<String, Object?>? structured) => _ownModelOf(
+    _string(structured?['assignedModel'] ?? structured?['resolvedModel']),
+  );
+
   /// What the agent is busy with out of sight (see [ActivityReported]).
   KernelActivity? _activity;
 
@@ -1417,14 +1423,27 @@ class ClaudeTranslator {
             prompt: _string(structured?['prompt']),
             // What the CLI resolved, if its messages did not say.
             model: agent.item.model == null
-                ? _ownModelOf(_string(structured?['resolvedModel']))
+                ? _ownModelOf(
+                    _string(
+                      structured?['actualModel'] ??
+                          structured?['resolvedModel'],
+                    ),
+                  )
                 : null,
+            // What it was assigned, kept apart from what it answered with.
+            assignedModel: agent.item.assignedModel == null
+                ? _assignedOf(structured)
+                : null,
+            requestedModel: _string(structured?['requestedModel']),
+            modelSource: _string(structured?['modelSource']),
             background: true,
           );
           _putAgent(id);
           return;
         }
         agent.item = agent.item.copyWith(
+          modelSource: _string(structured?['modelSource']),
+          outcome: _string(structured?['outcome'] ?? structured?['status']),
           status: outcome == _Outcome.done
               ? CommandStatus.succeeded
               : CommandStatus.failed,
@@ -1437,8 +1456,16 @@ class ClaudeTranslator {
             _ => null,
           },
           model: agent.item.model == null
-              ? _ownModelOf(_string(structured?['resolvedModel']))
+              ? _ownModelOf(
+                  _string(
+                    structured?['actualModel'] ?? structured?['resolvedModel'],
+                  ),
+                )
               : null,
+          assignedModel: agent.item.assignedModel == null
+              ? _assignedOf(structured)
+              : null,
+          requestedModel: _string(structured?['requestedModel']),
         );
         _putAgent(id);
         return;
@@ -1881,6 +1908,53 @@ class ClaudeTranslator {
           );
           _putAgent(card!);
         }
+        // The model it was assigned, before its own messages say what its
+        // upstream answered with.
+        if (!workflow && card != null) {
+          if (_agents[card] case final run?) {
+            final assigned = _ownModelOf(_string(message['model']));
+            final requested = _string(message['requested_model']);
+            if ((assigned != null && run.item.assignedModel == null) ||
+                requested != null) {
+              run.item = run.item.copyWith(
+                assignedModel: run.item.assignedModel == null ? assigned : null,
+                requestedModel: requested,
+                modelSource: _string(message['model_source']),
+              );
+              _putAgent(card);
+            }
+          }
+        }
+        final restored = message['read_only'] == true;
+        final queued = message['queue_state'] == 'queued';
+        final restoredCard = restored && agent && _agents[card] == null;
+        final taskCard = restoredCard ? taskId : card;
+        if (restoredCard) {
+          _agents[taskId] = _Agent(
+            AgentItem(
+              description: _string(message['description']) ?? '',
+              id: taskId,
+              agentType: _string(message['agent_type']),
+              background: message['is_backgrounded'] != false,
+              readOnly: true,
+            ),
+          );
+          _agentCalls[taskId] = taskId;
+        }
+        if (_agents[taskCard] case final agent?) {
+          agent.item = agent.item.copyWith(
+            status: _taskStatus(message['status']),
+            queued: queued,
+            readOnly:
+                restored || _tasks[taskId]?.status == CommandStatus.interrupted,
+            activity: restored
+                ? 'Restored read-only from the previous session; not restarted'
+                : queued
+                ? 'Queued for a concurrency slot'
+                : null,
+          );
+          _putAgent(taskCard!);
+        }
         _tasks[taskId] = KernelTask(
           id: taskId,
           description: _string(message['description']) ?? '',
@@ -1889,23 +1963,24 @@ class ClaudeTranslator {
               : message['task_type'] == 'local_bash'
               ? KernelTaskKind.command
               : KernelTaskKind.other,
-          status: CommandStatus.running,
+          status: _taskStatus(message['status']) ?? CommandStatus.running,
           startedAt: DateTime.now(),
-          toolUseId: card ?? call,
+          toolUseId: taskCard ?? call,
           // A workflow runs in the background, whatever it says.
           background: workflow || message['is_backgrounded'] == true,
           outputFile: _string(message['output_file']) ?? _taskOutputs[taskId],
         );
         _reportTasks();
         // Continued: at work again, in its card.
-        if (_agents[card] case final continued? when card != call) {
+        if (_agents[taskCard] case final continued?
+            when !restored && taskCard != call) {
           continued.item = continued.item.status == CommandStatus.running
               ? continued.item
               : continued.item.continuedAt(DateTime.now());
-          _putAgent(card!);
+          _putAgent(taskCard!);
         }
         if (message['is_backgrounded'] == true) {
-          _agentToBackground(card ?? call);
+          _agentToBackground(taskCard ?? call);
         }
       case 'task_progress' when !replaying:
         final taskId = message['task_id'] as String;
@@ -1941,6 +2016,12 @@ class ClaudeTranslator {
             summary: _string(patch['error']),
           );
           _reportTasks();
+          if (patch['queue_state'] == 'running') {
+            if (_agents[task.toolUseId] case final agent?) {
+              agent.item = agent.item.copyWith(queued: false);
+              _putAgent(task.toolUseId!);
+            }
+          }
           if (patch['is_backgrounded'] == true) {
             _agentToBackground(task.toolUseId);
           }
@@ -1953,6 +2034,7 @@ class ClaudeTranslator {
           summary: _string(message['summary']),
           outputFile: _string(message['output_file']),
           usage: _map(message['usage']),
+          result: (message['result'] as Map?)?.cast<String, Object?>(),
         );
       case 'background_tasks_changed' when !replaying:
         final live = {
@@ -1991,6 +2073,16 @@ class ClaudeTranslator {
     (task) => task.background && task.status == CommandStatus.running,
   );
 
+  /// Only a finished, background child of the live core can be retried.
+  bool canRetryTask(String taskId) => switch (_tasks[taskId]) {
+    final task? =>
+      task.kind == KernelTaskKind.agent &&
+          task.background &&
+          task.status != CommandStatus.running &&
+          task.status != CommandStatus.interrupted,
+    _ => false,
+  };
+
   /// The CLI is gone, and the tasks it ran with it.
   void endTasks() {
     for (final task in [..._tasks.values]) {
@@ -2011,6 +2103,7 @@ class ClaudeTranslator {
     String? summary,
     String? outputFile,
     Map<String, Object?> usage = const {},
+    Map<String, Object?>? result,
   }) {
     if (_tasks[taskId] case final task?) {
       _tasks[taskId] = task.copyWith(
@@ -2036,6 +2129,19 @@ class ClaudeTranslator {
       }
       agent.item = agent.item.copyWith(
         status: status,
+        readOnly:
+            agent.item.readOnly ||
+            _tasks[taskId]?.status == CommandStatus.interrupted,
+        queued: false,
+        outcome: _string(result?['outcome'] ?? result?['status']),
+        model: agent.item.model == null
+            ? _ownModelOf(_string(result?['actualModel']))
+            : null,
+        assignedModel: agent.item.assignedModel == null
+            ? _assignedOf(result)
+            : null,
+        requestedModel: _string(result?['requestedModel']),
+        modelSource: _string(result?['modelSource']),
         tokens: claudeInt(usage['total_tokens']),
         toolUses: claudeInt(usage['tool_uses']),
         duration: switch (claudeInt(usage['duration_ms'])) {
@@ -2149,6 +2255,12 @@ class ClaudeTranslator {
     final failed = status == CommandStatus.failed;
     agent.item = agent.item.copyWith(
       status: status,
+      outcome: switch (_tag(notification, 'status')) {
+        'killed' => 'cancelled',
+        'failed' => 'failed',
+        'completed' => 'completed',
+        _ => null,
+      },
       result:
           _tag(notification, 'result')?.trim() ??
           (failed ? _tag(notification, 'summary') : null),
@@ -2310,6 +2422,7 @@ class ClaudeTranslator {
   static CommandStatus? _taskStatus(Object? status) => switch (status) {
     'running' || 'pending' => CommandStatus.running,
     'completed' => CommandStatus.succeeded,
+    'interrupted' => CommandStatus.interrupted,
     'failed' || 'killed' || 'stopped' => CommandStatus.failed,
     _ => null,
   };

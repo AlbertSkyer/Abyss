@@ -9,6 +9,7 @@ import '../engine/agent_loop.dart';
 import '../engine/agent_run.dart';
 import '../engine/session.dart';
 import '../engine/session_store.dart';
+import '../engine/subagent_models.dart';
 import '../engine/tasks.dart';
 import '../engine/worktrees.dart';
 import '../hooks/hooks.dart';
@@ -38,6 +39,7 @@ class AgentTool extends Tool {
 When the task fits a kind of agent; when there is work to run side by side; or when answering would mean reading through many files, and only the conclusion is wanted, not the files themselves. For one fact you can look up yourself (a file, a name, a value you know where to find), look it up. Once you hand a search over, wait for its answer rather than doing it again yourself.
 
 - Its report comes to you, not the user: pass on what matters in it.
+- Its full transcript is not returned, only its compact final result. Do not repeat a failed, refused or cancelled call by yourself: the user must explicitly ask to retry it (and may choose another model).
 - It knows nothing of this conversation: say in the prompt all it needs, what to look into or change, and whether it is to write code or only find things out.
 - To go on with an agent from before, with all it had, send it a message (SendMessage, to its agentId); a new call starts a new one.
 - A kind's model, effort and tools are its definition's (`.claude/agents/*.md`) unless set here.
@@ -66,7 +68,8 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         'enum': ['sonnet', 'opus', 'haiku', 'fable'],
         'description':
             'The model it runs on, over its definition\'s and the default '
-            'for agents; when left out, its definition\'s, else the one you '
+            'for agents; when left out, its definition\'s, else the one set '
+            'for agents, else one of the subagent pool, else the one you '
             'run on',
       },
       'effort': {
@@ -174,20 +177,52 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       _truthy(session.environment['CLAUDE_CODE_SUBAGENT_MODEL_FORCE']);
 
   /// The model [agent] works with, as an id: the one [asked] for, else its
-  /// definition's, else the one set for agents. [forced], as the CLI does:
-  /// the one set for agents over both, a definition's `inherit` too; only
-  /// a call's `inherit` stands.
+  /// definition's, else the one set for agents, else one of the session's
+  /// pool. [forced], as the CLI does: the one set for agents over both, a
+  /// definition's `inherit` too; only a call's `inherit` stands. Like
+  /// [assignmentFor], it takes a pool place when none of those names one.
   static String modelFor(
     AgentSession session,
     AgentDefinition agent,
     String? asked,
+  ) => assignmentFor(session, agent, asked).model;
+
+  /// The same choice as [modelFor], with where it came from and the pool
+  /// entry it used: what its task and its call's result report.
+  static SubagentModelAssignment assignmentFor(
+    AgentSession session,
+    AgentDefinition agent,
+    String? asked,
+  ) => session.subagentModels.assign(
+    forced: forced(session),
+    sessionModel: session.resolvedModel,
+    asked: asked,
+    definitionModel: agent.model,
+    configuredSubagent: session.environment['CLAUDE_CODE_SUBAGENT_MODEL'],
+    resolve: session.catalog.resolve,
+  );
+
+  /// The models the user may pick for the agent about to start: the one it
+  /// was assigned first, then the subagent pool and the session's own.
+  /// None when the model is forced: there is nothing to pick.
+  static List<String> modelChoices(
+    AgentSession session,
+    SubagentModelAssignment assignment,
   ) {
-    final subagent = asText(session.environment['CLAUDE_CODE_SUBAGENT_MODEL']);
-    final alias = forced(session)
-        ? (asked == 'inherit' ? asked : subagent)
-        : asked ?? agent.model ?? subagent;
-    if (alias == null || alias == 'inherit') return session.resolvedModel;
-    return session.catalog.resolve(alias);
+    if (forced(session)) return const [];
+    final seen = <String>{};
+    final models = <String>[];
+    void add(String? model) {
+      if (model == null || model.isEmpty || !seen.add(model)) return;
+      models.add(model);
+    }
+
+    add(assignment.model);
+    for (final model in session.subagentModels.pool) {
+      add(model);
+    }
+    add(session.resolvedModel);
+    return models;
   }
 
   @override
@@ -201,44 +236,95 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         ? _general(session)
         : _definition(session, type) ?? _general(session);
     final description = asText(input['description']) ?? agent.name;
+    // Chosen before anything awaited, so calls launched together take the
+    // pool in the order they were made, whatever each then waits on.
+    var assignment = assignmentFor(session, agent, asText(input['model']));
     final isolation = asText(input['isolation']) ?? agent.isolation;
-    Worktree? worktree;
-    if (isolation == 'worktree') {
-      try {
-        worktree = await Worktrees.create(
-          context.cwd,
-          session.commandEnvironment,
-          name: 'agent-${randomId(8)}',
-          baseRef: Worktrees.baseRefSetting(session.settings['worktree']),
-        );
-      } on WorktreeError catch (error) {
-        return ToolOutput.error('No worktree for the agent: $error');
-      }
-    }
-    final job = SubagentJob(
-      session: session,
-      agent: agent,
-      agentId: session.tasks.newId('a'),
-      description: description,
-      prompt: '${input['prompt'] ?? ''}',
-      model: modelFor(session, agent, asText(input['model'])),
-      effort: asText(input['effort']) ?? agent.effort,
-      toolUseId: context.toolUseId,
-      parentReads: context.run.readFiles,
-      worktree: worktree,
-    );
     // One started by a subagent works in the foreground: its report goes
     // back to that subagent, not to the main agent later.
     final background =
         context.run.isMain &&
         input['run_in_background'] != false &&
         !_truthy(session.environment['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS']);
+    // The host puts each child to the user before it starts: what it is to
+    // do, and the model it runs on. Without a host to ask, it starts as
+    // before.
+    if (session.options.canAsk) {
+      final Map<String, Object?> answer;
+      try {
+        answer = await context.cancel.guard(
+          session.agentApprovals.ask({
+            'tool_name': name,
+            'subagent_type': agent.name,
+            'description': description,
+            'prompt': '${input['prompt'] ?? ''}',
+            'tool_use_id': context.toolUseId,
+            'model': assignment.model,
+            'model_source': assignment.source.name,
+            'models': modelChoices(session, assignment),
+            'forced': forced(session),
+            'run_in_background': background,
+            'isolation': ?isolation,
+          }),
+        );
+      } on Cancelled {
+        rethrow;
+      } on Object catch (error) {
+        return ToolOutput.error(
+          'The user could not be asked whether to start the agent: $error',
+          result: {'status': 'declined', 'description': description},
+        );
+      }
+      if (answer['behavior'] != 'allow') {
+        return ToolOutput.error(
+          asText(answer['message']) ??
+              'The user did not approve this agent, so it was not started. '
+                  'Do not start it again unless they ask; say what you would '
+                  'do instead.',
+          result: {
+            'status': 'declined',
+            'description': description,
+            'agentType': agent.name,
+          },
+        );
+      }
+      // A model picked in the confirmation is the call's own: it goes
+      // through the same path as one the model asked for in `model`. A
+      // forced model wins over it, as over everything else.
+      final picked = asText(answer['model']);
+      if (!forced(session) && picked != null && picked != assignment.model) {
+        assignment = assignmentFor(session, agent, picked);
+      }
+    }
+    // Waiting children have no side effects beyond their task index entry.
+    Worktree? worktree;
+    final job = SubagentJob(
+      session: session,
+      agent: agent,
+      agentId: session.tasks.newId('a'),
+      description: description,
+      prompt: '${input['prompt'] ?? ''}',
+      assignment: assignment,
+      effort: asText(input['effort']) ?? agent.effort,
+      toolUseId: context.toolUseId,
+      parentId: context.run.agentId ?? '',
+      parentReads: context.run.readFiles,
+      worktree: null,
+    );
+    final admitted = Completer<void>();
     final task = session.tasks.registerAgent(
       description: description,
       agentId: job.agentId,
       toolUseId: context.toolUseId,
       agentType: agent.name,
+      model: assignment.model,
+      requestedModel: assignment.requested,
+      modelSource: assignment.source.name,
+      parentId: job.parentId,
       background: background,
+      admit: () {
+        if (!admitted.isCompleted) admitted.complete();
+      },
     );
     // In the foreground it stops with the turn; sent to the background,
     // it goes on.
@@ -247,7 +333,53 @@ When the task fits a kind of agent; when there is work to run side by side; or w
         if (!task.backgrounded) task.cancel.cancel('interrupted');
       }),
     );
-    final done = job.start(task, job.prompt);
+    Future<SubagentOutcome> run() async {
+      try {
+        await context.cancel.guard(
+          Future.any([admitted.future, task.cancel.whenCancelled]),
+        );
+        if (task.cancel.isCancelled) {
+          throw const Cancelled('stopped');
+        }
+        if (isolation == 'worktree') {
+          worktree = await Worktrees.create(
+            context.cwd,
+            session.commandEnvironment,
+            name: 'agent-${randomId(8)}',
+            baseRef: Worktrees.baseRefSetting(session.settings['worktree']),
+          );
+          job.worktree = worktree;
+        }
+        return await job.start(task, job.prompt);
+      } on WorktreeError catch (error) {
+        session.tasks.finish(task, TaskStatus.failed);
+        return SubagentOutcome(
+          LoopResult(
+            reason: 'error',
+            lastText: '',
+            requests: 0,
+            usage: const {},
+            apiDuration: Duration.zero,
+            error: 'No worktree for the agent: $error',
+          ),
+          Duration.zero,
+        );
+      } on Cancelled {
+        session.tasks.finish(task, TaskStatus.killed);
+        return SubagentOutcome(
+          const LoopResult(
+            reason: 'interrupted',
+            lastText: '',
+            requests: 0,
+            usage: {},
+            apiDuration: Duration.zero,
+          ),
+          Duration.zero,
+        );
+      }
+    }
+
+    final done = run();
     if (!background) {
       final outcome = await Future.any<Object?>([
         done,
@@ -256,6 +388,7 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       if (outcome is SubagentOutcome) return outcome.output(job);
       // Sent to the background: it tells of itself once done.
     }
+    unawaited(done);
     return launched(job, task);
   }
 
@@ -285,9 +418,68 @@ When the task fits a kind of agent; when there is work to run side by side; or w
       'prompt': job.prompt,
       'outputFile': task.outputFile,
       'resolvedModel': job.model,
+      ...job.assignment.toJson(),
       if (job.worktree case final worktree?) ...Worktrees.toJson(worktree),
     },
   );
+}
+
+/// The one report a child hands its supervisor: never its whole transcript.
+///
+/// The same fields go to the tool's caller and to the host's task event.
+/// [content] is only the child's final response, never its transcript;
+/// the session's sidechain file and the task's output file keep the rest.
+class SubagentResult {
+  const SubagentResult({
+    required this.status,
+    required this.agentId,
+    required this.agentType,
+    required this.content,
+    required this.duration,
+    required this.tokens,
+    required this.toolUses,
+    required this.assignment,
+    this.actualModel,
+    this.error,
+    this.usage = const {},
+  });
+
+  /// `completed`, `failed`, or `cancelled`. A turn-limit stop is a failure:
+  /// it must not look like a successful report to the supervisor.
+  final String status;
+  final String agentId;
+  final String agentType;
+  final String content;
+  final Duration duration;
+  final int tokens;
+  final int toolUses;
+  final SubagentModelAssignment assignment;
+
+  /// What the upstream said it answered with, once it said; not a guess.
+  final String? actualModel;
+  final String? error;
+  final Map<String, Object?> usage;
+
+  bool get ok => status == 'completed';
+
+  Map<String, Object?> toJson({String? prompt, int? durationMs}) => {
+    'status': status,
+    'outcome': status,
+    'agentId': agentId,
+    'agentType': agentType,
+    'prompt': ?prompt,
+    'content': [
+      {'type': 'text', 'text': content},
+    ],
+    'totalDurationMs': durationMs ?? duration.inMilliseconds,
+    'totalTokens': tokens,
+    'totalToolUseCount': toolUses,
+    'usage': usage,
+    'actualModel': ?actualModel,
+    'resolvedModel': assignment.model,
+    ...assignment.toJson(),
+    if (error case final message? when message.isNotEmpty) 'error': message,
+  };
 }
 
 /// How a subagent's work came out.
@@ -315,26 +507,16 @@ class SubagentOutcome {
   }
 
   ToolOutput output(SubagentJob job) {
-    final text = result.lastText;
+    final envelope = job.envelope(result, duration);
+    final text = envelope.content;
     final structured = {
-      'status': result.ok ? 'completed' : result.reason,
-      'agentId': job.agentId,
-      'agentType': job.agent.name,
-      'prompt': job.prompt,
-      'content': [
-        {'type': 'text', 'text': text},
-      ],
-      'totalDurationMs': duration.inMilliseconds,
-      'totalTokens': job.run?.tokens ?? 0,
-      'totalToolUseCount': job.run?.toolUses ?? 0,
-      'usage': result.usage,
-      'resolvedModel': job.model,
+      ...envelope.toJson(prompt: job.prompt),
       if (job.worktree case final worktree?) ...Worktrees.toJson(worktree),
     };
-    if (!result.ok && result.reason != 'max_turns') {
+    if (!envelope.ok) {
       return ToolOutput.error(
         result.error ??
-            (result.reason == 'interrupted'
+            (envelope.status == 'cancelled'
                 ? '[Request interrupted by user for tool use]'
                 : 'The agent stopped before it finished (${result.reason}).'),
         result: structured,
@@ -361,8 +543,9 @@ class SubagentJob {
     required this.agentId,
     required this.description,
     required this.prompt,
-    required this.model,
+    required this.assignment,
     required this.toolUseId,
+    this.parentId = '',
     required this.parentReads,
     this.effort,
     this.worktree,
@@ -375,10 +558,90 @@ class SubagentJob {
   final String agentId;
   final String description;
   final String prompt;
-  final String model;
+
+  /// The model it runs on, and why it was chosen.
+  final SubagentModelAssignment assignment;
+
+  /// The model its calls are made with.
+  String get model => assignment.model;
+
+  /// The model its call asked for, if it did.
+  String? get requestedModel => assignment.requested;
+
   final String? effort;
   final String toolUseId;
+
+  /// The supervisor's own agent id; empty for the main conversation.
+  final String parentId;
   final ReadFileState parentReads;
+
+  /// The tool call the retry is displayed under, distinct from the first.
+  String? retryToolUseId;
+  Future<BackgroundTask> retry(
+    BackgroundTask task,
+    SubagentModelAssignment next,
+    String toolUseId,
+  ) async {
+    if (running || !task.status.done) {
+      throw StateError('The agent is still running; stop it before retrying.');
+    }
+    // The host owns the confirmation. By this point it has both approved
+    // the retry and selected this model; nothing here auto-confirms it.
+    task
+      ..toolUseId = toolUseId
+      ..model = next.model
+      ..requestedModel = next.requested
+      ..modelSource = next.source.name;
+    final admitted = Completer<void>();
+    task.admit = () {
+      if (!admitted.isCompleted) admitted.complete();
+    };
+    session.tasks.startRetry(task);
+    unawaited(() async {
+      await admitted.future;
+      if (!task.cancel.isCancelled) await start(task, retryPrompt);
+    }());
+    return task;
+  }
+
+  /// The same task as a fresh child when another model was chosen. A
+  /// child job keeps its original model for its whole life.
+  SubagentJob retryJob(SubagentModelAssignment next, String toolUseId) =>
+      SubagentJob(
+        session: session,
+        agent: agent,
+        agentId: agentId,
+        description: description,
+        prompt: prompt,
+        assignment: next,
+        toolUseId: toolUseId,
+        parentId: parentId,
+        parentReads: parentReads,
+        effort: effort,
+      );
+
+  /// Approval fields shared by the core and by test/other direct hosts.
+  Map<String, Object?> retryApproval(
+    SubagentModelAssignment next,
+    String toolUseId,
+  ) => {
+    'tool_name': 'Agent',
+    'subagent_type': agent.name,
+    'description': description,
+    'prompt': prompt,
+    'tool_use_id': toolUseId,
+    'model': next.model,
+    'model_source': next.source.name,
+    'models': AgentTool.modelChoices(session, next),
+    'forced': AgentTool.forced(session),
+    'run_in_background': true,
+    'retry': true,
+  };
+
+  static const retryPrompt =
+      'The user explicitly asked to retry this task. Inspect the previous '
+      'attempt and its current results, then finish the original task. '
+      'Report what was recovered and what remains to be done.';
 
   /// The worktree it works in, if it has one of its own.
   Worktree? worktree;
@@ -388,9 +651,39 @@ class SubagentJob {
   /// Whether it is at work now.
   bool running = false;
 
-  /// How its last piece of work ended (`completed`, `failed`, `stopped`),
+  /// How its last piece of work ended (`completed`, `failed`, `cancelled`),
   /// or `running`.
   String status = 'running';
+
+  /// The id its upstream actually answered with, not the assigned model.
+  String? actualModel;
+
+  /// The supervisor-facing envelope for one completed piece of work.
+  SubagentResult envelope(LoopResult result, Duration duration) {
+    final cancelled = result.reason == 'interrupted';
+    final succeeded = result.reason == 'end_turn';
+    return SubagentResult(
+      status: succeeded
+          ? 'completed'
+          : cancelled
+          ? 'cancelled'
+          : 'failed',
+      agentId: agentId,
+      agentType: agent.name,
+      content: result.lastText,
+      duration: duration,
+      tokens: run?.tokens ?? 0,
+      toolUses: run?.toolUses ?? 0,
+      usage: result.usage,
+      assignment: assignment,
+      actualModel: actualModel,
+      error:
+          result.error ??
+          (succeeded || cancelled
+              ? null
+              : 'The agent stopped before it finished (${result.reason}).'),
+    );
+  }
 
   /// Messages sent it while it works, taken up between its tool calls.
   final List<String> inbox = [];
@@ -486,6 +779,15 @@ class SubagentJob {
         takeQueued: _takeInbox,
       );
       result = await loop.runTurn(task.cancel);
+      // Only an upstream's own response is actual provenance; never infer
+      // it from the requested/assigned model or from its text.
+      actualModel = [
+        for (final entry in store.chain.reversed)
+          if (entry['type'] == 'assistant' &&
+              asMap(entry['message'])['model'] is String &&
+              asMap(entry['message'])['model'] != '<synthetic>')
+            '${asMap(entry['message'])['model']}',
+      ].firstOrNull;
     } on Cancelled {
       result = const LoopResult(
         reason: 'interrupted',
@@ -506,33 +808,40 @@ class SubagentJob {
     }
     running = false;
     status = switch (result.reason) {
-      'end_turn' || 'max_turns' || 'stopped' => 'completed',
-      'interrupted' => 'stopped',
+      'end_turn' => 'completed',
+      'interrupted' => 'cancelled',
       _ => 'failed',
     };
     task
       ..toolUses = run.toolUses
       ..tokens = run.tokens;
     final note = await _settleWorktree();
-    final report = result.lastText;
+    final elapsed = DateTime.now().difference(started);
+    final resultEnvelope = envelope(result, elapsed);
+    final report = resultEnvelope.content;
+    // The full output stays in its task file. Only the compact final report
+    // crosses into the parent supervisor's notification and tool result.
     try {
       File(task.outputFile).writeAsStringSync(
         [?note, report.isEmpty ? (result.error ?? '') : report].join('\n\n'),
       );
     } on FileSystemException {
-      // The notification carries it all the same.
+      // The notification carries the compact report all the same.
     }
-    if (!result.ok) task.error = result.error ?? result.reason;
-    session.tasks.finish(task, switch (status) {
-      'completed' => TaskStatus.completed,
-      'stopped' => TaskStatus.killed,
-      _ => TaskStatus.failed,
-    }, result: [?note, report].join('\n\n'));
-    return SubagentOutcome(
-      result,
-      DateTime.now().difference(started),
-      worktreeNote: note,
+    if (!resultEnvelope.ok) {
+      task.error = resultEnvelope.error ?? result.reason;
+    }
+    session.tasks.finish(
+      task,
+      switch (status) {
+        'completed' => TaskStatus.completed,
+        'cancelled' => TaskStatus.killed,
+        _ => TaskStatus.failed,
+      },
+      result: [?note, report].join('\n\n'),
+      envelope: resultEnvelope,
     );
+    return SubagentOutcome(result, elapsed, worktreeNote: note);
   }
 
   /// Its worktree, once its work is done: removed when nothing was done
@@ -582,6 +891,9 @@ class SubagentJob {
       agentId: agentId,
       toolUseId: toolUseId,
       agentType: agent.name,
+      model: model,
+      requestedModel: requestedModel,
+      modelSource: assignment.source.name,
     );
     unawaited(start(task, text));
     return task;

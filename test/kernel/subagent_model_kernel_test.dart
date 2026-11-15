@@ -2,6 +2,8 @@ import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/chat/widgets/agent_step.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
+import 'package:baocode/kernel/claude_code/claude_code_transport.dart';
+import 'package:baocode/kernel/claude_code/claude_code_translator.dart';
 import 'package:baocode/kernel/mock/mock_kernels.dart';
 import 'package:baocode/kernel/transcript.dart';
 import 'package:baocode/models/model_provider.dart';
@@ -102,5 +104,119 @@ void main() {
       providers: ModelProviders.memory(providers: _providers),
     );
     expect(shown, (label: 'fluxapi GPT-6.1', upstream: 'fluxapi'));
+  });
+
+  test('the subagent pool reaches the launch: the session upstream\'s own '
+      'models by id, another\'s as a ref, gone and off left out', () async {
+    late ClaudeLaunch launched;
+    final providers = ModelProviders.memory(providers: _providers);
+    await providers.setSubagentPool([
+      '@fx/gpt-6.1-sol',
+      '@ap/gpt-6.1-sol',
+      '@gone/gpt-6.1-sol',
+      '@fx/gpt-6.1-mini',
+    ]);
+    final kernel = ClaudeCodeKernel(
+      MockKernels.claudeCode,
+      const KernelContext(cwd: '/p', settings: {'model': '@fx/gpt-6.1-sol'}),
+      start: (launch) async {
+        launched = launch;
+        return FakeCli();
+      },
+      providers: providers,
+      providerEnvironment: (provider, model) async => {
+        'ANTHROPIC_BASE_URL': 'http://proxy/${provider.id}',
+      },
+    );
+    addTearDown(kernel.dispose);
+    kernel.prepare();
+    await pumpEventQueue(times: 20);
+
+    expect(launched.subagentPool, [
+      'gpt-6.1-sol',
+      '@ap/gpt-6.1-sol',
+      'gpt-6.1-mini',
+    ]);
+  });
+
+  test('a subagent\'s assigned model is kept apart from what its upstream '
+      'answered with', () async {
+    final transcript = Transcript();
+    var seq = 0;
+    final translator = ClaudeTranslator(
+      emit: transcript.apply,
+      nextSeq: () => ++seq,
+    );
+    translator.translate({
+      'type': 'assistant',
+      'parent_tool_use_id': null,
+      'message': {
+        'id': 'msg-main',
+        'role': 'assistant',
+        'content': [
+          {
+            'type': 'tool_use',
+            'id': 'call-1',
+            'name': 'Agent',
+            'input': {'description': 'Look', 'prompt': 'look'},
+          },
+        ],
+      },
+    });
+    // What it was assigned, before it says anything.
+    translator.translate({
+      'type': 'system',
+      'subtype': 'task_started',
+      'task_id': 'a1',
+      'task_type': 'local_agent',
+      'tool_use_id': 'call-1',
+      'description': 'Look',
+      'model': '@ap/gpt-6.1-sol',
+      'requested_model': 'haiku',
+    });
+    // What its upstream answered with: its own name for the model.
+    translator.translate({
+      'type': 'assistant',
+      'parent_tool_use_id': 'call-1',
+      'message': {
+        'id': 'msg-sub',
+        'role': 'assistant',
+        'model': 'gpt-6.1-sol',
+        'content': [
+          {'type': 'text', 'text': 'looking'},
+        ],
+      },
+    });
+    // Its result carries the assignment too; the actual model is not
+    // overwritten by it.
+    translator.translate({
+      'type': 'user',
+      'parent_tool_use_id': null,
+      'message': {
+        'role': 'user',
+        'content': [
+          {
+            'type': 'tool_result',
+            'tool_use_id': 'call-1',
+            'content': 'looking',
+          },
+        ],
+      },
+      'tool_use_result': {
+        'status': 'completed',
+        'assignedModel': '@ap/gpt-6.1-sol',
+        'resolvedModel': '@ap/gpt-6.1-sol',
+        'requestedModel': 'haiku',
+        'modelSource': 'pool',
+      },
+    });
+    final agent = [
+      for (final (_, item) in transcript.liveItems)
+        if (item is AgentItem) item,
+    ].single;
+    expect(agent.assignedModel, '@ap/gpt-6.1-sol');
+    expect(agent.requestedModel, 'haiku');
+    // As its upstream answered, kept apart: not replaced by the assignment.
+    expect(agent.model, 'gpt-6.1-sol');
   });
 }

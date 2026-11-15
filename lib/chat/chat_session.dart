@@ -181,6 +181,80 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
   /// outermost first): shown again when the view comes back to it.
   List<String> openAgents = const [];
 
+  /// Opens the subagent at [path] in the conversation's view; set by the
+  /// view while it shows (see [openAgentPath]).
+  void Function(List<String> path)? agentOpener;
+
+  /// Subagents whose end the user has seen (their card or the task board
+  /// opened): those that ended since are unread.
+  final Set<String> _seenAgents = {};
+
+  /// Opens the subagent at [path] (outermost first, its own last) in the
+  /// conversation's view, if one shows, and marks it read.
+  void openAgentPath(List<String> path) {
+    if (path.isEmpty) return;
+    // Opened, its ancestors on the way there are read too.
+    for (final id in path) {
+      markAgentSeen(id);
+    }
+    agentOpener?.call(path);
+  }
+
+  /// Whether [agent] of this run has ended since the user last looked at
+  /// it. One of an earlier run (read from the kept conversation) is not
+  /// unread: its end was seen then.
+  bool agentUnread(AgentItem agent) {
+    final id = agent.id;
+    return id != null &&
+        agent.status != CommandStatus.running &&
+        !_seenAgents.contains(id) &&
+        _liveAgentIds.contains(id);
+  }
+
+  /// The ids of the subagents of this run, their own nested ones too.
+  Set<String> get _liveAgentIds => _cached(#liveAgentIds, () {
+    final ids = <String>{};
+    void add(AgentItem agent) {
+      if (agent.id case final id?) ids.add(id);
+      for (final child in agent.children) {
+        if (child is AgentItem) add(child);
+      }
+    }
+
+    for (final (_, item) in _transcript.liveItems) {
+      if (item is AgentItem) add(item);
+    }
+    return ids;
+  });
+
+  /// Notes that the user looked at the subagent [id].
+  void markAgentSeen(String id) {
+    if (_seenAgents.add(id)) notifyListeners();
+  }
+
+  /// The subagents of its conversation, outermost first: each with the
+  /// path a [SubagentFeed] takes, and how deep it is.
+  List<({AgentItem agent, List<String> path, int depth})> get agentTree =>
+      _cached(#agentTree, () {
+        final tree = <({AgentItem agent, List<String> path, int depth})>[];
+        void walk(AgentItem agent, List<String> path, int depth) {
+          final id = agent.id;
+          if (id == null) return;
+          final here = [...path, id];
+          tree.add((agent: agent, path: here, depth: depth));
+          for (final child in agent.children) {
+            if (child is AgentItem) walk(child, here, depth + 1);
+          }
+        }
+
+        for (var index = 0; index < _transcript.length; index++) {
+          if (_transcript.itemAt(index) case final AgentItem agent) {
+            walk(agent, const [], 0);
+          }
+        }
+        return tree;
+      });
+
   late AgentKernel _kernel;
   StreamSubscription<KernelEvent>? _subscription;
   late Transcript _transcript;
@@ -765,6 +839,38 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
 
   void stopTask(KernelTask task) {
     if (_kernel case final RunsBackgroundTasks kernel) kernel.stopTask(task.id);
+  }
+
+  /// The live task whose original or latest retry tool call owns this
+  /// card. A historical transcript is not silently turned into a new run.
+  KernelTask? taskOfAgent(List<String> path) {
+    if (path.isEmpty || _kernel is! RunsBackgroundTasks) return null;
+    final id = path.last;
+    return _transcript.tasks
+        .where(
+          (task) =>
+              task.kind == KernelTaskKind.agent &&
+              task.toolUseId == id &&
+              task.status != CommandStatus.running &&
+              task.status != CommandStatus.interrupted &&
+              (_kernel as RunsBackgroundTasks).canRetryTask(task.id),
+        )
+        .firstOrNull;
+  }
+
+  /// Models a user may choose when retrying: its pool and the session's
+  /// current model. Only these configured upstreams are offered, never an
+  /// invented snapshot or a model that merely appeared in a report.
+  List<String> get retryModels => switch (_kernel) {
+    final RunsBackgroundTasks kernel => kernel.retryModels,
+    _ => const [],
+  };
+
+  Future<String> retryTask(KernelTask task, String model) async {
+    if (_kernel case final RunsBackgroundTasks kernel) {
+      return kernel.retryTask(task.id, model);
+    }
+    return 'Retry is unavailable for this session.';
   }
 
   /// Takes [tasks] that have ended (done, failed, stopped) off

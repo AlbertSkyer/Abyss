@@ -3040,6 +3040,81 @@ class AppLocalizationsZh extends AppLocalizations {
   String get interactionExpand => '展开';
 
   @override
+  String get agentApprovalTitle => '运行子智能体？';
+
+  @override
+  String get agentRetryTitle => '重试这个子智能体？';
+
+  @override
+  String get agentRetryConfirm => '重试智能体';
+
+  @override
+  String get agentApprovalDescription => '任务';
+
+  @override
+  String get agentApprovalPrompt => '给它的说明';
+
+  @override
+  String get agentApprovalModel => '模型';
+
+  @override
+  String get agentApprovalConfirm => '启动智能体';
+
+  @override
+  String get agentApprovalBackground => '它会在后台运行。';
+
+  @override
+  String agentApprovalForced(String model) {
+    return '所有子智能体都使用 $model，由 CLAUDE_CODE_SUBAGENT_MODEL_FORCE 指定。';
+  }
+
+  @override
+  String get sidePanelAgents => '智能体';
+
+  @override
+  String get sidePanelAgentsEmpty => '还没有子智能体。';
+
+  @override
+  String get sidePanelAgentTasks => '子智能体任务';
+
+  @override
+  String get sidePanelAgentRunning => '运行中';
+
+  @override
+  String get sidePanelAgentQueued => '排队中';
+
+  @override
+  String get sidePanelAgentInterrupted => '已中断';
+
+  @override
+  String get sidePanelAgentCancelled => '已取消';
+
+  @override
+  String get sidePanelAgentRetry => '重试';
+
+  @override
+  String get sidePanelAgentRetryUnsupported =>
+      '此 Claude Code CLI 会话不支持重试子智能体。请在对话中让智能体重试。';
+
+  @override
+  String get sidePanelAgentDone => '已完成';
+
+  @override
+  String get sidePanelAgentFailed => '失败';
+
+  @override
+  String get sidePanelAgentUnread => '未读';
+
+  @override
+  String get sidePanelAgentPrompt => '任务';
+
+  @override
+  String get sidePanelAgentModel => '模型';
+
+  @override
+  String get sidePanelAgentResult => '报告';
+
+  @override
   String interactionMoreLines(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -6970,6 +7045,48 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelsAuxiliaryBuiltin => 'Claude Code Haiku（本机配置）';
+
+  @override
+  String get modelsSubagentPool => '子 Agent 模型池';
+
+  @override
+  String get modelsSubagentPoolDescription =>
+      '为同时启动的子 Agent 按顺序准备的模型。当调用未指定模型、子 Agent 定义也未指定、且未配置子 Agent 模型时，按顺序轮流使用（循环使用）；强制或明确指定的模型仍然优先。BaoCode 自带内核会使用模型池，Claude Code CLI 不会。';
+
+  @override
+  String get modelsSubagentPoolEmpty => '还没有选择模型。';
+
+  @override
+  String get modelsSubagentPoolAdd => '添加模型…';
+
+  @override
+  String get modelsSubagentPoolAddDescription => '从已配置的上游模型中选择。';
+
+  @override
+  String get modelsSubagentPoolMoveUp => '上移';
+
+  @override
+  String get modelsSubagentPoolMoveDown => '下移';
+
+  @override
+  String get modelsSubagentPoolRemove => '从模型池移除';
+
+  @override
+  String get modelsSubagentPoolMissing => '未配置';
+
+  @override
+  String get modelsSubagentPoolMissingTooltip =>
+      '该上游或模型已不再配置。它会保留在模型池中，直到你移除它。';
+
+  @override
+  String get modelsSubagentPoolDialogTitle => '向子 Agent 模型池添加模型';
+
+  @override
+  String get modelsSubagentPoolDialogDescription =>
+      '模型按列表顺序添加。可在模型池中用「上移」和「下移」调整顺序。';
+
+  @override
+  String get modelsSubagentPoolNoModels => '已配置的模型都已加入模型池。';
 
   @override
   String get settingsSectionUpdates => '更新';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,12 @@ import 'chat_keys.dart';
 import 'widgets/chat_minimap.dart';
 import 'widgets/hover_builder.dart';
 import '../ide/ide_back_button.dart';
+import '../ide/ide_hover.dart';
+import '../models/model_providers.dart';
+import 'chat_models.dart';
+import 'chat_session.dart';
+import 'chat_feed.dart';
+import 'widgets/agent_step.dart';
 
 /// One conversation over another as the view goes into a subagent: it
 /// comes in from the right as the one under it fades out to the left, and
@@ -90,6 +97,7 @@ class SubagentHeader extends StatelessWidget {
     this.backFocusNode,
     this.maxContentWidth = 720,
     this.minimap = false,
+    this.retry,
   });
 
   /// The subagents from the outermost to this one.
@@ -107,6 +115,10 @@ class SubagentHeader extends StatelessWidget {
   /// Whether the conversation under it has a minimap, which its column
   /// leaves room for (see [ChatColumn.room]).
   final bool minimap;
+
+  /// The user's explicit retry action, null while the child runs or its
+  /// transcript has no running-core task to start a new attempt of.
+  final VoidCallback? retry;
 
   @override
   Widget build(BuildContext context) {
@@ -174,11 +186,103 @@ class SubagentHeader extends StatelessWidget {
                     child: _Crumb(label: label, onTap: () => onBack(i + 1)),
                   ),
               ],
+              if (retry case final retry?) ...[
+                const SizedBox(width: 8),
+                IdeHover(
+                  message: context.l10n.sidePanelAgentRetry,
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 26,
+                      height: 24,
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    color: AppColors.textMuted,
+                    tooltip: context.l10n.sidePanelAgentRetry,
+                    onPressed: retry,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// A retry's model and confirmation. Nothing runs until the second button;
+/// a CLI without the control gets the same honest unsupported status as the
+/// task board instead of a fabricated child run.
+Future<void> confirmAgentRetry(
+  BuildContext context,
+  ChatSession session,
+  SubagentFeed feed,
+) async {
+  final agent = feed.agent;
+  if (agent == null ||
+      agent.status == CommandStatus.running ||
+      agent.readOnly) {
+    return;
+  }
+  final l10n = context.l10n;
+  final task = session.taskOfAgent(feed.path);
+  final choices = session.retryModels;
+  final current = agent.assignedModel ?? agent.model;
+  var selected = choices.contains(current) ? current! : choices.first;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text(l10n.agentRetryTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(agent.description),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: selected,
+              decoration: InputDecoration(labelText: l10n.agentApprovalModel),
+              items: [
+                for (final model in choices)
+                  DropdownMenuItem(
+                    value: model,
+                    child: Text(
+                      AgentStep.modelName(
+                        model,
+                        providers: ModelProviders.current,
+                      ).label,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => selected = value);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.agentRetryConfirm),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final error = task == null
+      ? l10n.sidePanelAgentRetryUnsupported
+      : await session.retryTask(task, selected);
+  if (error.isNotEmpty && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
   }
 }
 

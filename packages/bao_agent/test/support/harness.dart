@@ -33,6 +33,8 @@ class Harness {
     String? thinkingDisplay,
     bool strictMcpConfig = false,
     bool firstParty = true,
+    List<String> subagentPool = const [],
+    bool canAsk = true,
   }) async {
     final root =
         from?.root ??
@@ -66,6 +68,8 @@ class Harness {
         effort: effort,
         thinkingDisplay: thinkingDisplay,
         strictMcpConfig: strictMcpConfig,
+        subagentPool: subagentPool,
+        canAsk: canAsk,
         environment: {
           'HOME': root,
           'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
@@ -100,6 +104,11 @@ class Harness {
   Future<Map<String, Object?>> Function(Map<String, Object?> request)?
   onPermission;
 
+  /// How `can_use_agent` is answered: allowed as it was assigned when
+  /// unset (no `model` in the answer).
+  Future<Map<String, Object?>> Function(Map<String, Object?> request)?
+  onAgentApproval;
+
   /// How other requests of the engine (`elicitation`, `mcp_message`) are
   /// answered.
   Future<Map<String, Object?>> Function(Map<String, Object?> request)?
@@ -107,6 +116,9 @@ class Harness {
 
   /// The permission requests the engine made.
   final List<Map<String, Object?>> permissionRequests = [];
+
+  /// The subagent approvals the engine asked for.
+  final List<Map<String, Object?>> approvalRequests = [];
 
   Stream<Map<String, Object?>> get messages => _out.stream;
 
@@ -128,6 +140,12 @@ class Harness {
                       'behavior': 'allow',
                       'updatedInput': request['input'],
                     }));
+          } else if (request['subtype'] == 'can_use_agent' ||
+              request['subtype'] == 'retry_agent') {
+            approvalRequests.add(request);
+            response =
+                await (onAgentApproval?.call(request) ??
+                    Future.value(const {'behavior': 'allow'}));
           } else {
             response =
                 await (onRequest?.call(request) ??

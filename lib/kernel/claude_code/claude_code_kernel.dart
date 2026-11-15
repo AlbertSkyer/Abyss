@@ -31,6 +31,7 @@ import '../transcript.dart';
 import '../queued_messages.dart';
 import 'claude_code_transport.dart';
 import 'claude_code_translator.dart';
+import 'claude_core_setting.dart';
 import 'claude_elicitation.dart';
 import 'claude_goal.dart';
 import 'claude_numbers.dart';
@@ -137,7 +138,8 @@ class ClaudeCodeKernel
   }) : _openLink = openLink ?? openExternal,
        _usageOffBy = usageOffBy ?? _usageOn,
        _providers = providers ?? ModelProviders.current,
-       _providerEnvironment = providerEnvironment ?? providerLaunchEnvironment {
+       _providerEnvironment = providerEnvironment ?? providerLaunchEnvironment,
+       _hasProviderEnvironment = providerEnvironment != null {
     _translator = ClaudeTranslator(
       emit: emit,
       nextSeq: () => nextSeq,
@@ -230,6 +232,10 @@ class ClaudeCodeKernel
   /// The ChatGPT providers' accounts: the app's when null.
   final CodexService? _codex;
   final ProviderEnvironment _providerEnvironment;
+
+  /// Whether [_providerEnvironment] was given ([ClaudeCodeKernel.new]'s
+  /// `providerEnvironment`, as tests do): else the launch picks it.
+  final bool _hasProviderEnvironment;
 
   static Future<String?> _usageOn() async => null;
 
@@ -397,6 +403,10 @@ class ClaudeCodeKernel
   /// with `send_now`), sparing the tasks in the background, as its init
   /// says (`interrupt_send_now_v1`).
   bool _sendsNow = false;
+
+  /// Control features the running core explicitly declares. Absence means
+  /// unsupported, especially for the installed CLI or a remote core.
+  Set<String> _capabilities = const {};
 
   /// When the usage limit the last turn hit resets (see
   /// [ReportsUsageLimit]): the account's own plan's, or every ChatGPT
@@ -584,6 +594,14 @@ class ClaudeCodeKernel
     );
   }
 
+  /// Whether this session's subagents take the pool: only BaoCode's own
+  /// core on this machine is handed it. The CLI has no equivalent option,
+  /// and a remote core is started without it. Only such a session needs
+  /// another upstream's pool model routed through the proxy.
+  bool get _takesSubagentPool =>
+      !RemoteLocation.isRemote(_cwd) &&
+      ClaudeCore.current() == ClaudeCore.builtin;
+
   Future<void> _launch() async {
     await _history;
     // One process at a time on a session: the last one, if restarted.
@@ -599,6 +617,13 @@ class ClaudeCodeKernel
       // Through the proxy, the effort goes with the model's name; to
       // Anthropic's API, as Claude Code's own, if it is one of its.
       final direct = custom == null || !custom.$1.protocolOf(custom.$2).proxied;
+      // The pool's other upstreams need the proxy only where the pool is
+      // used; elsewhere it would route needlessly.
+      final providerEnvironment = _hasProviderEnvironment
+          ? _providerEnvironment
+          : _takesSubagentPool
+          ? providerSessionLaunchEnvironment
+          : providerLaunchEnvironment;
       Map<String, String>? env;
       if ((custom, model) case ((final provider, _), final model?)) {
         try {
@@ -606,7 +631,7 @@ class ClaudeCodeKernel
             // The window picked, as the model's own: else the CLI holds
             // the conversation to 200K. The provider's env may say else.
             ClaudeModelVariables.maxContextTokens: '${_autocompact!}',
-            ...await _providerEnvironment(provider, model),
+            ...await providerEnvironment(provider, model),
           };
         } on Object catch (error) {
           throw ClaudeUnavailable(
@@ -622,6 +647,7 @@ class ClaudeCodeKernel
       _launchedSuggestions = PromptSuggestions.current();
       _appliedSwitches = ExtensionSwitches.current();
       final sdkServers = ClaudeSdkTools.serversFor(_cwd);
+      final subagentPool = _launchSubagentPool(custom?.$1);
       final transport = await _start(
         _launched = ClaudeLaunch(
           cwd: _cwd,
@@ -656,6 +682,7 @@ class ClaudeCodeKernel
             (final provider, _) => _requestedModels(provider),
             null => const [],
           },
+          subagentPool: subagentPool,
         ),
       );
       if (_disposed) {
@@ -777,11 +804,12 @@ class ClaudeCodeKernel
     );
   }
 
-  void _teardown() {
+  void _teardown({bool answering = true}) {
     _usage?.close();
     _usage = null;
     unawaited(_subscription?.cancel());
     _subscription = null;
+    _settleInteractions(answer: answering);
     _control?.failAll('Claude Code stopped');
     _control = null;
     if (_transport case final transport?) {
@@ -1139,13 +1167,7 @@ class ClaudeCodeKernel
         costUsd: usage?.costUsd,
       );
     }
-    for (final MapEntry(key: id, value: permission) in _permissions.entries) {
-      emit(InteractionResolved(nextSeq, id));
-      if (permission.sdk case final sdk? when !sdk.isCompleted) {
-        sdk.complete(null);
-      }
-    }
-    _permissions.clear();
+    _settleInteractions();
     // Stopped too: its work folds all the same (the session file tells it
     // was stopped).
     if (worked != null) {
@@ -1162,6 +1184,30 @@ class ClaudeCodeKernel
         usage: usage,
       ),
     );
+  }
+
+  /// No question outlives the turn or process it belongs to. A child-agent
+  /// request answered to a still-open transport is denied explicitly; an
+  /// already-closed one is settled locally, with nothing sent to a dead pipe.
+  /// In neither case may it be restored as if approval were still pending.
+  void _settleInteractions({bool answer = true}) {
+    if (_permissions.isEmpty) return;
+    final pending = [..._permissions.entries];
+    _permissions.clear();
+    for (final MapEntry(key: id, value: permission) in pending) {
+      emit(InteractionResolved(nextSeq, id));
+      if (answer && permission.agent && _control != null && _running) {
+        _control!.respond(id, const {
+          'behavior': 'deny',
+          'message':
+              'The approval was cancelled because the conversation stopped '
+              'or its window closed. The subagent was not started.',
+        });
+      }
+      if (permission.sdk case final sdk? when !sdk.isCompleted) {
+        sdk.complete(null);
+      }
+    }
   }
 
   @override
@@ -1479,6 +1525,54 @@ class ClaudeCodeKernel
   void moveToBackground(String toolUseId) =>
       _tell('background_tasks', {'tool_use_id': toolUseId});
 
+  /// Only the built-in core declares a retry control. The CLI's Agent/Task
+  /// protocol has no such request: report that truthfully, rather than
+  /// faking a rerun through an unrelated prompt or a second process.
+  @override
+  List<String> get retryModels {
+    final models = <String>{};
+    void add(String? model) {
+      if (model != null && model.isNotEmpty) models.add(model);
+    }
+
+    // Names that carry an alias are resolved by the core's catalog, not
+    // guessed at by the picker. A bare unknown id is offered as-is.
+    final aliases = {'sonnet', 'opus', 'haiku', 'fable'};
+    for (final option in model.options) {
+      add(option.id);
+    }
+    add(_model);
+    if (_custom case (final provider, _)) {
+      for (final entry in _launchSubagentPool(provider)) {
+        add(entry);
+      }
+      for (final info in provider.enabledModels) {
+        if (aliases.contains(info.id)) add(info.id);
+      }
+    }
+    return models.toList();
+  }
+
+  @override
+  bool canRetryTask(String taskId) {
+    if (!_capabilities.contains('agent_retry_v1')) return false;
+    return _translator.canRetryTask(taskId);
+  }
+
+  @override
+  Future<String> retryTask(String taskId, String model) async {
+    if (!_capabilities.contains('agent_retry_v1')) {
+      return 'Retry is unavailable for this Claude Code CLI session. '
+          'Ask the agent to retry in the conversation instead.';
+    }
+    try {
+      await _request('retry_agent', {'task_id': taskId, 'model': model});
+      return '';
+    } on Object catch (error) {
+      return 'The subagent could not be retried: $error';
+    }
+  }
+
   @override
   String? get promptSuggestion => _suggestion;
 
@@ -1636,6 +1730,24 @@ class ClaudeCodeKernel
     final control = _control;
     if (permission == null || control == null) return;
     emit(InteractionResolved(nextSeq, requestId));
+    // A child agent's start: the model picked goes with the leave; a denial
+    // leaves the child unstarted.
+    if (permission.agent) {
+      final allowed =
+          answer is ApprovalAnswer && answer.decision != ApprovalDecision.deny;
+      final picked = answer is ApprovalAnswer ? answer.model : null;
+      final message = switch (answer) {
+        ApprovalAnswer(:final message?) when message.trim().isNotEmpty =>
+          message,
+        _ => 'The user did not approve this subagent.',
+      };
+      control.respond(requestId, {
+        'behavior': allowed ? 'allow' : 'deny',
+        'model': ?(allowed ? picked : null),
+        if (!allowed) 'message': message,
+      });
+      return;
+    }
     if (permission.elicitation case (:final fields, :final url)?) {
       control.respond(requestId, switch (answer) {
         QuestionAnswer() => elicitationResult(fields, answer),
@@ -1682,6 +1794,61 @@ class ClaudeCodeKernel
             : message,
       ),
     });
+  }
+
+  /// A child agent (Agent/Task) about to start: put to the user with what
+  /// it is to do and the model it would run on. The core waits for the
+  /// answer before it makes the child. With no one there to ask (a bot's),
+  /// it is allowed as it was assigned; in Don't ask, it is not started.
+  void _agentApproval(
+    String requestId,
+    Map<String, Object?> request, {
+    bool retry = false,
+  }) {
+    final control = _control;
+    if (control == null) return;
+    final model = '${request['model'] ?? ''}';
+    final models = [
+      for (final raw in request['models'] as List? ?? const [])
+        if (raw is String && raw.isNotEmpty) raw,
+    ];
+    if (!retry && (_workspace?.approvesAll ?? false)) {
+      control.respond(requestId, {'behavior': 'allow', 'model': model});
+      return;
+    }
+    // Don't ask asks no one: the child is not started, as anything else
+    // not pre-approved.
+    if (_approval == 'dontAsk') {
+      control.respond(requestId, {'behavior': 'deny', 'message': _notAsked});
+      return;
+    }
+    final forced = request['forced'] == true;
+    final description = '${request['description'] ?? ''}';
+    _permissions[requestId] = _Permission(
+      const {},
+      const [],
+      const [],
+      agent: true,
+    );
+    emit(
+      InteractionRequested(
+        nextSeq,
+        AgentApprovalRequest(
+          id: requestId,
+          title: retry ? 'Retry this subagent?' : 'Run a subagent?',
+          toolName: '${request['tool_name'] ?? 'Agent'}',
+          description: description,
+          prompt: '${request['prompt'] ?? ''}',
+          agentType: '${request['subagent_type'] ?? ''}',
+          model: model,
+          models: forced ? const [] : (models.isEmpty ? [model] : models),
+          modelSource: '${request['model_source'] ?? ''}',
+          forced: forced,
+          background: request['run_in_background'] == true,
+          retry: retry,
+        ),
+      ),
+    );
   }
 
   Future<void> _permission(
@@ -1912,6 +2079,10 @@ class ClaudeCodeKernel
       case 'system' when message['subtype'] == 'init':
         _sessionId = message['session_id'] as String? ?? _sessionId;
         _reportedModel = message['model'] as String?;
+        _capabilities = {
+          for (final capability in message['capabilities'] as List? ?? const [])
+            if (capability is String) capability,
+        };
         _sendsNow = (message['capabilities'] as List? ?? const []).contains(
           'interrupt_send_now_v1',
         );
@@ -2018,6 +2189,8 @@ class ClaudeCodeKernel
     switch (request['subtype']) {
       case 'can_use_tool':
         unawaited(_permission(id, request));
+      case 'can_use_agent' || 'retry_agent':
+        _agentApproval(id, request, retry: request['subtype'] == 'retry_agent');
       case 'elicitation':
         _elicitation(id, request);
       case 'mcp_message':
@@ -2859,7 +3032,7 @@ class ClaudeCodeKernel
 
   void _exited(int code, String stderr, {String? executable}) {
     final wasReady = _health.status == KernelHealthStatus.ready;
-    _teardown();
+    _teardown(answering: false);
     if (!wasReady &&
         _starting != null &&
         _rejectTooOld != null &&
@@ -3085,6 +3258,10 @@ class ClaudeCodeKernel
   // --- Options ------------------------------------------------------------------------
 
   void _applyInitialize(Map<String, Object?> response) {
+    _capabilities = {
+      for (final capability in response['capabilities'] as List? ?? const [])
+        if (capability is String) capability,
+    };
     // Claude Code's own models are those it lists set up as the user has
     // it: one on a provider lists what the provider's names stand in for.
     final own = _launchedProvider.isEmpty;
@@ -3232,6 +3409,28 @@ class ClaudeCodeKernel
     (final provider, _) => '${provider.id}|${provider.launchFingerprint}',
     null => '',
   };
+
+  /// The subagent pool (Settings → Models) as the session on [provider] is
+  /// handed it: that upstream's own models by their ids (as it asks for
+  /// them), other upstreams' as `@<id>/<model>` refs, which the proxy
+  /// routes there (the session is put through it when the pool picks one).
+  /// Entries no longer configured, or turned off, are left out: with none
+  /// left, subagents keep the model they had.
+  List<String> _launchSubagentPool(ModelProvider? provider) {
+    if (provider == null) return const [];
+    return [
+      for (final entry in _providers.subagentPoolEntries)
+        if (entry.provider case final upstream?)
+          if (entry.model case final model?)
+            if (upstream.enabled &&
+                upstream.connected &&
+                model.enabled &&
+                !model.missing)
+              upstream.id == provider.id
+                  ? model.id
+                  : modelRef(upstream.id, model.id),
+    ];
+  }
 
   String get _providerKey => _providerKeyOf(_model);
 
@@ -3938,11 +4137,16 @@ class _Permission {
     this.questions, {
     this.elicitation,
     this.sdk,
+    this.agent = false,
   });
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
   /// here, not to the CLI.
   final Completer<ApprovalDecision?>? sdk;
+
+  /// For a child agent about to start: the answer allows it and may name
+  /// the model it runs on.
+  final bool agent;
 
   /// For an MCP server's elicitation: its form's fields, or the link it
   /// asks to open.

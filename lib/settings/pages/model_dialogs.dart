@@ -414,14 +414,14 @@ class _FetchModelsDialogState extends State<FetchModelsDialog> {
                   style: _muted(context),
                 ),
               ),
-              _LinkButton(
+              ModelDialogLinkButton(
                 label: l10n.modelsFetchSelectAll,
                 onPressed: () => setState(
                   () => _checked.addAll(shown.map((model) => model.id)),
                 ),
               ),
               const SizedBox(width: 10),
-              _LinkButton(
+              ModelDialogLinkButton(
                 label: l10n.modelsFetchSelectNone,
                 onPressed: () => setState(
                   () => _checked.removeAll(shown.map((model) => model.id)),
@@ -567,8 +567,14 @@ class ModelBadge extends StatelessWidget {
   }
 }
 
-class _LinkButton extends StatelessWidget {
-  const _LinkButton({required this.label, required this.onPressed});
+/// A dialog's link-like button (Select All, Reset): small text in the
+/// theme's link color.
+class ModelDialogLinkButton extends StatelessWidget {
+  const ModelDialogLinkButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
 
   final String label;
   final VoidCallback onPressed;
@@ -1187,7 +1193,7 @@ class _OptionListState<T> extends State<_OptionList<T>> {
             const Spacer(),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: _LinkButton(
+              child: ModelDialogLinkButton(
                 label: l10n.modelsOptionsReset,
                 onPressed: () => widget.onChanged(null),
               ),

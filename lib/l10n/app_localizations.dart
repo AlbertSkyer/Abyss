@@ -5420,6 +5420,150 @@ abstract class AppLocalizations {
   /// **'Expand'**
   String get interactionExpand;
 
+  /// No description provided for @agentApprovalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a subagent?'**
+  String get agentApprovalTitle;
+
+  /// No description provided for @agentRetryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry this subagent?'**
+  String get agentRetryTitle;
+
+  /// No description provided for @agentRetryConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry agent'**
+  String get agentRetryConfirm;
+
+  /// No description provided for @agentApprovalDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Task'**
+  String get agentApprovalDescription;
+
+  /// No description provided for @agentApprovalPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Instructions'**
+  String get agentApprovalPrompt;
+
+  /// No description provided for @agentApprovalModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get agentApprovalModel;
+
+  /// No description provided for @agentApprovalConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Start agent'**
+  String get agentApprovalConfirm;
+
+  /// No description provided for @agentApprovalBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'It runs in the background.'**
+  String get agentApprovalBackground;
+
+  /// No description provided for @agentApprovalForced.
+  ///
+  /// In en, this message translates to:
+  /// **'Every subagent runs on {model}, set by CLAUDE_CODE_SUBAGENT_MODEL_FORCE.'**
+  String agentApprovalForced(String model);
+
+  /// No description provided for @sidePanelAgents.
+  ///
+  /// In en, this message translates to:
+  /// **'Agents'**
+  String get sidePanelAgents;
+
+  /// No description provided for @sidePanelAgentsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No subagents yet.'**
+  String get sidePanelAgentsEmpty;
+
+  /// No description provided for @sidePanelAgentTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent tasks'**
+  String get sidePanelAgentTasks;
+
+  /// No description provided for @sidePanelAgentRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get sidePanelAgentRunning;
+
+  /// No description provided for @sidePanelAgentQueued.
+  ///
+  /// In en, this message translates to:
+  /// **'Queued'**
+  String get sidePanelAgentQueued;
+
+  /// No description provided for @sidePanelAgentInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupted'**
+  String get sidePanelAgentInterrupted;
+
+  /// No description provided for @sidePanelAgentCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get sidePanelAgentCancelled;
+
+  /// No description provided for @sidePanelAgentRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get sidePanelAgentRetry;
+
+  /// No description provided for @sidePanelAgentRetryUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.'**
+  String get sidePanelAgentRetryUnsupported;
+
+  /// No description provided for @sidePanelAgentDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get sidePanelAgentDone;
+
+  /// No description provided for @sidePanelAgentFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get sidePanelAgentFailed;
+
+  /// No description provided for @sidePanelAgentUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get sidePanelAgentUnread;
+
+  /// No description provided for @sidePanelAgentPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Asked'**
+  String get sidePanelAgentPrompt;
+
+  /// No description provided for @sidePanelAgentModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get sidePanelAgentModel;
+
+  /// No description provided for @sidePanelAgentResult.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get sidePanelAgentResult;
+
   /// No description provided for @interactionMoreLines.
   ///
   /// In en, this message translates to:
@@ -12038,6 +12182,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Claude Code Haiku (this machine\'s setup)'**
   String get modelsAuxiliaryBuiltin;
+
+  /// No description provided for @modelsSubagentPool.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent Model Pool'**
+  String get modelsSubagentPool;
+
+  /// No description provided for @modelsSubagentPoolDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Models to hand to subagents launched together, in order. They are taken in turn (round-robin, wrapping around) when the call names no model, its definition names none, and no subagent model is configured; forced or explicit models still win. BaoCode\'s own core applies the pool; the Claude Code CLI does not.'**
+  String get modelsSubagentPoolDescription;
+
+  /// No description provided for @modelsSubagentPoolEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models picked yet.'**
+  String get modelsSubagentPoolEmpty;
+
+  /// No description provided for @modelsSubagentPoolAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Models…'**
+  String get modelsSubagentPoolAdd;
+
+  /// No description provided for @modelsSubagentPoolAddDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from the models configured in your upstreams.'**
+  String get modelsSubagentPoolAddDescription;
+
+  /// No description provided for @modelsSubagentPoolMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Up'**
+  String get modelsSubagentPoolMoveUp;
+
+  /// No description provided for @modelsSubagentPoolMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Down'**
+  String get modelsSubagentPoolMoveDown;
+
+  /// No description provided for @modelsSubagentPoolRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Pool'**
+  String get modelsSubagentPoolRemove;
+
+  /// No description provided for @modelsSubagentPoolMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Not configured'**
+  String get modelsSubagentPoolMissing;
+
+  /// No description provided for @modelsSubagentPoolMissingTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'This upstream or model is no longer configured. It stays in the pool until you remove it.'**
+  String get modelsSubagentPoolMissingTooltip;
+
+  /// No description provided for @modelsSubagentPoolDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Models to the Subagent Pool'**
+  String get modelsSubagentPoolDialogTitle;
+
+  /// No description provided for @modelsSubagentPoolDialogDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Models are added in the order listed. Use Move Up and Move Down in the pool to change that order.'**
+  String get modelsSubagentPoolDialogDescription;
+
+  /// No description provided for @modelsSubagentPoolNoModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Every configured model is already in the pool.'**
+  String get modelsSubagentPoolNoModels;
 
   /// No description provided for @settingsSectionUpdates.
   ///

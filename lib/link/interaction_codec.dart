@@ -27,6 +27,26 @@ abstract final class InteractionCodec {
               },
           ],
         },
+        // A child agent's start, as an approval the phone shows: its task
+        // and the model it runs on as the text (there is no list to pick
+        // from there; it runs as it was assigned).
+        AgentApprovalRequest() => {
+          't': 'approval',
+          'id': request.id,
+          'title': request.title,
+          'tool': request.toolName,
+          'reason': request.description,
+          'agent': true,
+          'model': request.model,
+          'preview': {
+            't': 'text',
+            'text': [
+              if (request.agentType.isNotEmpty) request.agentType,
+              if (request.model.isNotEmpty) request.model,
+              request.prompt,
+            ].join('\n\n'),
+          },
+        },
         ApprovalRequest() => {
           't': 'approval',
           'id': request.id,
@@ -68,6 +88,16 @@ abstract final class InteractionCodec {
         final decision? => ApprovalAnswer(
           decision,
           message: json['message'] as String?,
+        ),
+        null => null,
+      },
+    // A child agent: allowed as it was assigned, or denied.
+    {'t': 'agent', 'decision': final String decision} =>
+      switch (ApprovalDecision.values.asNameMap()[decision]) {
+        final decision? => ApprovalAnswer(
+          decision,
+          message: json['message'] as String?,
+          model: json['model'] as String?,
         ),
         null => null,
       },

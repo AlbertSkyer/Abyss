@@ -71,11 +71,20 @@ class ClaudeLaunch {
     this.allowed = const [],
     this.promptSuggestions = true,
     this.switches = ExtensionSwitches.none,
+    this.subagentPool = const [],
   });
 
   /// The skills, MCP servers and tools turned off (Settings → Customize):
   /// permission rules and `skillOverrides` of the flag settings.
   final ExtensionSwitches switches;
+
+  /// The models a subagent may run on when no higher-precedence model
+  /// applies (Settings → Models → subagent pool), as the host has resolved
+  /// them: the session upstream's own models by their ids, other
+  /// upstreams' as `@<id>/<model>` refs (the proxy sends those there).
+  /// Only BaoCode's own core routes it; the Claude Code CLI is given none,
+  /// as it has no equivalent.
+  final List<String> subagentPool;
 
   /// Whether it suggests the next prompt after each turn
   /// (`--prompt-suggestions`), each a request of its own.
@@ -210,6 +219,7 @@ class ClaudeLaunch {
     allowed: allowed,
     promptSuggestions: promptSuggestions,
     switches: switches,
+    subagentPool: subagentPool,
   );
 
   Map<String, String>? get _attribution => switch (attribution) {

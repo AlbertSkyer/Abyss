@@ -21,6 +21,7 @@ import 'package:baocode/models/upstream.dart';
 import 'package:baocode/settings/pages/model_dialogs.dart';
 import 'package:baocode/settings/pages/models_page.dart';
 import 'package:baocode/settings/pages/settings_widgets.dart';
+import 'package:baocode/theme/codicons.dart';
 import 'package:baocode/workspace/workspace.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -1747,6 +1748,169 @@ void main() {
       await pump(tester, magpie: follow());
       await tester.pumpAndSettle();
       expect(find.textContaining("magpie isn't running"), findsOneWidget);
+    });
+  });
+
+  group('subagent model pool', () {
+    Future<void> addUpstreams() async {
+      await providers.save(
+        const ModelProvider(
+          id: 'a',
+          name: 'Alpha',
+          baseUrl: 'https://a.example',
+          models: [
+            ProviderModel(id: 'one', label: 'Alpha One'),
+            ProviderModel(id: 'two'),
+          ],
+        ),
+      );
+      await providers.save(
+        const ModelProvider(
+          id: 'b',
+          name: 'Beta',
+          baseUrl: 'https://b.example',
+          models: [ProviderModel(id: 'three', label: 'Beta Three')],
+        ),
+      );
+    }
+
+    testWidgets('is empty at first, and says when the pool is taken', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.text('Subagent Model Pool'), findsOneWidget);
+      expect(find.text('No models picked yet.'), findsOneWidget);
+      expect(find.textContaining('taken in turn (round-robin'), findsOneWidget);
+      expect(
+        find.textContaining('the Claude Code CLI does not'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('models are added from the configured ones, saved in order', (
+      tester,
+    ) async {
+      await addUpstreams();
+      await pump(tester);
+      await tester.tap(find.text('Add Models…').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Add Models to the Subagent Pool'), findsOneWidget);
+      // Every configured model is offered: two upstreams.
+      expect(find.textContaining('Alpha One'), findsOneWidget);
+      await tester.tap(find.textContaining('Alpha One'));
+      await tester.tap(find.textContaining('Beta Three'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add Models…').last);
+      await tester.pumpAndSettle();
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+
+      // Listed in the pool, each with its upstream.
+      expect(find.text('Alpha One'), findsOneWidget);
+      expect(find.text('Alpha'), findsWidgets);
+      expect(find.text('Beta Three'), findsOneWidget);
+      expect(find.text('Beta'), findsWidgets);
+
+      // Saved in settings.json under models.subagentPool.
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+    });
+
+    testWidgets('a pool model is moved and removed', (tester) async {
+      await addUpstreams();
+      await providers.setSubagentPool(['@a/one', '@b/three']);
+      await pump(tester);
+      Finder row(String name) => find.ancestor(
+        of: find.text(name),
+        matching: find.byType(SettingsRow),
+      );
+      final alpha = row('Alpha One');
+      // Down: Alpha One after Beta Three.
+      await tester.tap(
+        find.descendant(of: alpha, matching: find.byIcon(Codicons.arrowDown)),
+      );
+      await tester.pumpAndSettle();
+      expect(providers.subagentPool, ['@b/three', '@a/one']);
+      // Up: back.
+      await tester.tap(
+        find.descendant(
+          of: row('Alpha One'),
+          matching: find.byIcon(Codicons.arrowUp),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(providers.subagentPool, ['@a/one', '@b/three']);
+      // The first's Up and the last's Down are disabled.
+      expect(
+        tester
+            .widget<IdeActionButton>(
+              find.descendant(
+                of: row('Alpha One'),
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is IdeActionButton &&
+                      widget.icon == Codicons.arrowUp,
+                ),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      // Removed from the pool.
+      await tester.tap(
+        find.descendant(
+          of: row('Alpha One'),
+          matching: find.byIcon(Codicons.trash),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(providers.subagentPool, ['@b/three']);
+      expect(find.text('Alpha One'), findsNothing);
+    });
+
+    testWidgets('a model or upstream gone is kept and warned about', (
+      tester,
+    ) async {
+      await addUpstreams();
+      await providers.setSubagentPool(['@a/one', '@b/gone', '@gone/model']);
+      await pump(tester);
+      expect(providers.subagentPool, ['@a/one', '@b/gone', '@gone/model']);
+      // Both missing ones marked, still listed by what they name.
+      expect(find.text('Not configured'), findsNWidgets(2));
+      // `@b/gone`'s label and `@gone/model`'s upstream.
+      expect(find.text('gone'), findsNWidgets(2));
+      expect(find.text('model'), findsOneWidget);
+      expect(
+        find.textContaining('This upstream or model is no longer configured'),
+        findsNWidgets(2),
+      );
+      // Its provider gone: removing the ref takes it out.
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('model'),
+            matching: find.byType(SettingsRow),
+          ),
+          matching: find.byIcon(Codicons.trash),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(providers.subagentPool, ['@a/one', '@b/gone']);
+    });
+
+    testWidgets('opening the add dialog offers no model already in the pool', (
+      tester,
+    ) async {
+      await addUpstreams();
+      await providers.setSubagentPool(['@a/one']);
+      await pump(tester);
+      await tester.tap(find.text('Add Models…').last);
+      await tester.pumpAndSettle();
+      // The dialog's rows, not the pool's behind it.
+      Finder inDialog(String text) => find.descendant(
+        of: find.byType(ModelDialogFrame),
+        matching: find.textContaining(text),
+      );
+      expect(inDialog('Alpha One'), findsNothing);
+      expect(inDialog('Beta Three'), findsOneWidget);
     });
   });
 }

@@ -383,7 +383,7 @@ void main() {
     session.send(const ComposerMessage(text: 'fix the composer'));
     for (var i = 0; i < 400 && session.isStreaming; i++) {
       switch (session.pendingInteraction) {
-        case ApprovalRequest():
+        case ApprovalRequest() || AgentApprovalRequest():
           break;
         case QuestionRequest():
           session.answer(const QuestionAnswer([], skipped: true));

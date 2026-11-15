@@ -275,7 +275,14 @@ class _AgentStepState extends State<AgentStep> {
           ),
           // How long it has run, as it goes; once done, its line says.
           if (running && item.startedAt != null) _Elapsed(item),
-          if (item.model case final model?) _Model(model),
+          if (item.model ?? item.assignedModel case final model?)
+            _Model(
+              model,
+              assigned: item.assignedModel,
+              requested: item.requestedModel,
+              actual: item.model,
+              source: item.modelSource,
+            ),
           // Its buttons take their own presses (see _down).
           Listener(
             onPointerDown: (_) => _onButton = true,
@@ -302,6 +309,7 @@ class _AgentStepState extends State<AgentStep> {
       CommandStatus.running => l10n.agentStateRunning,
       CommandStatus.succeeded => l10n.agentStateDone,
       CommandStatus.failed => l10n.agentStateFailed,
+      CommandStatus.interrupted => l10n.sidePanelAgentInterrupted,
     };
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 6),
@@ -426,9 +434,22 @@ class _ElapsedState extends State<_Elapsed> {
 }
 
 class _Model extends StatelessWidget {
-  const _Model(this.model);
+  const _Model(
+    this.model, {
+    this.assigned,
+    this.requested,
+    this.actual,
+    this.source,
+  });
 
   final String model;
+
+  /// The model it was assigned, and what its call asked for, when they
+  /// differ from [actual] (what its upstream answered with).
+  final String? assigned;
+  final String? requested;
+  final String? actual;
+  final String? source;
 
   @override
   Widget build(BuildContext context) {
@@ -436,7 +457,17 @@ class _Model extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: IdeHover(
-        message: [?upstream, model].join(' · '),
+        message: [
+          ?upstream,
+          if (requested case final requested?) 'requested: $requested',
+          if (assigned case final assigned?) 'assigned: $assigned',
+          if (source case final source? when source.isNotEmpty)
+            'source: $source',
+          if (actual case final actual?)
+            'actual: $actual'
+          else
+            'actual: not yet reported',
+        ].join(' · '),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 140),
           child: Text(
@@ -480,6 +511,11 @@ class AgentStatusIcon extends StatelessWidget {
           Icons.error_outline_rounded,
           size: 14,
           color: themeColors['testing.iconFailed'],
+        ),
+        CommandStatus.interrupted => Icon(
+          Icons.pause_circle_outline_rounded,
+          size: 14,
+          color: AppColors.textFaint,
         ),
       },
     );

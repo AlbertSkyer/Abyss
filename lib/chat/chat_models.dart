@@ -279,9 +279,15 @@ class AgentItem extends ChatItem {
     this.startedAt,
     this.duration,
     this.model,
+    this.assignedModel,
+    this.requestedModel,
+    this.modelSource,
+    this.outcome,
     this.children = const [],
     this.result,
     this.background = false,
+    this.queued = false,
+    this.readOnly = false,
     this.ranBefore,
   });
 
@@ -310,7 +316,26 @@ class AgentItem extends ChatItem {
   /// How long it ran the times before, continued once it had ended (sent
   /// a message, SendMessage): null for none.
   final Duration? ranBefore;
+
+  /// The model its upstream answered with, once it has; until then, the
+  /// one it was assigned.
   final String? model;
+
+  /// The model it was assigned (one of the subagent pool's, say): what it
+  /// is asked with, as kept apart from [model], which is what the upstream
+  /// reported (it may differ, a provider naming its own snapshot).
+  final String? assignedModel;
+
+  /// The `model` its call asked for, if it asked for one.
+  final String? requestedModel;
+
+  /// Where its assigned model came from (`pool`, `requested`, …).
+  final String? modelSource;
+
+  /// `completed`, `failed`, or `cancelled`, if its result says. The legacy
+  /// [status] stays the visual running/succeeded/failed projection, with
+  /// [CommandStatus.interrupted] for restored work that never restarted.
+  final String? outcome;
   final List<ChatItem> children;
 
   /// Its final report.
@@ -318,6 +343,14 @@ class AgentItem extends ChatItem {
 
   /// Left to run on its own while the agent goes on: it reports when done.
   final bool background;
+
+  /// Waiting for its parent's concurrency slot, or restored without its
+  /// live process after the session's previous window closed.
+  final bool queued;
+
+  /// A previous process's task, whose process or model call cannot be
+  /// controlled or retried through this session.
+  final bool readOnly;
 
   AgentItem copyWith({
     String? description,
@@ -330,9 +363,15 @@ class AgentItem extends ChatItem {
     String? activity,
     Duration? duration,
     String? model,
+    String? assignedModel,
+    String? requestedModel,
+    String? modelSource,
+    String? outcome,
     List<ChatItem>? children,
     String? result,
     bool? background,
+    bool? queued,
+    bool? readOnly,
   }) => AgentItem(
     description: description ?? this.description,
     id: id,
@@ -346,9 +385,15 @@ class AgentItem extends ChatItem {
     startedAt: startedAt,
     duration: duration ?? this.duration,
     model: model ?? this.model,
+    assignedModel: assignedModel ?? this.assignedModel,
+    requestedModel: requestedModel ?? this.requestedModel,
+    modelSource: modelSource ?? this.modelSource,
+    outcome: outcome ?? this.outcome,
     children: children ?? this.children,
     result: result ?? this.result,
     background: background ?? this.background,
+    queued: queued ?? this.queued,
+    readOnly: readOnly ?? this.readOnly,
     ranBefore: ranBefore,
   );
 
@@ -365,6 +410,10 @@ class AgentItem extends ChatItem {
     activity: activity,
     startedAt: at,
     model: model,
+    assignedModel: assignedModel,
+    requestedModel: requestedModel,
+    modelSource: modelSource,
+    outcome: outcome,
     children: children,
     result: result,
     background: background,
@@ -475,7 +524,7 @@ class NoticeItem extends ChatItem {
   final String text;
 }
 
-enum CommandStatus { running, succeeded, failed }
+enum CommandStatus { running, succeeded, failed, interrupted }
 
 class TerminalItem extends ChatItem {
   const TerminalItem({

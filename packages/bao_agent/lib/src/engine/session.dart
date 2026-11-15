@@ -24,10 +24,12 @@ import '../util/cancel.dart';
 import '../util/ids.dart';
 import '../util/json.dart';
 import '../util/processes.dart';
+import 'agent_approvals.dart';
 import 'agent_run.dart';
 import 'checkpoints.dart';
 import 'context.dart';
 import 'session_store.dart';
+import 'subagent_models.dart';
 import 'tasks.dart';
 import 'toolbox.dart';
 
@@ -57,6 +59,7 @@ class EngineOptions {
     this.strictMcpConfig = false,
     this.slashCommands = true,
     this.canAsk = true,
+    this.subagentPool = const [],
   });
 
   factory EngineOptions.fromJson(Map<String, Object?> json) => EngineOptions(
@@ -88,6 +91,7 @@ class EngineOptions {
     strictMcpConfig: json['strictMcpConfig'] == true,
     slashCommands: json['slashCommands'] != false,
     canAsk: json['canAsk'] != false,
+    subagentPool: [...asList(json['subagentPool']).whereType<String>()],
   );
 
   final String cwd;
@@ -152,6 +156,14 @@ class EngineOptions {
   /// are not offered.
   final bool canAsk;
 
+  /// The models a subagent may run on when neither its call nor its
+  /// definition names one, and no scalar subagent model is set: model ids
+  /// or provider model refs (`@<provider>/<model>`), in the order they are
+  /// handed out. The host filters out those no longer configured; an
+  /// empty list turns the pool off. Only BaoCode's own core applies it:
+  /// the Claude Code CLI has no equivalent option.
+  final List<String> subagentPool;
+
   Map<String, Object?> toJson() => {
     'cwd': cwd,
     'resume': ?resume,
@@ -176,6 +188,7 @@ class EngineOptions {
     'strictMcpConfig': strictMcpConfig,
     'slashCommands': slashCommands,
     'canAsk': canAsk,
+    'subagentPool': subagentPool,
   };
 }
 
@@ -216,7 +229,13 @@ class AgentSession {
     effort = options.effort;
     permissions = PermissionEngine(this);
     checkpoints = FileCheckpoints(this);
-    tasks = TaskManager(this);
+    final limit = int.tryParse(
+      environment['BAOCODE_SUBAGENT_CONCURRENCY'] ?? '',
+    );
+    tasks = TaskManager(
+      this,
+      agentLimit: limit == null ? 2 : limit.clamp(1, 16),
+    );
     hooks = HookRunner(this);
     mainRun = AgentRun(session: this);
   }
@@ -239,6 +258,16 @@ class AgentSession {
   late final PermissionEngine permissions;
   late final FileCheckpoints checkpoints;
   late final TaskManager tasks;
+
+  /// Puts each Agent/Task call to the host for leave before it starts,
+  /// one at a time.
+  late final AgentApprovals agentApprovals = AgentApprovals(this);
+
+  /// The models subagents may run on beyond the ones named for them: the
+  /// host's pool ([EngineOptions.subagentPool]), taken in turn.
+  late final SubagentModelSelector subagentModels = SubagentModelSelector(
+    options.subagentPool,
+  );
   late final HookRunner hooks;
   late final McpManager mcp = McpManager(this);
   late final AgentRun mainRun;
@@ -316,6 +345,49 @@ class AgentSession {
   /// The subagents started in the session, by id: to send messages to,
   /// and to list.
   final Map<String, SubagentJob> subagents = {};
+
+  /// Retry a task only after the host's explicit user confirmation. The
+  /// same child may continue on the confirmed model; a different model is
+  /// a fresh child job, since one job never changes model mid-run.
+  Future<BackgroundTask> retrySubagent(
+    String agentId, {
+    required String model,
+  }) async {
+    final original = subagents[agentId];
+    if (original == null || original.running) {
+      throw StateError('No finished subagent with ID: $agentId');
+    }
+    final task = tasks[agentId];
+    if (task == null || !task.status.done || task.isShell) {
+      throw StateError('No finished subagent with ID: $agentId');
+    }
+    // The original tool call may still await a foreground child's report
+    // while cancellation unwinds; only a background task is safe to retry.
+    if (!task.backgrounded) {
+      throw StateError('Wait for the foreground agent call to finish first.');
+    }
+    var next = AgentTool.assignmentFor(this, original.agent, model);
+    final toolUseId = tasks.newId('retry');
+    if (options.canAsk) {
+      final answer = await agentApprovals.retry(
+        original.retryApproval(next, toolUseId),
+      );
+      if (answer['behavior'] != 'allow') {
+        throw StateError(
+          asText(answer['message']) ?? 'The retry was not confirmed.',
+        );
+      }
+      final picked = asText(answer['model']);
+      if (!AgentTool.forced(this) && picked != null && picked != next.model) {
+        next = AgentTool.assignmentFor(this, original.agent, picked);
+      }
+    }
+    // Even on the same model a confirmed retry is a new run with its own
+    // cancellation, run counters and prompt. The old transcript is kept.
+    subagents.remove(agentId);
+    final fresh = original.retryJob(next, toolUseId);
+    return fresh.retry(task, next, toolUseId);
+  }
 
   /// The prompts scheduled for later (CronCreate, ScheduleWakeup).
   late final Scheduler scheduler = Scheduler(cwd: cwd);

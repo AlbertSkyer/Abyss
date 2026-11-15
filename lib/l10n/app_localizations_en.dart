@@ -3153,6 +3153,81 @@ class AppLocalizationsEn extends AppLocalizations {
   String get interactionExpand => 'Expand';
 
   @override
+  String get agentApprovalTitle => 'Run a subagent?';
+
+  @override
+  String get agentRetryTitle => 'Retry this subagent?';
+
+  @override
+  String get agentRetryConfirm => 'Retry agent';
+
+  @override
+  String get agentApprovalDescription => 'Task';
+
+  @override
+  String get agentApprovalPrompt => 'Instructions';
+
+  @override
+  String get agentApprovalModel => 'Model';
+
+  @override
+  String get agentApprovalConfirm => 'Start agent';
+
+  @override
+  String get agentApprovalBackground => 'It runs in the background.';
+
+  @override
+  String agentApprovalForced(String model) {
+    return 'Every subagent runs on $model, set by CLAUDE_CODE_SUBAGENT_MODEL_FORCE.';
+  }
+
+  @override
+  String get sidePanelAgents => 'Agents';
+
+  @override
+  String get sidePanelAgentsEmpty => 'No subagents yet.';
+
+  @override
+  String get sidePanelAgentTasks => 'Subagent tasks';
+
+  @override
+  String get sidePanelAgentRunning => 'Running';
+
+  @override
+  String get sidePanelAgentQueued => 'Queued';
+
+  @override
+  String get sidePanelAgentInterrupted => 'Interrupted';
+
+  @override
+  String get sidePanelAgentCancelled => 'Cancelled';
+
+  @override
+  String get sidePanelAgentRetry => 'Retry';
+
+  @override
+  String get sidePanelAgentRetryUnsupported =>
+      'Retry is unavailable for this Claude Code CLI session. Ask the agent to retry in the conversation instead.';
+
+  @override
+  String get sidePanelAgentDone => 'Done';
+
+  @override
+  String get sidePanelAgentFailed => 'Failed';
+
+  @override
+  String get sidePanelAgentUnread => 'Unread';
+
+  @override
+  String get sidePanelAgentPrompt => 'Asked';
+
+  @override
+  String get sidePanelAgentModel => 'Model';
+
+  @override
+  String get sidePanelAgentResult => 'Report';
+
+  @override
   String interactionMoreLines(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -7410,6 +7485,50 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get modelsAuxiliaryBuiltin =>
       'Claude Code Haiku (this machine\'s setup)';
+
+  @override
+  String get modelsSubagentPool => 'Subagent Model Pool';
+
+  @override
+  String get modelsSubagentPoolDescription =>
+      'Models to hand to subagents launched together, in order. They are taken in turn (round-robin, wrapping around) when the call names no model, its definition names none, and no subagent model is configured; forced or explicit models still win. BaoCode\'s own core applies the pool; the Claude Code CLI does not.';
+
+  @override
+  String get modelsSubagentPoolEmpty => 'No models picked yet.';
+
+  @override
+  String get modelsSubagentPoolAdd => 'Add Models…';
+
+  @override
+  String get modelsSubagentPoolAddDescription =>
+      'Choose from the models configured in your upstreams.';
+
+  @override
+  String get modelsSubagentPoolMoveUp => 'Move Up';
+
+  @override
+  String get modelsSubagentPoolMoveDown => 'Move Down';
+
+  @override
+  String get modelsSubagentPoolRemove => 'Remove from Pool';
+
+  @override
+  String get modelsSubagentPoolMissing => 'Not configured';
+
+  @override
+  String get modelsSubagentPoolMissingTooltip =>
+      'This upstream or model is no longer configured. It stays in the pool until you remove it.';
+
+  @override
+  String get modelsSubagentPoolDialogTitle => 'Add Models to the Subagent Pool';
+
+  @override
+  String get modelsSubagentPoolDialogDescription =>
+      'Models are added in the order listed. Use Move Up and Move Down in the pool to change that order.';
+
+  @override
+  String get modelsSubagentPoolNoModels =>
+      'Every configured model is already in the pool.';
 
   @override
   String get settingsSectionUpdates => 'Updates';

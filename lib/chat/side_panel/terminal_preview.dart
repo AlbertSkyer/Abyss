@@ -223,6 +223,7 @@ class _TerminalPreviewState extends State<TerminalPreview> {
       ),
       CommandStatus.succeeded => l10n.sidePanelTaskCompleted,
       CommandStatus.failed => l10n.sidePanelTaskFailed,
+      CommandStatus.interrupted => l10n.sidePanelAgentInterrupted,
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
