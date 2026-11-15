@@ -5528,6 +5528,12 @@ abstract class AppLocalizations {
   /// **'Every subagent runs on {model}, set by CLAUDE_CODE_SUBAGENT_MODEL_FORCE.'**
   String agentApprovalForced(String model);
 
+  /// No description provided for @agentApprovalBound.
+  ///
+  /// In en, this message translates to:
+  /// **'This member keeps its bound model: {model}. To use another model, create a replacement member.'**
+  String agentApprovalBound(String model);
+
   /// No description provided for @sidePanelAgents.
   ///
   /// In en, this message translates to:
@@ -23106,6 +23112,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not done: {error}'**
   String settingsTransferFailed(String error);
+
+  /// No description provided for @generalSettingsAutoDispatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically dispatch and select models'**
+  String get generalSettingsAutoDispatch;
+
+  /// No description provided for @generalSettingsAutoDispatchDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Dispatches tasks only to models in the allowed pool, without asking you to confirm each subtask. When off, both new and continued tasks require manual confirmation. Permissions for dangerous tools are unchanged.'**
+  String get generalSettingsAutoDispatchDescription;
 
   /// No description provided for @generalSettingsSidebarAgentTasks.
   ///

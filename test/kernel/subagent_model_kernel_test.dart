@@ -10,6 +10,7 @@ import 'package:baocode/kernel/transcript.dart';
 import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
 import 'package:baocode/platform/app_edition.dart';
+import 'package:baocode/settings/abyss_workbench_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli;
@@ -37,6 +38,9 @@ const _second = ModelProvider(
 const _providers = [_first, _second];
 
 void main() {
+  final automatic = AbyssWorkbenchSettings.automatic;
+  setUp(() => AbyssWorkbenchSettings.automatic = () => false);
+  tearDown(() => AbyssWorkbenchSettings.automatic = automatic);
   test('Abyss routes selected pool models through CLI aliases without changing agent type', () async {
     final providers = ModelProviders.memory(providers: _providers);
     await providers.setSubagentPool(['@fx/gpt-6.1-sol', '@ap/gpt-6.1-sol']);
@@ -98,6 +102,78 @@ void main() {
       'model': 'opus',
     });
   }, skip: !AppEdition.isAbyss);
+
+  test(
+    'automatic dispatch validates the parent choice without a dialog',
+    () async {
+      AbyssWorkbenchSettings.automatic = () => true;
+      final providers = ModelProviders.memory(providers: _providers);
+      await providers.setSubagentPool(['@fx/gpt-6.1-sol', '@ap/gpt-6.1-sol']);
+      final cli = FakeCli();
+      final kernel = ClaudeCodeKernel(
+        MockKernels.claudeCode,
+        const KernelContext(cwd: '/p', settings: {'model': '@fx/gpt-6.1-sol'}),
+        start: (_) async => cli,
+        providers: providers,
+        providerEnvironment: (_, model) async => {'ANTHROPIC_MODEL': model},
+      );
+      addTearDown(kernel.dispose);
+      final transcript = Transcript();
+      kernel.events.listen(transcript.apply);
+      kernel.prepare();
+      await pumpEventQueue(times: 20);
+      void hook(String id, String? model) => cli.push({
+        'type': 'control_request',
+        'request_id': id,
+        'request': {
+          'subtype': 'hook_callback',
+          'callback_id': 'baocode-approve-agent',
+          'input': {
+            'tool_name': 'Agent',
+            'tool_use_id': id,
+            'tool_input': {
+              'description': 'Independent analysis',
+              'prompt': 'Read only',
+              'subagent_type': 'general-purpose',
+              'model': ?model,
+            },
+          },
+        },
+      });
+      hook('allowed', '@ap/gpt-6.1-sol');
+      await pumpEventQueue();
+      expect(transcript.pendingInteraction, isNull);
+      Map output() =>
+          ((cli.written.lastWhere(
+                        (m) => m['type'] == 'control_response',
+                      )['response']
+                      as Map)['response']
+                  as Map)['hookSpecificOutput']
+              as Map;
+      expect(output()['permissionDecision'], 'allow');
+      expect((output()['updatedInput'] as Map)['model'], 'opus');
+      hook('missing-choice', null);
+      await pumpEventQueue();
+      expect(output()['permissionDecision'], 'deny');
+      hook('outside-pool', '@unknown/model');
+      await pumpEventQueue();
+      expect(output()['permissionDecision'], 'deny');
+      hook('slot-two', 'opus');
+      hook('slot-three', 'opus');
+      await pumpEventQueue();
+      expect(output()['permissionDecision'], 'allow');
+      hook('slot-four', 'opus');
+      await pumpEventQueue();
+      expect(output()['permissionDecision'], 'deny');
+      AbyssWorkbenchSettings.automatic = () => false;
+      hook('manual', '@ap/gpt-6.1-sol');
+      await pumpEventQueue();
+      expect(transcript.pendingInteraction, isA<AgentApprovalRequest>());
+      AbyssWorkbenchSettings.automatic = () => true;
+      expect(transcript.pendingInteraction, isNotNull);
+    },
+    skip: !AppEdition.isAbyss,
+  );
 
   test('a subagent\'s model, a bare id, is the upstream\'s the session is '
       'on, not the first with a model of that id', () async {

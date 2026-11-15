@@ -19,6 +19,7 @@ import '../../platform/app_edition.dart';
 import '../../remote/port_forwards.dart';
 import '../../remote/remote_location.dart';
 import '../../settings/user_settings.dart';
+import '../../settings/abyss_workbench_settings.dart';
 import '../../usage/claude_usage_meter.dart';
 import '../../usage/usage_ledger.dart';
 import '../../workspace/editor_launcher.dart' show openExternal;
@@ -854,6 +855,7 @@ class ClaudeCodeKernel
   }
 
   void _teardown({bool answering = true}) {
+    _dispatchReservations.clear();
     _translator.hostAgentApprovals = false;
     _usage?.close();
     _usage = null;
@@ -1170,6 +1172,8 @@ class ClaudeCodeKernel
                 },
               },
             ],
+            if (AppEdition.isAbyss)
+              {'type': 'text', 'text': _dispatchContext()},
             for (final note in turn.notes) {'type': 'text', 'text': note},
             if (ask)
               {'type': 'text', 'text': _askNote}
@@ -1251,7 +1255,10 @@ class ClaudeCodeKernel
       emit(InteractionResolved(nextSeq, id));
       if (permission.agent && permission.hook) {
         if (permission.toolUseId case final toolUseId?) {
-          _cancelAgentStart(toolUseId);
+          _cancelAgentStart(
+            toolUseId,
+            continuation: permission.continuation ? permission.input : null,
+          );
         }
       }
       if (answer && permission.agent && _control != null && _running) {
@@ -1821,6 +1828,7 @@ class ClaudeCodeKernel
       if (permission.hook) {
         final alias = _cliAgentModels[picked] ?? picked;
         final validModel =
+            permission.continuation ||
             alias == null ||
             alias.isEmpty ||
             const {'sonnet', 'opus', 'haiku', 'fable'}.contains(alias);
@@ -1839,6 +1847,7 @@ class ClaudeCodeKernel
                 ? 'Approved by the user in Abyss.'
                 : '$message The subagent was not started.',
             if (hookAllowed &&
+                !permission.continuation &&
                 alias != null &&
                 alias.isNotEmpty &&
                 alias != permission.input['model'])
@@ -1847,7 +1856,10 @@ class ClaudeCodeKernel
         });
         if (!hookAllowed) {
           if (permission.toolUseId case final toolUseId?) {
-            _cancelAgentStart(toolUseId);
+            _cancelAgentStart(
+              toolUseId,
+              continuation: permission.continuation ? permission.input : null,
+            );
           }
         }
       } else {
@@ -1907,6 +1919,47 @@ class ClaudeCodeKernel
     });
   }
 
+  String _dispatchContext() {
+    final pool = [
+      for (final ref in _cliAgentModels.keys)
+        if (_providers.hasSubagentModel(ref)) ref,
+    ];
+    final members = _sessionId == null
+        ? <AgentMemberRecord>[]
+        : _taskLedger?.membersFor(_sessionId!) ?? <AgentMemberRecord>[];
+    return '<system-reminder>Abyss dispatch mode: '
+        '${AbyssWorkbenchSettings.automatic() ? 'automatic' : 'manual approval'}. '
+        'Allowed child models supported by this CLI session: ${jsonEncode(pool)}. '
+        'CLI model aliases: ${jsonEncode({for (final ref in pool) ref: _cliAgentModels[ref]})}. '
+        'For a new Agent call, select a pool entry based on task fit and put its '
+        'listed alias into Agent.model (the CLI schema accepts aliases, not full refs). Do not choose outside '
+        'this list or invent model capabilities from names. If no model is available, '
+        'work yourself or report the limitation; do not repeatedly retry rejected calls. '
+        'Prefer an existing related idle member via SendMessage; keep its bound model. '
+        'Member inventory: ${jsonEncode([
+          for (final m in members) {'id': m.cliAgentId, 'description': m.description, 'model': m.model, 'stopped': _taskLedger!.tasksFor(_sessionId!).any((t) => t.memberId == m.memberId && (t.hostStopped || t.hostCancelled))},
+        ])}. Never resume a user-stopped member or create a replacement to bypass '
+        'a stop. Dispatch creates work; closing a display does not stop it. '
+        'Tool permissions remain unchanged.</system-reminder>';
+  }
+
+  void _denyDispatch(String requestId, String reason) {
+    _control?.respond(requestId, {
+      'hookSpecificOutput': {
+        'hookEventName': 'PreToolUse',
+        'permissionDecision': 'deny',
+        'permissionDecisionReason': reason,
+      },
+    });
+    emit(
+      ItemUpserted(
+        nextSeq,
+        'dispatch:$requestId',
+        NoticeItem(NoticeKind.warning, reason),
+      ),
+    );
+  }
+
   /// A child agent (Agent/Task) about to start: put to the user with what
   /// it is to do and the model it would run on. The core waits for the
   /// answer before it makes the child. With no one there to ask (a bot's),
@@ -1921,7 +1974,24 @@ class ClaudeCodeKernel
     if (control == null) return;
     final input =
         (request['tool_input'] as Map?)?.cast<String, Object?>() ?? request;
-    final model = '${input['model'] ?? request['model'] ?? ''}';
+    final continuation = hook && request['tool_name'] == 'SendMessage';
+    if (hook && _taskLedger == null) {
+      _denyDispatch(
+        requestId,
+        'Task state is unavailable; no child was started.',
+      );
+      return;
+    }
+    final recipient = '${input['to'] ?? input['recipient'] ?? ''}';
+    final member = continuation && _sessionId != null
+        ? _taskLedger
+              ?.membersFor(_sessionId!)
+              .where((m) => m.cliAgentId == recipient)
+              .firstOrNull
+        : null;
+    final model = continuation
+        ? member?.model ?? ''
+        : '${input['model'] ?? request['model'] ?? ''}';
     final assigned = hook
         ? _cliAgentModels.entries
                   .where((entry) => entry.value == model)
@@ -1929,7 +1999,9 @@ class ClaudeCodeKernel
                   ?.key ??
               model
         : model;
-    final models = hook
+    final models = continuation
+        ? (model.isEmpty ? <String>[] : [model])
+        : hook
         ? (_cliAgentModels.isNotEmpty
               ? _cliAgentModels.keys.toList()
               : const ['sonnet', 'opus', 'haiku', 'fable'])
@@ -1957,10 +2029,109 @@ class ClaudeCodeKernel
         (hook && _launched?.env?[ClaudeModelVariables.subagentForce] == '1');
     final shownModel = forced && hook
         ? (_launched?.env?[ClaudeModelVariables.subagent] ?? model)
-        : hook && !models.contains(assigned)
+        : hook && models.isNotEmpty && !models.contains(assigned)
         ? models.first
         : assigned;
-    final description = '${input['description'] ?? ''}';
+    final description = '${input['description'] ?? input['summary'] ?? ''}';
+    if (hook && continuation && member == null) {
+      _denyDispatch(requestId, 'Unknown member; no continuation was started.');
+      return;
+    }
+    if (hook &&
+        continuation &&
+        _sessionId != null &&
+        (_taskLedger
+                ?.tasksFor(_sessionId!)
+                .any(
+                  (task) =>
+                      task.memberId == member!.memberId &&
+                      (task.hostCancelled || task.hostStopped),
+                ) ??
+            false)) {
+      _denyDispatch(
+        requestId,
+        'This member was stopped by the user; it cannot be resumed automatically.',
+      );
+      return;
+    }
+    if (hook &&
+        continuation &&
+        _sessionId != null &&
+        (_taskLedger!
+            .tasksFor(_sessionId!)
+            .any(
+              (t) =>
+                  t.memberId == member!.memberId &&
+                  t.status == AgentTaskStatus.running,
+            ))) {
+      _denyDispatch(
+        requestId,
+        'This member is still running; wait for its report before sending more work.',
+      );
+      return;
+    }
+    if (hook && AbyssWorkbenchSettings.automatic()) {
+      // Never choose the first alias merely because the model omitted its
+      // choice. The parent receives the pool inventory in its turn context.
+      final picked = continuation ? model : (assigned.isEmpty ? '' : assigned);
+      final ref = _cliAgentModels.containsKey(picked) ? picked : null;
+      final entry = ref == null ? null : _providers.resolveSubagentModel(ref);
+      if (ref == null ||
+          !_providers.hasSubagentModel(ref) ||
+          entry?.provider?.enabled != true ||
+          entry?.model?.enabled != true ||
+          entry?.model?.missing == true ||
+          forced) {
+        _denyDispatch(
+          requestId,
+          'Automatic dispatch requires a model explicitly selected from the available pool. No task was started.',
+        );
+        return;
+      }
+      final running = _sessionId == null
+          ? <AgentTaskRecord>[]
+          : _taskLedger!
+                .tasksFor(_sessionId!)
+                .where((task) => task.status == AgentTaskStatus.running)
+                .toList();
+      if (running.length + _dispatchReservations.length >= 3 ||
+          (continuation &&
+              running.any((task) => task.memberId == member!.memberId))) {
+        _denyDispatch(
+          requestId,
+          'No dispatch slot is available. Wait for a running task to finish; do not create a replacement.',
+        );
+        return;
+      }
+      final call = request['tool_use_id'] as String?;
+      if (call == null) {
+        _denyDispatch(
+          requestId,
+          'CLI did not identify this dispatch; no task was started.',
+        );
+        return;
+      }
+      _dispatchReservations.add(call);
+      final alias = _cliAgentModels[ref]!;
+      control.respond(requestId, {
+        'hookSpecificOutput': {
+          'hookEventName': 'PreToolUse',
+          'permissionDecision': 'allow',
+          if (!continuation) 'updatedInput': {...input, 'model': alias},
+        },
+      });
+      emit(
+        ItemUpserted(
+          nextSeq,
+          'dispatch:$requestId',
+          NoticeItem(
+            NoticeKind.info,
+            'Dispatched ${continuation ? 'to existing member' : 'new task'}: $description · $ref. Main model unchanged.',
+          ),
+        ),
+      );
+      return;
+    }
     _permissions[requestId] = _Permission(
       input,
       const [],
@@ -1968,21 +2139,31 @@ class ClaudeCodeKernel
       agent: true,
       hook: hook,
       toolUseId: (input['tool_use_id'] ?? request['tool_use_id']) as String?,
+      continuation: continuation,
     );
     emit(
       InteractionRequested(
         nextSeq,
         AgentApprovalRequest(
           id: requestId,
-          title: retry ? 'Retry this subagent?' : 'Run a subagent?',
+          title: continuation
+              ? 'Continue this member?'
+              : retry
+              ? 'Retry this subagent?'
+              : 'Run a subagent?',
           toolName: '${input['tool_name'] ?? request['tool_name'] ?? 'Agent'}',
           description: description,
-          prompt: '${input['prompt'] ?? ''}',
+          prompt:
+              '${input['prompt'] ?? input['message'] ?? input['content'] ?? ''}',
           agentType: '${input['subagent_type'] ?? ''}',
           model: shownModel,
           models: forced ? const [] : (models.isEmpty ? [model] : models),
-          modelSource: hook ? 'cli-alias' : '${request['model_source'] ?? ''}',
-          forced: forced,
+          modelSource: continuation
+              ? 'member-bound'
+              : hook
+              ? 'cli-alias'
+              : '${request['model_source'] ?? ''}',
+          forced: forced || continuation,
           background: input['run_in_background'] == true,
           retry: retry,
         ),
@@ -2192,6 +2373,7 @@ class ClaudeCodeKernel
   final Map<String, String> _memberCalls = {};
   final Map<String, String> _memberCards = {};
   final Map<String, String> _activeCardCalls = {};
+  final Set<String> _dispatchReservations = {};
 
   Future<void> _loadTaskLedger(Future<AgentTaskLedger>? injected) async {
     if (!AppEdition.isAbyss || RemoteLocation.isRemote(_cwd)) return;
@@ -2253,9 +2435,25 @@ class ClaudeCodeKernel
     // member's reused card, which may still show the preceding run's result.
   }
 
-  void _cancelAgentStart(String call) {
+  void _cancelAgentStart(String call, {Map<String, Object?>? continuation}) {
     if (_sessionId case final session?) {
       _taskLedger?.cancelStart(session, call);
+      final recipient = continuation?['to'] ?? continuation?['recipient'];
+      final member = _taskLedger
+          ?.membersFor(session)
+          .where((m) => m.cliAgentId == recipient)
+          .firstOrNull;
+      if (member != null) {
+        // The cancelled continuation has its own call, but belongs to the
+        // existing member; this records no CLI run and preserves cancellation.
+        _taskLedger!.recordStart(
+          sessionId: session,
+          toolUseId: call,
+          memberId: member.memberId,
+          taskId: 'task:$call',
+          description: continuation?['summary'] as String?,
+        );
+      }
     }
     _translator.cancelAgentStart(call);
   }
@@ -2270,6 +2468,7 @@ class ClaudeCodeKernel
       final agentId = message['task_id'] as String?;
       final call = message['tool_use_id'] as String?;
       if (agentId == null || call == null) return;
+      _dispatchReservations.remove(call);
       _memberCalls[agentId] = call;
       final card = _memberCards.putIfAbsent(agentId, () => call);
       _activeCardCalls[card] = call;
@@ -2327,6 +2526,16 @@ class ClaudeCodeKernel
   void _receive(Map<String, Object?> message) {
     if (_control?.receive(message) ?? false) return;
     _recordAgentTask(message);
+    if (message['type'] == 'user' && message['message'] is Map) {
+      final content = (message['message'] as Map)['content'];
+      if (content is List) {
+        for (final block in content.whereType<Map>()) {
+          if (block['type'] == 'tool_result' && block['is_error'] == true) {
+            _dispatchReservations.remove(block['tool_use_id']);
+          }
+        }
+      }
+    }
     _usage?.receive(message);
     if (message['type'] == 'stream_event') {
       final told = _toldContext;
@@ -2503,7 +2712,7 @@ class ClaudeCodeKernel
           // Agent is the wire tool name, even when the CLI reports Task in
           // its init list. This is before the child is made, unlike
           // SubagentStart. Do not let an unanswered callback start it.
-          'matcher': 'Agent|Task',
+          'matcher': 'Agent|Task|SendMessage',
           'hookCallbackIds': [_approveAgent],
           'onFailure': 'block',
           'timeout': 3600,
@@ -4440,6 +4649,7 @@ class _Permission {
     this.agent = false,
     this.hook = false,
     this.toolUseId,
+    this.continuation = false,
   });
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
@@ -4452,6 +4662,7 @@ class _Permission {
 
   /// An external CLI's PreToolUse hook, answered in its own protocol.
   final bool hook;
+  final bool continuation;
 
   /// The Agent call awaiting that hook, to carry its denial into the
   /// conversation's cancellation state.

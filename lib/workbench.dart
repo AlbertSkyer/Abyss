@@ -68,6 +68,7 @@ import 'ide/ide_chat_title.dart';
 import 'ide/ide_color_theme_picker.dart';
 import 'ide/ide_commands.dart';
 import 'ide/ide_dialog.dart';
+import 'ide/ide_hover.dart';
 import 'ide/ide_menu.dart';
 import 'models/model_welcome.dart';
 import 'models/upstream_import.dart';
@@ -106,6 +107,8 @@ import 'platform/shell_command.dart';
 import 'search/conversation_search.dart';
 import 'search/search_palette.dart';
 import 'settings/app_settings.dart';
+import 'settings/abyss_workbench_settings.dart';
+import 'settings/user_settings.dart';
 import 'settings/data_dir_startup.dart';
 import 'settings/jsonc_file.dart';
 import 'settings/pages/diagnostics_dialog.dart';
@@ -4872,6 +4875,24 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
             style: TextStyle(color: color, fontSize: 11.5),
           ),
         ),
+        if (AppEdition.isAbyss) ...[
+          const SizedBox(width: 6),
+          ListenableBuilder(
+            listenable: SettingsFiles.instance.settings,
+            builder: (context, _) => IdeHover(
+              message:
+                  '${context.l10n.generalSettingsAutoDispatch}: '
+                  '${AbyssWorkbenchSettings.automatic() ? context.l10n.updateModeDefault : context.l10n.updateModeManual}',
+              child: Icon(
+                AbyssWorkbenchSettings.automatic()
+                    ? Icons.auto_awesome
+                    : Icons.pan_tool_outlined,
+                size: 12,
+                color: color,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

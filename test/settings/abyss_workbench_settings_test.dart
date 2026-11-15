@@ -124,6 +124,65 @@ void main() {
     expect(AbyssWorkbenchSettings.parse(false), !AppEdition.isAbyss);
   });
 
+  test('automatic dispatch defaults on and only false disables it', () {
+    expect(AbyssWorkbenchSettings.autoDispatchKey, 'abyss.agents.autoDispatch');
+    expect(AbyssWorkbenchSettings.parseAuto(null), AppEdition.isAbyss);
+    expect(AbyssWorkbenchSettings.parseAuto(true), AppEdition.isAbyss);
+    expect(AbyssWorkbenchSettings.parseAuto(false), isFalse);
+    expect(AbyssWorkbenchSettings.parseAuto('false'), AppEdition.isAbyss);
+  });
+
+  test('automatic dispatch reads current settings and has a test seam', () {
+    expect(AbyssWorkbenchSettings.automatic(), AppEdition.isAbyss);
+    final original = AbyssWorkbenchSettings.automatic;
+    addTearDown(() => AbyssWorkbenchSettings.automatic = original);
+    AbyssWorkbenchSettings.automatic = () => false;
+    expect(AbyssWorkbenchSettings.automatic(), isFalse);
+  });
+
+  testWidgets('Abyss automatic dispatch switch writes false and removes on', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GeneralSettingsPage(settings: files.settings)),
+      ),
+    );
+    await tester.pump();
+    final label = find.text('Automatically dispatch and select models');
+    expect(label, findsOneWidget);
+    expect(
+      find.textContaining('Permissions for dangerous tools are unchanged.'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(label);
+    await tester.runAsync(() async {
+      await tester.tap(label);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
+    expect(AbyssWorkbenchSettings.automatic(), isFalse);
+
+    await tester.ensureVisible(label);
+    await tester.runAsync(() async {
+      await tester.tap(label);
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (files.settings[AbyssWorkbenchSettings.autoDispatchKey] != null &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pump();
+    expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isNull);
+    expect(AbyssWorkbenchSettings.automatic(), AppEdition.isAbyss);
+
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !AppEdition.isAbyss);
+
   testWidgets('Abyss persists the switch and only filters task rows', (
     tester,
   ) async {

@@ -9,6 +9,7 @@ import 'package:baocode/kernel/claude_code/agent_task_ledger.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/mock/mock_kernels.dart';
 import 'package:baocode/platform/app_edition.dart';
+import 'package:baocode/settings/abyss_workbench_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli;
@@ -47,6 +48,9 @@ Map<String, Object?> result(String id, {bool error = true}) => {
 };
 
 void main() {
+  final automatic = AbyssWorkbenchSettings.automatic;
+  setUp(() => AbyssWorkbenchSettings.automatic = () => false);
+  tearDown(() => AbyssWorkbenchSettings.automatic = automatic);
   group('Abyss durable host task decisions', skip: !AppEdition.isAbyss, () {
     late Directory directory;
     late AgentTaskLedger ledger;
@@ -202,6 +206,130 @@ void main() {
         AgentTaskStatus.interrupted,
       );
     });
+
+    test(
+      'manual member continuation is gated and cannot change its model',
+      () async {
+        ledger.recordMember(
+          sessionId: 'resume-team',
+          memberId: 'm',
+          cliAgentId: 'cli-m',
+          model: '@p/model',
+        );
+        ledger.recordStart(
+          sessionId: 'resume-team',
+          toolUseId: 'old',
+          memberId: 'm',
+          taskId: 'old-run',
+        );
+        ledger.recordEnd(
+          'resume-team',
+          'old',
+          status: AgentTaskStatus.completed,
+        );
+        final cli = FakeCli();
+        final kernel = ClaudeCodeKernel(
+          MockKernels.claudeCode,
+          KernelContext(
+            cwd: '/p',
+            resume: SessionRecord(
+              id: 'resume-team',
+              title: 'Team',
+              updatedAt: DateTime(2026),
+              cwd: '/p',
+            ),
+          ),
+          start: (_) async => cli,
+          taskLedger: Future.value(ledger),
+        );
+        final transcript = Transcript();
+        kernel.events.listen(transcript.apply);
+        kernel.prepare();
+        await pumpEventQueue();
+        cli.push({
+          'type': 'control_request',
+          'request_id': 'continue',
+          'request': {
+            'subtype': 'hook_callback',
+            'callback_id': 'baocode-approve-agent',
+            'input': {
+              'tool_name': 'SendMessage',
+              'tool_use_id': 'continue-call',
+              'tool_input': {
+                'to': 'cli-m',
+                'message': 'Continue read only',
+                'summary': 'Continue',
+              },
+            },
+          },
+        });
+        await pumpEventQueue();
+        final request = transcript.pendingInteraction as AgentApprovalRequest;
+        expect(request.prompt, 'Continue read only');
+        expect(request.forced, isTrue);
+        kernel.answer(
+          request.id,
+          const ApprovalAnswer(
+            ApprovalDecision.allowOnce,
+            model: '@wrong/model',
+          ),
+        );
+        final output =
+            ((cli.written.last['response'] as Map)['response']
+                    as Map)['hookSpecificOutput']
+                as Map;
+        expect(output['permissionDecision'], 'allow');
+        expect(output.containsKey('updatedInput'), isFalse);
+        cli.push({
+          'type': 'control_request',
+          'request_id': 'denied-continuation',
+          'request': {
+            'subtype': 'hook_callback',
+            'callback_id': 'baocode-approve-agent',
+            'input': {
+              'tool_name': 'SendMessage',
+              'tool_use_id': 'cancelled-continuation',
+              'tool_input': {
+                'to': 'cli-m',
+                'message': 'New work',
+                'summary': 'New work',
+              },
+            },
+          },
+        });
+        await pumpEventQueue();
+        kernel.answer(
+          'denied-continuation',
+          const ApprovalAnswer(ApprovalDecision.deny),
+        );
+        expect(
+          ledger.findTask('resume-team', 'cancelled-continuation')!.memberId,
+          'm',
+        );
+        AbyssWorkbenchSettings.automatic = () => true;
+        cli.push({
+          'type': 'control_request',
+          'request_id': 'blocked-resume',
+          'request': {
+            'subtype': 'hook_callback',
+            'callback_id': 'baocode-approve-agent',
+            'input': {
+              'tool_name': 'SendMessage',
+              'tool_input': {'to': 'cli-m', 'message': 'Retry'},
+            },
+          },
+        });
+        await pumpEventQueue();
+        final blocked =
+            ((cli.written.last['response'] as Map)['response']
+                    as Map)['hookSpecificOutput']
+                as Map;
+        expect(blocked['permissionDecision'], 'deny');
+        expect('${blocked['permissionDecisionReason']}', contains('stopped'));
+        kernel.dispose();
+        await kernel.stopped;
+      },
+    );
 
     test('task stop keeps its decision when CLI reports failed', () async {
       final cli = FakeCli();

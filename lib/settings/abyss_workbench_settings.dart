@@ -10,6 +10,16 @@ import 'user_settings.dart';
 /// untouched, and the conversation's own task views are unaffected.
 abstract final class AbyssWorkbenchSettings {
   static const sidebarAgentTasksKey = 'abyss.sidebar.showAgentTasks';
+  static const autoDispatchKey = 'abyss.agents.autoDispatch';
+
+  /// On for Abyss unless explicitly disabled. Model choice is still limited
+  /// to the allowed pool; this does not change dangerous-tool permissions.
+  static bool parseAuto(Object? value) => AppEdition.isAbyss && value != false;
+
+  /// Read by the kernel whenever a new or continued task is dispatched.
+  /// Tests can replace this without attaching a settings file.
+  static bool Function() automatic = () =>
+      parseAuto(SettingsFiles.instance.settings[autoDispatchKey]);
 
   /// Set by [attach]; a notifier keeps this a display-only concern of the
   /// sidebar rather than adding workspace or session state.

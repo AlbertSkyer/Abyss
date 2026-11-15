@@ -3209,6 +3209,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String agentApprovalBound(String model) {
+    return 'This member keeps its bound model: $model. To use another model, create a replacement member.';
+  }
+
+  @override
   String get sidePanelAgents => 'Agents';
 
   @override
@@ -14226,6 +14231,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String settingsTransferFailed(String error) {
     return 'Not done: $error';
   }
+
+  @override
+  String get generalSettingsAutoDispatch =>
+      'Automatically dispatch and select models';
+
+  @override
+  String get generalSettingsAutoDispatchDescription =>
+      'Dispatches tasks only to models in the allowed pool, without asking you to confirm each subtask. When off, both new and continued tasks require manual confirmation. Permissions for dangerous tools are unchanged.';
 
   @override
   String get generalSettingsSidebarAgentTasks =>

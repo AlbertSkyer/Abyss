@@ -2089,6 +2089,8 @@
       }
     }
   },
+  "agentApprovalBound": "This member keeps its bound model: {model}. To use another model, create a replacement member.",
+  "@agentApprovalBound": {"placeholders": {"model": {"type": "String"}}},
   "sidePanelAgents": "Agents",
   "sidePanelAgentsEmpty": "No subagents yet.",
   "sidePanelAgentTasks": "Subagent tasks",
@@ -8982,6 +8984,8 @@
   "settingsTransferNotAFile": "This is not a settings file Abyss exported.",
   "settingsTransferFailed": "Not done: {error}",
   "@settingsTransferFailed": {"placeholders": {"error": {"type": "String"}}},
+  "generalSettingsAutoDispatch": "Automatically dispatch and select models",
+  "generalSettingsAutoDispatchDescription": "Dispatches tasks only to models in the allowed pool, without asking you to confirm each subtask. When off, both new and continued tasks require manual confirmation. Permissions for dangerous tools are unchanged.",
   "generalSettingsSidebarAgentTasks": "Show subagent tasks in the sidebar",
   "generalSettingsSidebarAgentTasksDescription": "Shows each conversation's subagent tasks below it. Hiding them does not stop tasks or clear their history, unread state, folding or approvals.",
   "generalSettingsSessionTools": "Agents can coordinate other conversations",

@@ -3096,6 +3096,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String agentApprovalBound(String model) {
+    return '此成员继续使用绑定的模型：$model。如需更换模型，应创建替代成员。';
+  }
+
+  @override
   String get sidePanelAgents => '智能体';
 
   @override
@@ -13422,6 +13427,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String settingsTransferFailed(String error) {
     return '没能完成：$error';
   }
+
+  @override
+  String get generalSettingsAutoDispatch => '自动派工与选模';
+
+  @override
+  String get generalSettingsAutoDispatchDescription =>
+      '仅从允许的模型池派工，不弹子任务确认。关闭后，新建和续接都需手动确认，危险工具权限不变。';
 
   @override
   String get generalSettingsSidebarAgentTasks => '在侧边栏显示子代理任务';

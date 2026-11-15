@@ -6,6 +6,7 @@ import 'package:baocode/kernel/mock/mock_kernels.dart';
 import 'package:baocode/kernel/transcript.dart';
 import 'package:bao_remote/claude.dart' show ClaudeHistoryPage;
 import 'package:baocode/platform/app_edition.dart';
+import 'package:baocode/settings/abyss_workbench_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli, claude, recordedResponse;
@@ -14,6 +15,9 @@ import '../kernel_test.dart' show FakeCli, claude, recordedResponse;
 /// is to do, and the model it would run on. The answer's model goes back to
 /// the core with the leave; a denial starts nothing.
 void main() {
+  final automatic = AbyssWorkbenchSettings.automatic;
+  setUp(() => AbyssWorkbenchSettings.automatic = () => false);
+  tearDown(() => AbyssWorkbenchSettings.automatic = automatic);
   void ask(
     FakeCli cli, {
     String id = 'ask-1',
@@ -106,7 +110,7 @@ void main() {
         final hooks = cli.requests('initialize').single['hooks'] as Map;
         final before = hooks['PreToolUse'] as List;
         final agent = before.singleWhere(
-          (hook) => (hook as Map)['matcher'] == 'Agent|Task',
+          (hook) => (hook as Map)['matcher'] == 'Agent|Task|SendMessage',
         ) as Map;
         expect(agent['onFailure'], 'block');
         askHook(cli);

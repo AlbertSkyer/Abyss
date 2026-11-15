@@ -745,7 +745,9 @@ class _AgentApprovalCardState extends State<_AgentApprovalCard> {
                 label: l10n.agentApprovalModel,
                 child: request.forced
                     ? Text(
-                        l10n.agentApprovalForced(_label(request.model)),
+                        request.modelSource == 'member-bound'
+                            ? l10n.agentApprovalBound(_label(request.model))
+                            : l10n.agentApprovalForced(_label(request.model)),
                         style: TextStyle(
                           color: AppColors.textMuted,
                           fontSize: 12,

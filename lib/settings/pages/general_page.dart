@@ -397,6 +397,18 @@ class GeneralSettingsPage extends StatelessWidget {
                 ),
                 if (AppEdition.isAbyss)
                   SettingsSwitchRow(
+                    label: l10n.generalSettingsAutoDispatch,
+                    description: l10n.generalSettingsAutoDispatchDescription,
+                    value: AbyssWorkbenchSettings.parseAuto(
+                      settings?[AbyssWorkbenchSettings.autoDispatchKey],
+                    ),
+                    onChanged: (on) => _write(
+                      AbyssWorkbenchSettings.autoDispatchKey,
+                      on ? null : false,
+                    ),
+                  ),
+                if (AppEdition.isAbyss)
+                  SettingsSwitchRow(
                     label: l10n.generalSettingsSidebarAgentTasks,
                     description:
                         l10n.generalSettingsSidebarAgentTasksDescription,
