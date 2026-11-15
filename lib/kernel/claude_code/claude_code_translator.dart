@@ -1998,6 +1998,7 @@ class ClaudeTranslator {
                 (managedAgent ? null : 'unsupported'),
             readOnly:
                 restored || _tasks[taskId]?.status == CommandStatus.interrupted,
+            result: restored ? _string(message['result']) : null,
             activity: restored
                 ? 'Restored read-only from the previous session; not restarted'
                 : queued

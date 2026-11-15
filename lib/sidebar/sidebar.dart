@@ -10,6 +10,7 @@ import '../base/smooth_scroll.dart';
 import '../chat/chat_keys.dart';
 import '../chat/composer/composer_mock_data.dart' show fuzzyMatch;
 import '../chat/floating/floating_placement.dart';
+import '../chat/chat_models.dart';
 import '../chat/widgets/hover_builder.dart';
 import '../chat/widgets/inline_rename_field.dart';
 import '../chat/widgets/pixel_loader.dart';
@@ -145,7 +146,9 @@ class _Spot {
 /// (shown on asking), or that all are and can be fewer again.
 typedef _Rows = ({List<AgentThread> threads, int more, bool less});
 
-enum _ListRowKind { header, thread, more, pinZone }
+typedef _AgentTreeEntry = ({AgentItem agent, List<String> path, int depth});
+
+enum _ListRowKind { header, thread, agentTaskHeader, agentTask, more, pinZone }
 
 /// Visible row data, independent of whether the list built its widget.
 class _ListRow {
@@ -157,6 +160,7 @@ class _ListRow {
     this.thread,
     this.more,
     this.aside = false,
+    this.task,
   });
 
   final _ListRowKind kind;
@@ -168,6 +172,9 @@ class _ListRow {
 
   /// Whether [thread] is an aside, under the one it was asked beside.
   final bool aside;
+
+  /// A read-only AgentItem; [thread] is its parent conversation.
+  final _AgentTreeEntry? task;
 }
 
 /// What the window asks of its sidebar, for the chat's keybindings: the
@@ -497,6 +504,92 @@ class _SidebarState extends State<Sidebar>
     ];
   }
 
+  /// Already loaded tasks only: opening every kept conversation here would
+  /// start its kernel and read its history merely to draw the sidebar.
+  List<_AgentTreeEntry> _agentTasks(AgentThread thread) =>
+      thread.isOpen ? thread.session.agentTree : const [];
+
+  bool _agentTasksFolded(AgentThread thread) =>
+      _workspace.agentTasksFolded(thread);
+
+  ThreadStatus _taskStatus(AgentThread thread) {
+    var result = ThreadStatus.idle;
+    if (!_agentTasksFolded(thread)) return result;
+    for (final entry in _agentTasks(thread)) {
+      final status = entry.agent.status == CommandStatus.running
+          ? ThreadStatus.running
+          : thread.session.agentUnread(entry.agent)
+          ? ThreadStatus.unread
+          : ThreadStatus.idle;
+      if (status.index < result.index) result = status;
+    }
+    return result;
+  }
+
+  void _openAgentTask(AgentThread thread, _AgentTreeEntry entry) {
+    _listFocus.requestFocus();
+    _clickedOpen = thread;
+    _open(thread);
+    thread.session.openAgentPath(entry.path);
+  }
+
+  Widget _buildAgentTaskHeader(AgentThread thread) {
+    final tasks = _agentTasks(thread);
+    final running = tasks
+        .where((entry) => entry.agent.status == CommandStatus.running)
+        .length;
+    final unread = tasks
+        .where((entry) => thread.session.agentUnread(entry.agent))
+        .length;
+    final folded = _agentTasksFolded(thread);
+    return IdeListRow(
+      height: _rowHeight,
+      onTap: () => _workspace.toggleAgentTasksFolded(thread),
+      builder: (context, hovered) => Padding(
+        padding: const EdgeInsets.only(left: 20, right: 10),
+        child: Row(
+          children: [
+            Icon(
+              folded ? Icons.chevron_right_rounded : Icons.expand_more_rounded,
+              size: 14,
+              color: AppColors.textFaint,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                context.l10n.sidePanelAgentTasks,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            ),
+            if (running > 0) ...[
+              SizedBox.square(
+                dimension: 12,
+                child: StatusIndicator(ThreadStatus.running),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$running',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            ],
+            if (unread > 0) ...[
+              const SizedBox(width: 6),
+              SizedBox.square(
+                dimension: 12,
+                child: StatusIndicator(ThreadStatus.unread),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$unread',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Whether [group] folds: not the only project's, which is all there is.
   bool _collapsible(_Group group) => group.project == null || _projectsShown;
 
@@ -512,6 +605,8 @@ class _SidebarState extends State<Sidebar>
         if (aside.shownStatus.index < status.index) status = aside.shownStatus;
       }
     }
+    final tasks = _taskStatus(thread);
+    if (tasks.index < status.index) status = tasks;
     return status;
   }
 
@@ -588,7 +683,8 @@ class _SidebarState extends State<Sidebar>
   }
 
   List<AgentThread> get _selectable => [
-    for (final row in _listRows) ?row.thread,
+    for (final row in _listRows)
+      if (row.kind == _ListRowKind.thread) ?row.thread,
   ];
 
   void _selectRange(AgentThread thread) =>
@@ -1686,6 +1782,31 @@ class _SidebarState extends State<Sidebar>
               ),
             );
           }
+          if (_agentTasks(thread).isNotEmpty) {
+            rows.add(
+              _ListRow(
+                _ListRowKind.agentTaskHeader,
+                group,
+                ValueKey(('agentTasks', thread)),
+                _rowHeight,
+                thread: thread,
+              ),
+            );
+          }
+          if (!_agentTasksFolded(thread)) {
+            for (final entry in _agentTasks(thread)) {
+              rows.add(
+                _ListRow(
+                  _ListRowKind.agentTask,
+                  group,
+                  ValueKey(('agentTask', thread, entry.path.join('/'))),
+                  _rowHeight,
+                  thread: thread,
+                  task: entry,
+                ),
+              );
+            }
+          }
         }
         if (shown.more > 0 || shown.less) {
           rows.add(
@@ -1707,7 +1828,8 @@ class _SidebarState extends State<Sidebar>
       _rowOffsets = offsets;
       _rowIndices = {for (final (index, row) in rows.indexed) row.key: index};
       _threadIndices = {
-        for (final (index, row) in rows.indexed) ?row.thread: index,
+        for (final (index, row) in rows.indexed)
+          if (row.kind == _ListRowKind.thread) ?row.thread: index,
       };
       // Another agent shown, opened from wherever (a new one, the search,
       // a shortcut): the rows picked follow it, not left on the one before.
@@ -1785,6 +1907,14 @@ class _SidebarState extends State<Sidebar>
                   row.thread!,
                   row.group,
                   aside: row.aside,
+                ),
+                _ListRowKind.agentTaskHeader => _buildAgentTaskHeader(
+                  row.thread!,
+                ),
+                _ListRowKind.agentTask => _AgentTaskRow(
+                  thread: row.thread!,
+                  entry: row.task!,
+                  onTap: () => _openAgentTask(row.thread!, row.task!),
                 ),
                 _ListRowKind.pinZone => _PinZone(
                   height: _rowHeight,
@@ -3948,6 +4078,65 @@ class _ThreadRow extends StatelessWidget {
         ),
       const GiveWay(SizedBox(width: 2)),
     ];
+  }
+}
+
+class _AgentTaskRow extends StatelessWidget {
+  const _AgentTaskRow({
+    required this.thread,
+    required this.entry,
+    required this.onTap,
+  });
+
+  final AgentThread thread;
+  final _AgentTreeEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final agent = entry.agent;
+    final unread = thread.session.agentUnread(agent);
+    final status = agent.status == CommandStatus.running
+        ? ThreadStatus.running
+        : unread
+        ? ThreadStatus.unread
+        : ThreadStatus.idle;
+    final label = switch (agent.status) {
+      CommandStatus.running => context.l10n.sidePanelAgentRunning,
+      CommandStatus.succeeded => context.l10n.sidePanelAgentDone,
+      CommandStatus.failed => context.l10n.sidePanelAgentFailed,
+      CommandStatus.interrupted => context.l10n.sidePanelAgentInterrupted,
+    };
+    return IdeListRow(
+      height: _SidebarState._rowHeight,
+      onTap: onTap,
+      builder: (context, hovered) => Padding(
+        padding: EdgeInsets.only(left: 24 + entry.depth * 14, right: 10),
+        child: Row(
+          children: [
+            SizedBox.square(dimension: 14, child: StatusIndicator(status)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                agent.description,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: unread ? AppColors.textPrimary : AppColors.textMuted,
+                  fontSize: 12,
+                  fontWeight: unread ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(color: AppColors.textFaint, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

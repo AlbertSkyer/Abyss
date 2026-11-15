@@ -14,6 +14,7 @@ import '../kernel/kernel_types.dart';
 import '../keybindings/chat_keybindings.dart';
 import '../l10n/l10n.dart';
 import '../models/model_welcome.dart';
+import '../platform/app_edition.dart';
 import '../remote/remote_location.dart';
 import '../remote/remote_status.dart' show ClaudeInstallBanner, SshHostBanner;
 import '../stash/stash_actions.dart';
@@ -41,6 +42,7 @@ import 'composer/composer_embeds.dart';
 import 'composer/composer_mock_data.dart';
 import 'composer/file_mentions.dart';
 import 'panels/activity_strip.dart';
+import 'panels/agent_approval_dialog.dart';
 import 'panels/health_banner.dart';
 import 'panels/interaction_panel.dart';
 import 'panels/limit_reset_panel.dart';
@@ -308,6 +310,10 @@ class ChatScreen extends StatefulWidget {
   }
 }
 
+/// One modal owner for a session, even when its chat is laid out again or
+/// shown in more than one pane while panes are rearranged.
+final Map<ChatSession, _ChatScreenState> _agentApprovalHosts = {};
+
 class _ChatScreenState extends State<ChatScreen>
     with TickerProviderStateMixin, ChatKeyTarget {
   /// As wide as the setting lets the column grow (see [ChatWidth]); in the
@@ -510,6 +516,11 @@ class _ChatScreenState extends State<ChatScreen>
     _planShown = _session.plan?.seq;
     _session.addListener(_followPlan);
     _session.addListener(_welcomeToModels);
+    _session.addListener(_syncAgentApproval);
+    if (AppEdition.isAbyss && widget.focused) {
+      _agentApprovalHosts.putIfAbsent(_session, () => this);
+      _syncAgentApproval();
+    }
     // The task board (side panel) opens a subagent here, in this view.
     _session.agentOpener = _opener;
     _restoreAgents();
@@ -526,6 +537,107 @@ class _ChatScreenState extends State<ChatScreen>
   void didUpdateWidget(ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     _wasStarting = _starting;
+    if (oldWidget.focused != widget.focused) {
+      if (widget.focused) {
+        _claimAgentApprovalHost();
+      } else {
+        _releaseAgentApprovalHost();
+      }
+    }
+  }
+
+  String? _approvalId;
+  bool _approvalShowing = false;
+  ModalRoute<AgentApprovalDialogResult>? _approvalRoute;
+
+  AgentApprovalRequest? get _agentApproval =>
+      switch (_session.pendingInteraction) {
+        final AgentApprovalRequest request when widget.focused => request,
+        _ => null,
+      };
+
+  void _claimAgentApprovalHost() {
+    if (!AppEdition.isAbyss) return;
+    final previous = _agentApprovalHosts[_session];
+    if (identical(previous, this)) return;
+    if (previous != null && previous.widget.focused) return;
+    _agentApprovalHosts[_session] = this;
+    previous?._closeAgentApproval();
+    _syncAgentApproval();
+  }
+
+  void _releaseAgentApprovalHost() {
+    if (identical(_agentApprovalHosts[_session], this)) {
+      _agentApprovalHosts.remove(_session);
+    }
+    _closeAgentApproval();
+  }
+
+  /// Follows the pending queue, never opening from build. An external answer
+  /// or a replacement only closes its own dialog; its old pop can then do
+  /// nothing to the next request.
+  void _syncAgentApproval() {
+    if (AppEdition.isAbyss &&
+        widget.focused &&
+        _agentApprovalHosts[_session] == null) {
+      _claimAgentApprovalHost();
+      return;
+    }
+    if (!AppEdition.isAbyss ||
+        !identical(_agentApprovalHosts[_session], this)) {
+      return;
+    }
+    final request = _agentApproval;
+    if (request == null || request.id != _approvalId) _closeAgentApproval();
+    if (request == null || _approvalShowing || _approvalId == request.id) {
+      return;
+    }
+    _approvalId = request.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !identical(_agentApprovalHosts[_session], this) ||
+          _approvalShowing ||
+          _approvalId != request.id ||
+          !identical(_session.pendingInteraction, request)) {
+        return;
+      }
+      _approvalShowing = true;
+      final navigator = Navigator.of(context, rootNavigator: true);
+      final route = DialogRoute<AgentApprovalDialogResult>(
+        context: context,
+        builder: (_) => AgentApprovalDialog(request: request),
+      );
+      _approvalRoute = route;
+      navigator.push(route).then((result) {
+        if (!identical(_approvalRoute, route)) return;
+        _approvalRoute = null;
+        _approvalShowing = false;
+        // A callback from a dialog which is no longer current answers nothing.
+        if (_approvalId != request.id ||
+            _session.pendingInteraction?.id != request.id ||
+            (result != null && result.requestId != request.id)) {
+          return;
+        }
+        _approvalId = null;
+        if (result == null) {
+          _answer(const ApprovalAnswer(ApprovalDecision.deny));
+        } else if (result.answer case final answer?) {
+          _answer(answer);
+        }
+      });
+    });
+  }
+
+  void _closeAgentApproval() {
+    if (_approvalId == null) return;
+    _approvalId = null;
+    if (!_approvalShowing) return;
+    _approvalShowing = false;
+    final route = _approvalRoute;
+    _approvalRoute = null;
+    // Remove just this request's route. Do not await its completion: its old
+    // callback must never resolve or dismiss the request replacing it.
+    if (route != null) route.navigator?.removeRoute(route);
   }
 
   @override
@@ -534,6 +646,8 @@ class _ChatScreenState extends State<ChatScreen>
     _session.removeListener(_checkStarting);
     _session.removeListener(_followPlan);
     _session.removeListener(_welcomeToModels);
+    _session.removeListener(_syncAgentApproval);
+    _releaseAgentApprovalHost();
     ChatWidth.current.removeListener(_widthChanged);
     ChatMinimap.enabled.removeListener(_widthChanged);
     _existence?.dispose();
@@ -1464,6 +1578,7 @@ class _ChatScreenState extends State<ChatScreen>
               ResetCreditsHint(model: _session.models?.selected.id),
               _PanelSlot(
                 child: switch (_session.pendingInteraction) {
+                  final AgentApprovalRequest _ when AppEdition.isAbyss => null,
                   final request? => InteractionPanel(
                     key: ObjectKey(request),
                     request: request,

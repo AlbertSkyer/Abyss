@@ -15,6 +15,7 @@ import '../../models/model_icons.dart';
 import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
 import '../../models/model_runtime.dart';
+import '../../platform/app_edition.dart';
 import '../../remote/port_forwards.dart';
 import '../../remote/remote_location.dart';
 import '../../settings/user_settings.dart';
@@ -468,6 +469,9 @@ class ClaudeCodeKernel
   /// rules sent again with the [ExtensionSwitches] as they change.
   ClaudeLaunch? _launched;
 
+  /// User-visible model ids mapped to the CLI's accepted Agent aliases.
+  final Map<String, String> _cliAgentModels = {};
+
   /// The [ExtensionSwitches] the process has: at start, then each change
   /// sent ([_applySwitches]).
   ExtensionSwitches _appliedSwitches = ExtensionSwitches.none;
@@ -601,13 +605,12 @@ class ClaudeCodeKernel
     );
   }
 
-  /// Whether this session's subagents take the pool: only BaoCode's own
-  /// core on this machine is handed it. The CLI has no equivalent option,
-  /// and a remote core is started without it. Only such a session needs
-  /// another upstream's pool model routed through the proxy.
+  /// Local sessions whose subagent models need proxy routing. Abyss maps
+  /// the model pool onto CLI role aliases; BaoCode's built-in core consumes
+  /// the pool directly. Remote launches do not use this local routing.
   bool get _takesSubagentPool =>
       !RemoteLocation.isRemote(_cwd) &&
-      ClaudeCore.current() == ClaudeCore.builtin;
+      (AppEdition.isAbyss || ClaudeCore.current() == ClaudeCore.builtin);
 
   Future<void> _launch() async {
     await _history;
@@ -655,6 +658,25 @@ class ClaudeCodeKernel
       _appliedSwitches = ExtensionSwitches.current();
       final sdkServers = ClaudeSdkTools.serversFor(_cwd);
       final subagentPool = _launchSubagentPool(custom?.$1);
+      _cliAgentModels.clear();
+      if (AppEdition.isAbyss && env != null && !RemoteLocation.isRemote(_cwd)) {
+        const roles = {
+          'sonnet': ClaudeModelVariables.sonnet,
+          'opus': ClaudeModelVariables.opus,
+          'haiku': ClaudeModelVariables.haiku,
+        };
+        if (env[ClaudeModelVariables.subagentForce] != '1') {
+          for (final (index, model)
+              in subagentPool.take(roles.length).indexed) {
+            final alias = roles.keys.elementAt(index);
+            env[roles[alias]!] = model;
+            final shown = parseModelRef(model) == null && custom != null
+                ? modelRef(custom.$1.id, model)
+                : model;
+            _cliAgentModels[shown] = alias;
+          }
+        }
+      }
       final transport = await _start(
         _launched = ClaudeLaunch(
           cwd: _cwd,
@@ -717,13 +739,20 @@ class ClaudeCodeKernel
             );
       final control = _control = ControlChannel(transport.write);
       _subscription = transport.messages.listen(_receive);
-      _applyInitialize(
-        await control.request('initialize', {
-          'promptSuggestions': _launchedSuggestions,
-          if (sdkServers.isNotEmpty) 'sdkMcpServers': sdkServers,
-          if (_editWatch != null) 'hooks': _editHooks,
-        }),
-      );
+      final initialized = await control.request('initialize', {
+        'promptSuggestions': _launchedSuggestions,
+        if (sdkServers.isNotEmpty) 'sdkMcpServers': sdkServers,
+        if (_editWatch != null || AppEdition.isAbyss) 'hooks': _hooks,
+      });
+      if (AppEdition.isAbyss && initialized['hooks_applied'] != true) {
+        throw const ClaudeUnavailable(
+          'Claude Code did not enable subagent approval hooks',
+          detail:
+              'Update the CLI before starting this Abyss session. '
+              'No task was started.',
+        );
+      }
+      _applyInitialize(initialized);
       if (_mode != _cliMode) {
         _cliMode = _mode;
         await control.request('set_permission_mode', {'mode': _mode});
@@ -1204,12 +1233,21 @@ class ClaudeCodeKernel
     for (final MapEntry(key: id, value: permission) in pending) {
       emit(InteractionResolved(nextSeq, id));
       if (answer && permission.agent && _control != null && _running) {
-        _control!.respond(id, const {
-          'behavior': 'deny',
-          'message':
-              'The approval was cancelled because the conversation stopped '
-              'or its window closed. The subagent was not started.',
-        });
+        const reason =
+            'The approval was cancelled because the conversation stopped '
+            'or its window closed. The subagent was not started.';
+        _control!.respond(
+          id,
+          permission.hook
+              ? const {
+                  'hookSpecificOutput': {
+                    'hookEventName': 'PreToolUse',
+                    'permissionDecision': 'deny',
+                    'permissionDecisionReason': reason,
+                  },
+                }
+              : const {'behavior': 'deny', 'message': reason},
+        );
       }
       if (permission.sdk case final sdk? when !sdk.isCompleted) {
         sdk.complete(null);
@@ -1748,11 +1786,40 @@ class ClaudeCodeKernel
           message,
         _ => 'The user did not approve this subagent.',
       };
-      control.respond(requestId, {
-        'behavior': allowed ? 'allow' : 'deny',
-        'model': ?(allowed ? picked : null),
-        if (!allowed) 'message': message,
-      });
+      if (permission.hook) {
+        final alias = _cliAgentModels[picked] ?? picked;
+        final validModel =
+            alias == null ||
+            alias.isEmpty ||
+            const {'sonnet', 'opus', 'haiku', 'fable'}.contains(alias);
+        final hookAllowed = allowed && validModel;
+        // A PreToolUse callback is not the private bao_agent can_use_agent
+        // protocol. Its allow/rewrite belongs in hookSpecificOutput; deny
+        // without updatedInput leaves no child to start.
+        control.respond(requestId, {
+          'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse',
+            'permissionDecision': hookAllowed ? 'allow' : 'deny',
+            'permissionDecisionReason': !validModel
+                ? 'This Claude Code CLI accepts only model aliases for Agent. '
+                      'The subagent was not started.'
+                : allowed
+                ? 'Approved by the user in Abyss.'
+                : '$message The subagent was not started.',
+            if (hookAllowed &&
+                alias != null &&
+                alias.isNotEmpty &&
+                alias != permission.input['model'])
+              'updatedInput': {...permission.input, 'model': alias},
+          },
+        });
+      } else {
+        control.respond(requestId, {
+          'behavior': allowed ? 'allow' : 'deny',
+          'model': ?(allowed ? picked : null),
+          if (!allowed) 'message': message,
+        });
+      }
       return;
     }
     if (permission.elicitation case (:final fields, :final url)?) {
@@ -1811,15 +1878,29 @@ class ClaudeCodeKernel
     String requestId,
     Map<String, Object?> request, {
     bool retry = false,
+    bool hook = false,
   }) {
     final control = _control;
     if (control == null) return;
-    final model = '${request['model'] ?? ''}';
-    final models = [
-      for (final raw in request['models'] as List? ?? const [])
-        if (raw is String && raw.isNotEmpty) raw,
-    ];
-    if (!retry && (_workspace?.approvesAll ?? false)) {
+    final input =
+        (request['tool_input'] as Map?)?.cast<String, Object?>() ?? request;
+    final model = '${input['model'] ?? request['model'] ?? ''}';
+    final assigned = hook
+        ? _cliAgentModels.entries
+                  .where((entry) => entry.value == model)
+                  .firstOrNull
+                  ?.key ??
+              model
+        : model;
+    final models = hook
+        ? (_cliAgentModels.isNotEmpty
+              ? _cliAgentModels.keys.toList()
+              : const ['sonnet', 'opus', 'haiku', 'fable'])
+        : [
+            for (final raw in request['models'] as List? ?? const [])
+              if (raw is String && raw.isNotEmpty) raw,
+          ];
+    if (!retry && !hook && (_workspace?.approvesAll ?? false)) {
       control.respond(requestId, {
         'behavior': 'allow',
         'model': model,
@@ -1828,18 +1909,27 @@ class ClaudeCodeKernel
       return;
     }
     // Don't ask asks no one: the child is not started, as anything else
-    // not pre-approved.
-    if (_approval == 'dontAsk') {
+    // not pre-approved. An external CLI hook is explicitly asked for every
+    // child, independently of the ordinary tool-permission mode.
+    if (_approval == 'dontAsk' && !hook) {
       control.respond(requestId, {'behavior': 'deny', 'message': _notAsked});
       return;
     }
-    final forced = request['forced'] == true;
-    final description = '${request['description'] ?? ''}';
+    final forced =
+        request['forced'] == true ||
+        (hook && _launched?.env?[ClaudeModelVariables.subagentForce] == '1');
+    final shownModel = forced && hook
+        ? (_launched?.env?[ClaudeModelVariables.subagent] ?? model)
+        : hook && !models.contains(assigned)
+        ? models.first
+        : assigned;
+    final description = '${input['description'] ?? ''}';
     _permissions[requestId] = _Permission(
-      const {},
+      input,
       const [],
       const [],
       agent: true,
+      hook: hook,
     );
     emit(
       InteractionRequested(
@@ -1847,15 +1937,15 @@ class ClaudeCodeKernel
         AgentApprovalRequest(
           id: requestId,
           title: retry ? 'Retry this subagent?' : 'Run a subagent?',
-          toolName: '${request['tool_name'] ?? 'Agent'}',
+          toolName: '${input['tool_name'] ?? request['tool_name'] ?? 'Agent'}',
           description: description,
-          prompt: '${request['prompt'] ?? ''}',
-          agentType: '${request['subagent_type'] ?? ''}',
-          model: model,
+          prompt: '${input['prompt'] ?? ''}',
+          agentType: '${input['subagent_type'] ?? ''}',
+          model: shownModel,
           models: forced ? const [] : (models.isEmpty ? [model] : models),
-          modelSource: '${request['model_source'] ?? ''}',
+          modelSource: hook ? 'cli-alias' : '${request['model_source'] ?? ''}',
           forced: forced,
-          background: request['run_in_background'] == true,
+          background: input['run_in_background'] == true,
           retry: retry,
         ),
       ),
@@ -2224,36 +2314,53 @@ class ClaudeCodeKernel
   /// a subagent's, for an [EditWatch].
   static const _beforeEdit = 'baocode-before-edit';
   static const _afterEdit = 'baocode-after-edit';
+  static const _approveAgent = 'baocode-approve-agent';
   static const _editTools = 'Edit|Write|MultiEdit|NotebookEdit';
 
-  static final Map<String, Object?> _editHooks = {
+  Map<String, Object?> get _hooks => {
     'PreToolUse': [
-      {
-        'matcher': _editTools,
-        'hookCallbackIds': [_beforeEdit],
-      },
-    ],
-    // Done, failed, or not let do.
-    for (final event in const [
-      'PostToolUse',
-      'PostToolUseFailure',
-      'PermissionDenied',
-    ])
-      event: [
+      if (_editWatch != null)
         {
           'matcher': _editTools,
-          'hookCallbackIds': [_afterEdit],
+          'hookCallbackIds': [_beforeEdit],
         },
-      ],
+      if (AppEdition.isAbyss)
+        {
+          // Agent is the wire tool name, even when the CLI reports Task in
+          // its init list. This is before the child is made, unlike
+          // SubagentStart. Do not let an unanswered callback start it.
+          'matcher': 'Agent|Task',
+          'hookCallbackIds': [_approveAgent],
+          'onFailure': 'block',
+          'timeout': 3600,
+        },
+    ],
+    // Done, failed, or not let do.
+    if (_editWatch != null)
+      for (final event in const [
+        'PostToolUse',
+        'PostToolUseFailure',
+        'PermissionDenied',
+      ])
+        event: [
+          {
+            'matcher': _editTools,
+            'hookCallbackIds': [_afterEdit],
+          },
+        ],
   };
 
   /// How long an edit waits on the watch at most.
   static const _editWait = Duration(seconds: 10);
 
-  /// One of [_editHooks] called back: the watch told of the edit, and the
+  /// One of [_hooks] called back: the watch told of the edit, and the
   /// CLI answered once it is done with it (the edit waits on that).
   Future<void> _hookCallback(String id, Map<String, Object?> request) async {
     final input = (request['input'] as Map?)?.cast<String, Object?>();
+    if (request['callback_id'] == _approveAgent && AppEdition.isAbyss) {
+      _agentApproval(id, input ?? const {}, hook: true);
+      return;
+    }
     final tool = (input?['tool_input'] as Map?)?.cast<String, Object?>();
     final path = tool?['file_path'] ?? tool?['notebook_path'];
     final watch = _editWatch;
@@ -4151,6 +4258,7 @@ class _Permission {
     this.elicitation,
     this.sdk,
     this.agent = false,
+    this.hook = false,
   });
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
@@ -4160,6 +4268,9 @@ class _Permission {
   /// For a child agent about to start: the answer allows it and may name
   /// the model it runs on.
   final bool agent;
+
+  /// An external CLI's PreToolUse hook, answered in its own protocol.
+  final bool hook;
 
   /// For an MCP server's elicitation: its form's fields, or the link it
   /// asks to open.

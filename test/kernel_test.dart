@@ -146,7 +146,7 @@ class FakeCli implements ClaudeCodeTransport {
     final payload =
         answers[subtype] ??
         switch (subtype) {
-          'initialize' => _initialize,
+          'initialize' => {..._initialize, 'hooks_applied': true},
           'get_context_usage' => _context,
           _ => const <String, Object?>{},
         };

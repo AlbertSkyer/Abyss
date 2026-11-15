@@ -3771,6 +3771,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Claude Code CLI: Anthropic\'s own program, with this machine\'s sign-in and setup; pick it to use a Claude subscription. Built-in: comes with Abyss, and uses only the models added in Settings → Models. By default, the CLI where this machine has Claude Code, else the built-in core; the CLI, picked where there is none, is downloaded for you. Changes apply to new sessions.';
 
   @override
+  String get generalSettingsClaudeCoreAbyssDescription =>
+      'Abyss local sessions always use the external Claude Code CLI, with this machine\'s sign-in and setup. If Claude Code is not installed, it is downloaded when a session starts. A saved built-in choice is not used. Changes apply to new sessions.';
+
+  @override
   String get generalSettingsClaudeCoreBuiltin => 'Built-in';
 
   @override

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../platform/app_edition.dart';
+
 /// Settings → General → Claude Code: what runs a Claude Code session
 /// (`claudeCode.core` in settings.json).
 enum ClaudeCore {
@@ -15,17 +17,22 @@ enum ClaudeCore {
 
   static const settingKey = 'claudeCode.core';
 
-  /// When the setting is unset, or not one of these: the CLI where Claude
-  /// Code is on this machine, else the built-in core. Nothing is downloaded
-  /// unasked, nor the CLI suggested.
-  static ClaudeCore get fallback => cliInstalled() ? cli : builtin;
+  /// Abyss local sessions always run the external Claude Code CLI. An old
+  /// `builtin` setting cannot put them back on the Dart core. BaoCode keeps
+  /// its automatic choice: the CLI where installed, else the built-in core.
+  static ClaudeCore get fallback => AppEdition.isAbyss
+      ? cli
+      : cliInstalled()
+      ? cli
+      : builtin;
 
   /// Whether Claude Code is on this machine, as last looked; main() points
   /// it at `LocalClaude.installed`.
   static bool Function() cliInstalled = () => false;
 
-  static ClaudeCore parse(Object? setting) =>
-      values.where((value) => value.name == setting).firstOrNull ?? fallback;
+  static ClaudeCore parse(Object? setting) => AppEdition.isAbyss
+      ? cli
+      : values.where((value) => value.name == setting).firstOrNull ?? fallback;
 
   /// The setting as it is now, read as each session starts; main() points
   /// it at settings.json.

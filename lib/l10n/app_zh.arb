@@ -1049,6 +1049,7 @@
   "generalSettingsCommitAttributionDescription": "Agent 在它写的提交和 Pull Request 中添加的署名。更改对之后启动的 Agent 生效；目前仅支持 Claude Code。",
   "generalSettingsClaudeCore": "内核",
   "generalSettingsClaudeCoreDescription": "Claude Code CLI：Anthropic 官方程序，沿用本机的登录和配置，用 Claude 订阅请选它。内置：Abyss 自带，只用 设置 → 模型 里添加的模型。默认：本机装有 Claude Code 时用 CLI，没有时用内置内核；选 CLI 而本机没有时会自动下载。改动对新开的会话生效。",
+  "generalSettingsClaudeCoreAbyssDescription": "Abyss 本地会话始终使用外部 Claude Code CLI，沿用本机的登录和配置。未安装 Claude Code 时，启动会话会下载。已保存的内置内核选择不会被使用。改动对新开的会话生效。",
   "generalSettingsClaudeCoreBuiltin": "内置",
   "generalSettingsClaudeCoreCli": "Claude Code CLI",
   "generalSettingsQueuedMessages": "工作中发送的消息",

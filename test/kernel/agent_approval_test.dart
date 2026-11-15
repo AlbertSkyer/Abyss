@@ -1,5 +1,6 @@
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/kernel_types.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli, claude, recordedResponse;
@@ -34,6 +35,27 @@ void main() {
     },
   });
 
+  void askHook(FakeCli cli, {String id = 'hook-1'}) => cli.push({
+    'type': 'control_request',
+    'request_id': id,
+    'request': {
+      'subtype': 'hook_callback',
+      'callback_id': 'baocode-approve-agent',
+      'input': {
+        'hook_event_name': 'PreToolUse',
+        'tool_name': 'Agent',
+        'tool_use_id': 'call-hook',
+        'tool_input': {
+          'description': 'Look through the games',
+          'prompt': 'Compare the three games and report the differences.',
+          'subagent_type': 'Explore',
+          'run_in_background': true,
+          'model': 'haiku',
+        },
+      },
+    },
+  });
+
   Map<String, Object?> responseTo(FakeCli cli, String id) {
     final message = cli.written.lastWhere(
       (message) =>
@@ -43,6 +65,150 @@ void main() {
     return ((message['response'] as Map)['response'] as Map)
         .cast<String, Object?>();
   }
+
+  group('Abyss external CLI hooks', () {
+    test(
+      'missing hook acknowledgement blocks the session before user input',
+      () async {
+        final cli = FakeCli(
+          answers: {
+            'initialize': {
+              ...recordedResponse(
+                'question',
+                (payload) => payload.containsKey('commands'),
+              ),
+              'hooks_applied': false,
+            },
+          },
+        );
+        final (:kernel, transcript: _, events: _) = claude(cli);
+        addTearDown(kernel.dispose);
+        kernel.prepare();
+        await pumpEventQueue(times: 30);
+        expect(kernel.health.status, KernelHealthStatus.failed);
+        expect(cli.users, isEmpty);
+        expect(cli.closed, isTrue);
+      },
+    );
+
+    test(
+      'external CLI PreToolUse waits, and allow keeps the original agent',
+      () async {
+        final cli = FakeCli();
+        final (:kernel, :transcript, events: _) = claude(cli);
+        kernel.prepare();
+        await pumpEventQueue();
+        final hooks = cli.requests('initialize').single['hooks'] as Map;
+        final before = hooks['PreToolUse'] as List;
+        final agent = before.singleWhere(
+          (hook) => (hook as Map)['matcher'] == 'Agent|Task',
+        ) as Map;
+        expect(agent['onFailure'], 'block');
+        askHook(cli);
+        await pumpEventQueue();
+        final approval = transcript.pendingInteraction as AgentApprovalRequest;
+        expect(approval.prompt, contains('Compare the three games'));
+        expect(approval.agentType, 'Explore');
+        expect(approval.background, isTrue);
+        kernel.answer(
+          approval.id,
+          const ApprovalAnswer(ApprovalDecision.allowOnce),
+        );
+        await pumpEventQueue();
+        expect(responseTo(cli, 'hook-1'), {
+          'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse',
+            'permissionDecision': 'allow',
+            'permissionDecisionReason': 'Approved by the user in Abyss.',
+          },
+        });
+        kernel.dispose();
+      },
+    );
+
+    test(
+      'external CLI cancel is a hook denial, never a private permission',
+      () async {
+        final cli = FakeCli();
+        final (:kernel, :transcript, events: _) = claude(cli);
+        kernel.prepare();
+        await pumpEventQueue();
+        askHook(cli);
+        await pumpEventQueue();
+        kernel.answer(
+          transcript.pendingInteraction!.id,
+          const ApprovalAnswer(ApprovalDecision.deny, message: 'Not now.'),
+        );
+        await pumpEventQueue();
+        final output = responseTo(cli, 'hook-1')['hookSpecificOutput'] as Map;
+        expect(output['permissionDecision'], 'deny');
+        expect(output['permissionDecisionReason'], contains('Not now.'));
+        expect(output, isNot(contains('updatedInput')));
+        kernel.dispose();
+      },
+    );
+
+    test('external CLI closing denies an unanswered hook', () async {
+      final cli = FakeCli();
+      final (:kernel, :transcript, events: _) = claude(cli);
+      kernel.prepare();
+      await pumpEventQueue();
+      askHook(cli);
+      await pumpEventQueue();
+      kernel.dispose();
+      await pumpEventQueue();
+      final output = responseTo(cli, 'hook-1')['hookSpecificOutput'] as Map;
+      expect(output['permissionDecision'], 'deny');
+      expect(output['permissionDecisionReason'], contains('window closed'));
+      expect(transcript.pendingInteraction, isNull);
+    });
+
+    test('CLI model alias rewrites preserve prompt and agent type', () async {
+      final cli = FakeCli();
+      final (:kernel, :transcript, events: _) = claude(cli);
+      addTearDown(kernel.dispose);
+      kernel.prepare();
+      await pumpEventQueue();
+      askHook(cli);
+      await pumpEventQueue();
+      kernel.answer(
+        transcript.pendingInteraction!.id,
+        const ApprovalAnswer(ApprovalDecision.allowOnce, model: 'opus'),
+      );
+      final output = responseTo(cli, 'hook-1')['hookSpecificOutput'] as Map;
+      expect(output['permissionDecision'], 'allow');
+      expect(output['updatedInput'], {
+        'description': 'Look through the games',
+        'prompt': 'Compare the three games and report the differences.',
+        'subagent_type': 'Explore',
+        'run_in_background': true,
+        'model': 'opus',
+      });
+    });
+
+    test(
+      'unsupported full model IDs fail closed before tool execution',
+      () async {
+        final cli = FakeCli();
+        final (:kernel, :transcript, events: _) = claude(cli);
+        addTearDown(kernel.dispose);
+        kernel.prepare();
+        await pumpEventQueue();
+        askHook(cli);
+        await pumpEventQueue();
+        kernel.answer(
+          transcript.pendingInteraction!.id,
+          const ApprovalAnswer(
+            ApprovalDecision.allowOnce,
+            model: '@other/model',
+          ),
+        );
+        final output = responseTo(cli, 'hook-1')['hookSpecificOutput'] as Map;
+        expect(output['permissionDecision'], 'deny');
+        expect(output.containsKey('updatedInput'), isFalse);
+      },
+    );
+  }, skip: !AppEdition.isAbyss);
 
   test(
     'shown with its task and models; the pick goes back with the leave',
@@ -210,6 +376,7 @@ void main() {
             'question',
             (payload) => payload.containsKey('commands'),
           ),
+          'hooks_applied': true,
           'capabilities': const ['agent_retry_v1'],
         },
       },

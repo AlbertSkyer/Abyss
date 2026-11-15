@@ -288,8 +288,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// Pointer and sidebar width when the resize drag began.
   ({double x, double width})? _dragOrigin;
 
-  /// Shown beside the chat (wide window), as asked; see [_sidebarDocked].
   bool _docked = true;
+
+  /// Whether the user chose a sidebar preference before the kept one was
+  /// read. A late restore must not put that choice back.
+  bool _sidebarChanged = false;
 
   /// The least the conversations and the side panel take at the sidebar's
   /// right: its border, theirs and their minimums.
@@ -504,10 +507,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     _layout = _sidePanel.layout;
     if (asked) {
       _sidePanelAsks = _sidePanel.asks;
-      // Showing already, the sidebar gives way only to a narrower window.
-      final shown = _sidePanelShown && !_sidePanelHidden;
       _sidePanelLast = true;
-      if (!shown && _sidesClash) _docked = false;
     }
     _sidePanelShown = _sidePanel.isShown;
     if (sidebarDocked && !_sidebarDocked) {
@@ -663,6 +663,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     _sidePanelAsks = _sidePanel.asks;
     _workspace.addListener(_restoreSidePanel);
     _restoreSidePanel();
+    _workspace.addListener(_restoreWorkbench);
+    _restoreWorkbench();
     _workspace.addListener(_syncWorkspaceFolders);
     _workspace.addListener(_reloadedElsewhere);
   }
@@ -743,6 +745,29 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       _workspace.removeListener(_restoreSidePanel);
       _sidePanel.restore(view);
     }
+  }
+
+  /// The sidebar as explicitly left last run, once preferences have been
+  /// read. Narrow drawers and temporary give-way never call [_keepSidebar].
+  void _restoreWorkbench() {
+    if (_workspace.workbenchView case final view?) {
+      _workspace.removeListener(_restoreWorkbench);
+      if (_sidebarChanged) return;
+      setState(() {
+        if (view['shown'] case final bool shown) _docked = shown;
+        if (view['width'] case final num width) {
+          _width.value = width.toDouble().clamp(
+            Workbench.minSidebarWidth,
+            Workbench.maxSidebarWidth,
+          );
+        }
+      });
+    }
+  }
+
+  void _keepSidebar() {
+    _sidebarChanged = true;
+    _workspace.keepWorkbenchView({'shown': _docked, 'width': _width.value});
   }
 
   /// The IDE moved to windows of its own (`window.ideWindows`): the main
@@ -893,6 +918,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       ..dispose();
     _chatCode?.dispose();
     _workspace.removeListener(_restoreSidePanel);
+    _workspace.removeListener(_restoreWorkbench);
     _workspace.removeListener(_syncWorkspaceFolders);
     _workspace.removeListener(_reloadedElsewhere);
     _givingWayTimer?.cancel();
@@ -2787,10 +2813,12 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         _drawerOpen = !_drawerOpen;
       } else if (_sidebarDocked) {
         _docked = false;
+        _keepSidebar();
       } else {
         _docked = true;
         _sidePanelLast = false;
         if (_sidesClash) _sidePanel.hide();
+        _keepSidebar();
       }
     });
   }
@@ -3535,11 +3563,12 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// [_reloadedElsewhere]).
   final Expando<ChatSession> _chatSessions = Expando();
 
-  void _endDrag() {
+  void _endDrag({bool keep = false}) {
     setState(() {
       _dragging = false;
       _dragOrigin = null;
     });
+    if (keep) _keepSidebar();
   }
 
   /// The border between sidebar and chat, draggable to resize.
@@ -3568,7 +3597,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           _width.value = (origin.width + (_sidebarAtRight ? -moved : moved))
               .clamp(math.min(Workbench.minSidebarWidth, _maxWidth), _maxWidth);
         },
-        onHorizontalDragEnd: (_) => _endDrag(),
+        onHorizontalDragEnd: (_) => _endDrag(keep: true),
         onHorizontalDragCancel: _endDrag,
         // At rest the border line; dragged, as thick as the IDE's sashes,
         // in their `sash.hoverBorder`.

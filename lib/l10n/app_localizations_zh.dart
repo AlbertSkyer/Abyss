@@ -3621,6 +3621,10 @@ class AppLocalizationsZh extends AppLocalizations {
       'Claude Code CLI：Anthropic 官方程序，沿用本机的登录和配置，用 Claude 订阅请选它。内置：Abyss 自带，只用 设置 → 模型 里添加的模型。默认：本机装有 Claude Code 时用 CLI，没有时用内置内核；选 CLI 而本机没有时会自动下载。改动对新开的会话生效。';
 
   @override
+  String get generalSettingsClaudeCoreAbyssDescription =>
+      'Abyss 本地会话始终使用外部 Claude Code CLI，沿用本机的登录和配置。未安装 Claude Code 时，启动会话会下载。已保存的内置内核选择不会被使用。改动对新开的会话生效。';
+
+  @override
   String get generalSettingsClaudeCoreBuiltin => '内置';
 
   @override

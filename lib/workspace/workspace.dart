@@ -261,6 +261,15 @@ class AgentThread {
     effort: _session?.selected(KernelChoiceKind.effort),
     context: _session?.selected(KernelChoiceKind.context),
     fast: _session?.selected(KernelChoiceKind.fast),
+    agents: jsonEncode([
+      for (final entry in _session?.agentTree ?? const [])
+        [
+          entry.path,
+          entry.agent.description,
+          (entry.agent.status as CommandStatus).name,
+          _session!.agentUnread(entry.agent),
+        ],
+    ]),
   );
 }
 
@@ -276,6 +285,7 @@ typedef _Snapshot = ({
   String? effort,
   String? context,
   String? fast,
+  String agents,
 });
 
 /// Projects and their agents. Any number of agents may run at once; the
@@ -898,6 +908,16 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   void keepSidePanelView(Map<String, Object?> state) {
     _sidePanelView = state;
+    _save();
+  }
+
+  /// The main sidebar's explicit visibility and width, for the next run.
+  /// Temporary responsive layouts are not kept here (see Workbench).
+  Map<String, Object?>? get workbenchView => _workbenchView;
+  Map<String, Object?>? _workbenchView;
+
+  void keepWorkbenchView(Map<String, Object?> state) {
+    _workbenchView = state;
     _save();
   }
 
@@ -2815,6 +2835,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       if (sidebar['foldedAsides'] case final List<Object?> folded) {
         _foldedAsides.addAll(folded.whereType<String>());
       }
+      _foldedAgentTasks.addAll(list('foldedAgentTasks'));
     }
     if (kept['workspaces'] case final List<Object?> workspaces) {
       final root = workspaceDirectories.root;
@@ -2882,6 +2903,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     if (kept['sidePanel'] case final Map<Object?, Object?> panel) {
       _sidePanelView = panel.cast<String, Object?>();
     }
+    if (kept['workbench'] case final Map<Object?, Object?> workbench
+        when _workbenchView == null) {
+      _workbenchView = workbench.cast<String, Object?>();
+    }
     if (!_colorThemeStored) {
       _autoDetectColorScheme = kept['autoDetectColorScheme'] == true;
       if (kept['colorTheme'] case final String setting) _colorTheme = setting;
@@ -2940,6 +2965,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
             id: {'parent': aside.parent, 'from': aside.from, 'at': ?aside.at},
         },
         'foldedAsides': [..._foldedAsides],
+        'foldedAgentTasks': [..._foldedAgentTasks],
       },
       'ide': {
         'folder': ?_ideFolder,
@@ -2969,6 +2995,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       'emojiStyle': ?_emojiStyle?.name,
       'chat': ?_chatViewToSave(),
       'sidePanel': ?_sidePanelView,
+      'workbench': ?_workbenchView,
       'colorTheme': ?_colorTheme,
       'colorThemeData': ?_colorThemeData,
       if (_autoDetectColorScheme) 'autoDetectColorScheme': true,
@@ -3768,6 +3795,23 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     final id = thread.id;
     if (id == null) return;
     if (!_foldedAsides.remove(id)) _foldedAsides.add(id);
+    _save();
+    notifyListeners();
+  }
+
+  /// A task-list fold belongs to this conversation, never to a bare task id:
+  /// those are only unique within their parent session.
+  String agentTasksKey(AgentThread thread) =>
+      '${thread.project.path}\u0000${thread.kernel.id}\u0000${thread.id}';
+
+  bool agentTasksFolded(AgentThread thread) =>
+      _foldedAgentTasks.contains(agentTasksKey(thread));
+
+  final Set<String> _foldedAgentTasks = {};
+
+  void toggleAgentTasksFolded(AgentThread thread) {
+    final key = agentTasksKey(thread);
+    if (!_foldedAgentTasks.remove(key)) _foldedAgentTasks.add(key);
     _save();
     notifyListeners();
   }

@@ -18,6 +18,7 @@ import '../../chat/rewind_files_setting.dart';
 import '../../chat/widgets/turn_footer.dart' show LiveTurnStatsSetting;
 import '../../kernel/queued_messages.dart';
 import '../../l10n/l10n.dart';
+import '../../platform/app_edition.dart';
 import '../../platform/app_platform.dart';
 import '../../platform/context_menu.dart';
 import '../../platform/shell_command.dart';
@@ -426,12 +427,15 @@ class GeneralSettingsPage extends StatelessWidget {
                         context,
                         key: ClaudeCore.settingKey,
                         label: l10n.generalSettingsClaudeCore,
-                        description: l10n.generalSettingsClaudeCoreDescription,
+                        description: AppEdition.isAbyss
+                            ? l10n.generalSettingsClaudeCoreAbyssDescription
+                            : l10n.generalSettingsClaudeCoreDescription,
                         values: {
                           ClaudeCore.cli.name:
                               l10n.generalSettingsClaudeCoreCli,
-                          ClaudeCore.builtin.name:
-                              l10n.generalSettingsClaudeCoreBuiltin,
+                          if (!AppEdition.isAbyss)
+                            ClaudeCore.builtin.name:
+                                l10n.generalSettingsClaudeCoreBuiltin,
                         },
                         fallback: ClaudeCore.fallback.name,
                       ),

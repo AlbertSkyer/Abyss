@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -6,11 +8,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:baocode/workspace/islands.dart';
 import 'package:baocode/chat/widgets/pixel_loader.dart';
 import 'package:baocode/chat/chat_screen.dart';
+import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/chat/chat_session.dart';
+import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/claude_code/mock_claude_code_transport.dart';
 import 'package:baocode/kernel/kernel_types.dart';
+import 'package:baocode/kernel/mock/mock_kernels.dart';
 import 'package:baocode/ide/ide_hover.dart';
 import 'package:baocode/ide/ide_commands.dart' show ideUsesMacKeys;
 import 'package:baocode/ide/ide_list.dart';
@@ -175,7 +180,198 @@ Future<void> runUntilQuestion(WidgetTester tester, ChatSession session) async {
   expect(session.pendingInteraction, isNotNull);
 }
 
+class _SidebarKernel implements AgentKernel {
+  _SidebarKernel(this.descriptor, this.sessionId);
+
+  @override
+  final KernelDescriptor descriptor;
+  @override
+  final String? sessionId;
+  final _events = StreamController<KernelEvent>.broadcast();
+  var _seq = 0;
+
+  void report(String id, AgentItem agent) =>
+      _events.add(ItemUpserted(++_seq, id, agent));
+
+  @override
+  Stream<KernelEvent> get events => _events.stream;
+  @override
+  KernelHealth get health => KernelHealth.ready;
+  @override
+  Future<void> get stopped => _events.done;
+  @override
+  void send(KernelTurn turn) {}
+  @override
+  void answer(String requestId, InteractionAnswer answer) {}
+  @override
+  void cancel() {}
+  @override
+  void restart() {}
+  @override
+  void prepare() {}
+  @override
+  void release() {}
+  @override
+  void dispose() => _events.close();
+}
+
+Future<(Workspace, List<_SidebarKernel>)> _pumpAgentTasks(
+  WidgetTester tester, {
+  PreferenceStore? preferences,
+}) async {
+  tester.view.physicalSize = const Size(1400, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  final kernels = <_SidebarKernel>[];
+  late final KernelDescriptor descriptor;
+  descriptor = KernelDescriptor(
+    id: 'sidebar-test',
+    label: 'Sidebar Test',
+    icon: Icons.auto_awesome_rounded,
+    description: '',
+    catalog: KeptCatalog([kept('a', '/tmp/a', 1), kept('b', '/tmp/b', 2)]),
+    create: (context) {
+      final kernel = _SidebarKernel(descriptor, context.resume?.id);
+      kernels.add(kernel);
+      return kernel;
+    },
+  );
+  final workspace = Workspace(kernels: [descriptor], preferences: preferences);
+  await tester.pumpWidget(BaoCodeApp(workspace: workspace));
+  await tester.runAsync(workspace.load);
+  await tester.pump();
+  return (workspace, kernels);
+}
+
+AgentThread taskParent(Workspace workspace, String path) =>
+    workspace.threads.firstWhere((t) => t.record?.cwd == path);
+
+_SidebarKernel _taskKernel(AgentThread thread, List<_SidebarKernel> kernels) =>
+    kernels.singleWhere((kernel) => kernel.sessionId == thread.id);
+
 void main() {
+  testWidgets('AgentItem tasks fold per parent and stay folded between runs', (
+    tester,
+  ) async {
+    final store = MemoryPreferenceStore();
+    var (workspace, kernels) = await _pumpAgentTasks(
+      tester,
+      preferences: store,
+    );
+    final a = taskParent(workspace, '/tmp/a');
+    final b = taskParent(workspace, '/tmp/b');
+    expect(kernels.length, 1);
+    expect(inSidebar(find.text('Task A')), findsNothing);
+    expect(inSidebar(find.text('Task B')), findsNothing);
+    workspace.select(a);
+    await tester.pump();
+    _taskKernel(
+      a,
+      kernels,
+    ).report('task-a', const AgentItem(id: 'task-a', description: 'Task A'));
+    await tester.pump();
+    expect(inSidebar(find.text('Task A')), findsOneWidget);
+    expect(b.isOpen, isFalse);
+    await tester.tap(inSidebar(find.text('Subagent tasks')).first);
+    await tester.pump();
+    expect(inSidebar(find.text('Task A')), findsNothing);
+    expect(workspace.agentTasksFolded(a), isTrue);
+    expect(workspace.agentTasksFolded(b), isFalse);
+
+    workspace.select(b);
+    await tester.pump();
+    _taskKernel(
+      b,
+      kernels,
+    ).report('task-b', const AgentItem(id: 'task-b', description: 'Task B'));
+    await tester.pump();
+    expect(inSidebar(find.text('Task B')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    (workspace, kernels) = await _pumpAgentTasks(tester, preferences: store);
+    workspace.select(taskParent(workspace, '/tmp/a'));
+    await tester.pump();
+    kernels.last.report(
+      'task-a',
+      const AgentItem(id: 'task-a', description: 'Task A'),
+    );
+    await tester.pump();
+    expect(inSidebar(find.text('Task A')), findsNothing);
+    expect(
+      workspace.agentTasksFolded(taskParent(workspace, '/tmp/b')),
+      isFalse,
+    );
+  });
+
+  testWidgets('folded parent keeps running and unread AgentItem attention', (
+    tester,
+  ) async {
+    final (workspace, kernels) = await _pumpAgentTasks(tester);
+    final thread = taskParent(workspace, '/tmp/a');
+    workspace.select(thread);
+    await tester.pump();
+    _taskKernel(
+      thread,
+      kernels,
+    ).report('task-a', const AgentItem(id: 'task-a', description: 'Task A'));
+    await tester.pump();
+    expect(inSidebar(find.byType(PixelLoader)), findsWidgets);
+    workspace.toggleAgentTasksFolded(thread);
+    await tester.pump();
+    expect(inSidebar(find.text('Task A')), findsNothing);
+    expect(inSidebar(find.byType(PixelLoader)), findsWidgets);
+    _taskKernel(thread, kernels).report(
+      'task-a',
+      const AgentItem(
+        id: 'task-a',
+        description: 'Task A',
+        status: CommandStatus.succeeded,
+      ),
+    );
+    await tester.pump();
+    expect(
+      inSidebar(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is StatusIndicator && widget.status == ThreadStatus.unread,
+        ),
+      ),
+      findsWidgets,
+    );
+    expect(inSidebar(find.text('Task A')), findsNothing);
+  });
+
+  testWidgets(
+    'clicking an AgentItem selects its parent and opens only its path',
+    (tester) async {
+      final (workspace, kernels) = await _pumpAgentTasks(tester);
+      final a = taskParent(workspace, '/tmp/a');
+      final b = taskParent(workspace, '/tmp/b');
+      workspace.select(a);
+      await tester.pump();
+      _taskKernel(a, kernels).report(
+        'root',
+        const AgentItem(
+          id: 'root',
+          description: 'Task A',
+          children: [AgentItem(id: 'nested', description: 'Nested task')],
+        ),
+      );
+      await tester.pump();
+      final threads = workspace.threads.length;
+      final paths = <List<String>>[];
+      a.session.agentOpener = paths.add;
+      await tester.tap(inSidebar(find.text('Nested task')));
+      await tester.pump();
+      expect(paths, [
+        ['root', 'nested'],
+      ]);
+      expect(workspace.selected, a);
+      expect(workspace.threads.length, threads);
+      expect(b.isOpen, isFalse);
+      expect(a.session.openAgents, isEmpty);
+    },
+  );
+
   testWidgets('lists agents by project and opens the one clicked', (
     tester,
   ) async {
@@ -1053,6 +1249,102 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.byType(ChatScreen)).dx, chatLeft);
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets('explicit visibility and width are kept for the next run', (
+    tester,
+  ) async {
+    final store = MemoryPreferenceStore();
+    var workspace = await pumpKept(tester, KeptCatalog([]), preferences: store);
+    await tester.tap(find.bySemanticsLabel('Hide sidebar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Show sidebar'));
+    await tester.pumpAndSettle();
+    await tester.dragFrom(
+      tester.getTopRight(find.byType(Sidebar)).translate(2, 400),
+      const Offset(80, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(workspace.workbenchView, {'shown': true, 'width': 340.0});
+    await tester.runAsync(() async {});
+
+    await tester.pumpWidget(const SizedBox());
+    workspace = await pumpKept(tester, KeptCatalog([]), preferences: store);
+    expect(tester.getSize(find.byType(Sidebar)).width, 340);
+    expect(workspace.workbenchView?['shown'], isTrue);
+
+    await tester.tap(find.bySemanticsLabel('Hide sidebar'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {});
+    await tester.pumpWidget(const SizedBox());
+    workspace = await pumpKept(tester, KeptCatalog([]), preferences: store);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Show sidebar'), findsOneWidget);
+    expect(workspace.workbenchView?['shown'], isFalse);
+  });
+
+  testWidgets('a choice before preferences arrive is not overwritten', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final store = MemoryPreferenceStore({
+      'workbench': {'shown': true, 'width': 340},
+    });
+    final workspace = Workspace(
+      kernels: [MockKernels.claudeCode],
+      preferences: store,
+    );
+    await tester.pumpWidget(BaoCodeApp(workspace: workspace));
+    await tester.tap(find.bySemanticsLabel('Hide sidebar'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(workspace.load);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Show sidebar'), findsOneWidget);
+    expect(workspace.workbenchView?['shown'], isFalse);
+  });
+
+  testWidgets('drawer and side-panel give-way do not change the preference', (
+    tester,
+  ) async {
+    final store = MemoryPreferenceStore();
+    final workspace = await pumpKept(
+      tester,
+      KeptCatalog([kept('a', '/tmp/a', 1)]),
+      preferences: store,
+    );
+    expect(workspace.workbenchView, isNull);
+
+    // The panel has not enough room beside the sidebar at this width. Its
+    // temporary take-over is not an explicit sidebar Hide.
+    tester.view.physicalSize = const Size(1000, 900);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(workspace.sidePanelView?['shown'], isTrue);
+    expect(workspace.workbenchView, isNull);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsOneWidget);
+    expect(workspace.workbenchView, isNull);
+
+    // Opening the narrow drawer is transient too.
+    tester.view.physicalSize = const Size(700, 900);
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Show sidebar'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Sidebar), findsOneWidget);
+    expect(workspace.workbenchView, isNull);
+  });
 
   testWidgets('drags the border to resize', (tester) async {
     await pumpApp(tester);

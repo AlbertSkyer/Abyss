@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:baocode/kernel/claude_code/claude_edition.dart';
 import 'package:baocode/kernel/claude_code/claude_environment.dart';
+import 'package:baocode/kernel/claude_code/claude_onboarding.dart';
+import 'package:baocode/models/secret_store_io.dart';
 import 'package:baocode/kernel/claude_code/claude_storage_io.dart';
 import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/platform/data_dir.dart';
@@ -11,6 +13,65 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  test('Windows provider secrets use only the Abyss data directory', () {
+    final previousDataDirectory = DataDirectory.current;
+    addTearDown(() => DataDirectory.current = previousDataDirectory);
+    final root = Directory.systemTemp.createTempSync('abyss-secret-root-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    DataDirectory.current = DataDirectory(p.join(root.path, 'abyss'));
+    final store = systemSecretStore();
+    expect(store, isA<DpapiSecretStore>());
+    expect(
+      (store as DpapiSecretStore).directory,
+      p.join(root.path, 'abyss', 'secrets'),
+    );
+    expect(root.listSync(), isEmpty);
+  }, skip: !Platform.isWindows);
+
+  test(
+    'onboarding writes only Abyss config and preserves foreign state',
+    () async {
+      final previousDataDirectory = DataDirectory.current;
+      addTearDown(() => DataDirectory.current = previousDataDirectory);
+      final root = Directory.systemTemp.createTempSync(
+        'abyss-onboarding-root-',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final own = p.join(root.path, 'abyss');
+      final home = p.join(root.path, 'home');
+      final foreign = p.join(root.path, 'foreign');
+      DataDirectory.current = DataDirectory(own);
+      const sentinel = '{"hasCompletedOnboarding":false,"marker":"foreign"}';
+      final foreignFiles = [
+        File(p.join(home, '.claude.json')),
+        File(p.join(foreign, '.claude.json')),
+      ];
+      for (final file in foreignFiles) {
+        file
+          ..createSync(recursive: true)
+          ..writeAsStringSync(sentinel);
+      }
+      final environment = {
+        'HOME': home,
+        'USERPROFILE': home,
+        'CLAUDE_CONFIG_DIR': foreign,
+        'BAOCODE_CLAUDE_DATA_PATH': foreign,
+      };
+      expect(await prepareClaudeOnboarding(environment: environment), isTrue);
+      expect(
+        jsonDecode(
+          File(p.join(own, 'claude', '.claude.json')).readAsStringSync(),
+        ),
+        {'hasCompletedOnboarding': true},
+      );
+      expect(await prepareClaudeOnboarding(environment: environment), isFalse);
+      for (final file in foreignFiles) {
+        expect(file.readAsStringSync(), sentinel);
+      }
+      expect(Directory(p.join(own, 'claude')).listSync(), hasLength(1));
+    },
+  );
+
   test('Abyss uses only its own data, pointer and native identities', () {
     expect(AppEdition.isAbyss, isTrue);
     expect(AppEdition.name, 'Abyss');
@@ -72,6 +133,8 @@ void main() {
       final root = Directory.systemTemp.createTempSync('abyss-cli-isolation-');
       addTearDown(() => root.deleteSync(recursive: true));
       addTearDown(() => ClaudeEnvironment.use(null));
+      final previousDataDirectory = DataDirectory.current;
+      addTearDown(() => DataDirectory.current = previousDataDirectory);
       DataDirectory.current = DataDirectory(root.path);
       final environment = <String, String>{
         'HOME': p.join(root.path, 'home'),

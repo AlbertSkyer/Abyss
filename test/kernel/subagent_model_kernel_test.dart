@@ -1,6 +1,7 @@
 import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/chat/widgets/agent_step.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
+import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_transport.dart';
 import 'package:baocode/kernel/claude_code/claude_code_translator.dart';
@@ -8,6 +9,7 @@ import 'package:baocode/kernel/mock/mock_kernels.dart';
 import 'package:baocode/kernel/transcript.dart';
 import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli;
@@ -35,6 +37,68 @@ const _second = ModelProvider(
 const _providers = [_first, _second];
 
 void main() {
+  test('Abyss routes selected pool models through CLI aliases without changing agent type', () async {
+    final providers = ModelProviders.memory(providers: _providers);
+    await providers.setSubagentPool(['@fx/gpt-6.1-sol', '@ap/gpt-6.1-sol']);
+    late FakeCli cli;
+    late ClaudeLaunch launched;
+    final kernel = ClaudeCodeKernel(
+      MockKernels.claudeCode,
+      const KernelContext(cwd: '/p', settings: {'model': '@fx/gpt-6.1-sol'}),
+      start: (launch) async {
+        launched = launch;
+        return cli = FakeCli();
+      },
+      providers: providers,
+      providerEnvironment: (provider, model) async => {
+        'ANTHROPIC_BASE_URL': 'http://local-proxy',
+        'ANTHROPIC_MODEL': model,
+      },
+    );
+    addTearDown(kernel.dispose);
+    final transcript = Transcript();
+    kernel.events.listen(transcript.apply);
+    kernel.prepare();
+    await pumpEventQueue(times: 20);
+    expect(launched.env!['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'gpt-6.1-sol');
+    expect(launched.env!['ANTHROPIC_DEFAULT_OPUS_MODEL'], '@ap/gpt-6.1-sol');
+    expect(launched.env!['ANTHROPIC_MODEL'], launched.model);
+    cli.push({
+      'type': 'control_request',
+      'request_id': 'pool-hook',
+      'request': {
+        'subtype': 'hook_callback',
+        'callback_id': 'baocode-approve-agent',
+        'input': {
+          'tool_name': 'Agent',
+          'tool_input': {
+            'description': 'Read files',
+            'prompt': 'Read only.',
+            'subagent_type': 'Explore',
+          },
+        },
+      },
+    });
+    await pumpEventQueue();
+    final approval = transcript.pendingInteraction as AgentApprovalRequest;
+    expect(approval.models, ['@fx/gpt-6.1-sol', '@ap/gpt-6.1-sol']);
+    kernel.answer(
+      approval.id,
+      const ApprovalAnswer(
+        ApprovalDecision.allowOnce,
+        model: '@ap/gpt-6.1-sol',
+      ),
+    );
+    final response = cli.written.last['response'] as Map;
+    final output = (response['response'] as Map)['hookSpecificOutput'] as Map;
+    expect(output['updatedInput'], {
+      'description': 'Read files',
+      'prompt': 'Read only.',
+      'subagent_type': 'Explore',
+      'model': 'opus',
+    });
+  }, skip: !AppEdition.isAbyss);
+
   test('a subagent\'s model, a bare id, is the upstream\'s the session is '
       'on, not the first with a model of that id', () async {
     late FakeCli cli;
