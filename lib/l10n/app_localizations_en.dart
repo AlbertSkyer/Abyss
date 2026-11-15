@@ -7502,6 +7502,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Models to hand to subagents launched together, in order. They are taken in turn (round-robin, wrapping around) when the call names no model, its definition names none, and no subagent model is configured; forced or explicit models still win. BaoCode\'s own core applies the pool; the Claude Code CLI does not.';
 
   @override
+  String get modelsSubagentPoolAbyssDescription =>
+      'For local Claude Code CLI sessions using a configured upstream, the first three available pool models appear in each subagent\'s approval dialog. Choose a model before starting the task; this does not change the main session\'s model. A forced subagent model takes precedence. Remote sessions and sessions without a configured upstream do not support this pool.';
+
+  @override
   String get modelsSubagentPoolEmpty => 'No models picked yet.';
 
   @override

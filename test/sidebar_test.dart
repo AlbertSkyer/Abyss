@@ -250,6 +250,46 @@ _SidebarKernel _taskKernel(AgentThread thread, List<_SidebarKernel> kernels) =>
     kernels.singleWhere((kernel) => kernel.sessionId == thread.id);
 
 void main() {
+  testWidgets('cancelled AgentItem is distinct from interrupted and failed', (
+    tester,
+  ) async {
+    final (workspace, kernels) = await _pumpAgentTasks(tester);
+    final thread = taskParent(workspace, '/tmp/a');
+    workspace.select(thread);
+    await tester.pump();
+    final kernel = _taskKernel(thread, kernels);
+    kernel.report(
+      'cancelled',
+      const AgentItem(
+        id: 'cancelled',
+        description: 'Not started',
+        status: CommandStatus.interrupted,
+        outcome: 'cancelled',
+        approvalStatus: 'denied',
+      ),
+    );
+    kernel.report(
+      'interrupted',
+      const AgentItem(
+        id: 'interrupted',
+        description: 'Stopped during execution',
+        status: CommandStatus.interrupted,
+      ),
+    );
+    kernel.report(
+      'failed',
+      const AgentItem(
+        id: 'failed',
+        description: 'Execution error',
+        status: CommandStatus.failed,
+      ),
+    );
+    await tester.pump();
+    expect(inSidebar(find.text('Cancelled')), findsOneWidget);
+    expect(inSidebar(find.text('Interrupted')), findsOneWidget);
+    expect(inSidebar(find.text('Failed')), findsOneWidget);
+  });
+
   testWidgets('AgentItem tasks fold per parent and stay folded between runs', (
     tester,
   ) async {

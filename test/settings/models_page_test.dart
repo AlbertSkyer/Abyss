@@ -18,6 +18,7 @@ import 'package:baocode/models/model_provider.dart';
 import 'package:baocode/models/model_providers.dart';
 import 'package:baocode/models/secret_store.dart';
 import 'package:baocode/models/upstream.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/settings/pages/model_dialogs.dart';
 import 'package:baocode/settings/pages/models_page.dart';
 import 'package:baocode/settings/pages/settings_widgets.dart';
@@ -1780,11 +1781,27 @@ void main() {
       await pump(tester);
       expect(find.text('Subagent Model Pool'), findsOneWidget);
       expect(find.text('No models picked yet.'), findsOneWidget);
-      expect(find.textContaining('taken in turn (round-robin'), findsOneWidget);
-      expect(
-        find.textContaining('the Claude Code CLI does not'),
-        findsOneWidget,
-      );
+      if (AppEdition.isAbyss) {
+        expect(find.textContaining('first three available'), findsOneWidget);
+        expect(
+          find.textContaining('the main session\'s model'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Remote sessions'), findsOneWidget);
+        expect(
+          find.textContaining('the Claude Code CLI does not'),
+          findsNothing,
+        );
+      } else {
+        expect(
+          find.textContaining('taken in turn (round-robin'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('the Claude Code CLI does not'),
+          findsOneWidget,
+        );
+      }
     });
 
     testWidgets('models are added from the configured ones, saved in order', (

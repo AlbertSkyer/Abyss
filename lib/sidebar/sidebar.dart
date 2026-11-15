@@ -4101,12 +4101,14 @@ class _AgentTaskRow extends StatelessWidget {
         : unread
         ? ThreadStatus.unread
         : ThreadStatus.idle;
-    final label = switch (agent.status) {
-      CommandStatus.running => context.l10n.sidePanelAgentRunning,
-      CommandStatus.succeeded => context.l10n.sidePanelAgentDone,
-      CommandStatus.failed => context.l10n.sidePanelAgentFailed,
-      CommandStatus.interrupted => context.l10n.sidePanelAgentInterrupted,
-    };
+    final label = agent.outcome == 'cancelled'
+        ? context.l10n.sidePanelAgentCancelled
+        : switch (agent.status) {
+            CommandStatus.running => context.l10n.sidePanelAgentRunning,
+            CommandStatus.succeeded => context.l10n.sidePanelAgentDone,
+            CommandStatus.failed => context.l10n.sidePanelAgentFailed,
+            CommandStatus.interrupted => context.l10n.sidePanelAgentInterrupted,
+          };
     return IdeListRow(
       height: _SidebarState._rowHeight,
       onTap: onTap,

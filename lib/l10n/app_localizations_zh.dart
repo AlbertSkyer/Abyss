@@ -7062,6 +7062,10 @@ class AppLocalizationsZh extends AppLocalizations {
       '为同时启动的子 Agent 按顺序准备的模型。当调用未指定模型、子 Agent 定义也未指定、且未配置子 Agent 模型时，按顺序轮流使用（循环使用）；强制或明确指定的模型仍然优先。BaoCode 自带内核会使用模型池，Claude Code CLI 不会。';
 
   @override
+  String get modelsSubagentPoolAbyssDescription =>
+      '本地 Claude Code CLI 会话使用已配置的上游时，模型池中前 3 个可用模型会显示在子任务审批弹窗中。启动前选择模型，不会改变主会话模型；强制子 Agent 模型设置优先。远程会话和未使用已配置上游的会话不支持此模型池。';
+
+  @override
   String get modelsSubagentPoolEmpty => '还没有选择模型。';
 
   @override

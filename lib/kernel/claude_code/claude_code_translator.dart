@@ -155,6 +155,27 @@ class ClaudeTranslator {
   final Map<String, String> _agentCalls = {};
   final Set<String> _denied = {};
 
+  /// Agent calls whose external CLI PreToolUse approval was denied here,
+  /// before a child could start. Keyed by the CLI's tool-use id, not by any
+  /// error text: an actual execution error remains a failure. Kept for the
+  /// session so a late result cannot change it back to a failure.
+  final Set<String> _cancelledAgentStarts = {};
+
+  /// The host denied this child before it started. The CLI's subsequent
+  /// permission_denied/tool_result may arrive after the turn was settled.
+  void cancelAgentStart(String toolUseId) {
+    _denied.add(toolUseId);
+    _cancelledAgentStarts.add(toolUseId);
+    if (_agents[toolUseId] case final agent?) {
+      agent.item = agent.item.copyWith(
+        status: CommandStatus.interrupted,
+        approvalStatus: 'denied',
+        outcome: 'cancelled',
+      );
+      _putAgent(toolUseId);
+    }
+  }
+
   /// Calls made and not answered yet: those of a stopped turn never are.
   final Set<String> _unanswered = {};
 
@@ -1450,8 +1471,13 @@ class ClaudeTranslator {
         }
         agent.item = agent.item.copyWith(
           modelSource: _string(structured?['modelSource']),
-          outcome: _string(structured?['outcome'] ?? structured?['status']),
-          status: outcome == _Outcome.done
+          approvalStatus: _cancelledAgentStarts.contains(id) ? 'denied' : null,
+          outcome: _cancelledAgentStarts.contains(id)
+              ? 'cancelled'
+              : _string(structured?['outcome'] ?? structured?['status']),
+          status: _cancelledAgentStarts.contains(id)
+              ? CommandStatus.interrupted
+              : outcome == _Outcome.done
               ? CommandStatus.succeeded
               : CommandStatus.failed,
           result: _agentReport(structured, text),
@@ -1882,6 +1908,18 @@ class ClaudeTranslator {
         _denied.add(id);
         // A round of planning's card says what became of it.
         if (_planCalls.containsKey(id)) return;
+        if (_agents[id] case final agent?) {
+          final cancelled = _cancelledAgentStarts.contains(id);
+          agent.item = agent.item.copyWith(
+            status: cancelled
+                ? CommandStatus.interrupted
+                : CommandStatus.failed,
+            approvalStatus: cancelled ? 'denied' : null,
+            outcome: cancelled ? 'cancelled' : null,
+          );
+          _putAgent(id);
+          return;
+        }
         _put(id, _toolItem(tool, _Outcome.denied), parent: tool.parent);
       case 'thinking_tokens':
         final estimate = claudeInt(message['estimated_tokens']);

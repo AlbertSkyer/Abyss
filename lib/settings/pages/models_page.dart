@@ -30,6 +30,7 @@ import '../../models/model_provider.dart';
 import '../../models/model_providers.dart';
 import '../../models/model_runtime.dart';
 import '../../models/upstream.dart';
+import '../../platform/app_edition.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/codicons.dart';
 import '../../theme/workbench_theme.dart' show themeColors;
@@ -352,15 +353,16 @@ class _ModelsSettingsPageState extends State<ModelsSettingsPage> {
     );
   }
 
-  /// The models set aside for subagents, in order: those launched with no
-  /// model of their own, no definition model and no scalar subagent model
-  /// take them in turn (BaoCode's own core; the CLI has no equivalent).
+  /// Abyss offers the pool at CLI task approval; BaoCode's own core takes
+  /// models in turn when no explicit or configured subagent model applies.
   Widget _subagentPool(BuildContext context) {
     final l10n = context.l10n;
     final entries = _providers.subagentPoolEntries;
     return SettingsGroup(
       title: l10n.modelsSubagentPool,
-      description: l10n.modelsSubagentPoolDescription,
+      description: AppEdition.isAbyss
+          ? l10n.modelsSubagentPoolAbyssDescription
+          : l10n.modelsSubagentPoolDescription,
       children: [
         if (entries.isEmpty)
           SettingsRow(label: l10n.modelsSubagentPoolEmpty)

@@ -1239,6 +1239,11 @@ class ClaudeCodeKernel
         const reason =
             'The approval was cancelled because the conversation stopped '
             'or its window closed. The subagent was not started.';
+        if (permission.hook) {
+          if (permission.toolUseId case final toolUseId?) {
+            _translator.cancelAgentStart(toolUseId);
+          }
+        }
         _control!.respond(
           id,
           permission.hook
@@ -1816,6 +1821,11 @@ class ClaudeCodeKernel
               'updatedInput': {...permission.input, 'model': alias},
           },
         });
+        if (!hookAllowed) {
+          if (permission.toolUseId case final toolUseId?) {
+            _translator.cancelAgentStart(toolUseId);
+          }
+        }
       } else {
         control.respond(requestId, {
           'behavior': allowed ? 'allow' : 'deny',
@@ -1933,6 +1943,7 @@ class ClaudeCodeKernel
       const [],
       agent: true,
       hook: hook,
+      toolUseId: (input['tool_use_id'] ?? request['tool_use_id']) as String?,
     );
     emit(
       InteractionRequested(
@@ -4262,6 +4273,7 @@ class _Permission {
     this.sdk,
     this.agent = false,
     this.hook = false,
+    this.toolUseId,
   });
 
   /// For one of the app's own tools asking (ClaudeSdkCall.ask): answered
@@ -4274,6 +4286,10 @@ class _Permission {
 
   /// An external CLI's PreToolUse hook, answered in its own protocol.
   final bool hook;
+
+  /// The Agent call awaiting that hook, to carry its denial into the
+  /// conversation's cancellation state.
+  final String? toolUseId;
 
   /// For an MCP server's elicitation: its form's fields, or the link it
   /// asks to open.

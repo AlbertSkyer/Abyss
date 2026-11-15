@@ -1,5 +1,10 @@
+import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/kernel_types.dart';
+import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
+import 'package:baocode/kernel/mock/mock_kernels.dart';
+import 'package:baocode/kernel/transcript.dart';
+import 'package:bao_remote/claude.dart' show ClaudeHistoryPage;
 import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -147,6 +152,122 @@ void main() {
         kernel.dispose();
       },
     );
+
+    test('a denied external CLI start stays cancelled, not failed', () async {
+      final cli = FakeCli();
+      final (:kernel, :transcript, events: _) = claude(cli);
+      addTearDown(kernel.dispose);
+      kernel.send(const KernelTurn(id: 'u1', text: 'Delegate this'));
+      await pumpEventQueue();
+      cli.push({
+        'type': 'assistant',
+        'uuid': 'a1',
+        'message': {
+          'id': 'm1',
+          'role': 'assistant',
+          'content': [
+            {
+              'type': 'tool_use',
+              'id': 'call-hook',
+              'name': 'Agent',
+              'input': {'description': 'Look through the games'},
+            },
+          ],
+        },
+      });
+      askHook(cli);
+      await pumpEventQueue();
+      kernel.answer(
+        transcript.pendingInteraction!.id,
+        const ApprovalAnswer(ApprovalDecision.deny),
+      );
+      cli.push({
+        'type': 'system',
+        'subtype': 'permission_denied',
+        'tool_use_id': 'call-hook',
+      });
+      cli.push({
+        'type': 'user',
+        'uuid': 'tool-result',
+        'message': {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'call-hook',
+              'content': 'Tool execution failed unexpectedly',
+              'is_error': true,
+            },
+          ],
+        },
+      });
+      await pumpEventQueue();
+      final agent =
+          transcript.itemAt(transcript.indexOf('call-hook')!) as AgentItem;
+      expect(agent.status, CommandStatus.interrupted);
+      expect(agent.approvalStatus, 'denied');
+      expect(agent.outcome, 'cancelled');
+
+      // The host decision is not persisted as a session message. Replaying
+      // the CLI's error alone must not relabel a real execution failure.
+      final reader = ClaudeHistoryPage([
+        {
+          'type': 'assistant',
+          'uuid': 'a2',
+          'message': {
+            'id': 'm2',
+            'role': 'assistant',
+            'content': [
+              {
+                'type': 'tool_use',
+                'id': 'call-failed',
+                'name': 'Agent',
+                'input': {'description': 'Actually ran'},
+              },
+            ],
+          },
+        },
+        {
+          'type': 'user',
+          'uuid': 'result-2',
+          'message': {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'tool_result',
+                'tool_use_id': 'call-failed',
+                'content': 'The subagent was not started.',
+                'is_error': true,
+              },
+            ],
+          },
+        },
+      ]);
+      final restored = ClaudeCodeKernel(
+        MockKernels.claudeCode,
+        KernelContext(
+          cwd: '/p',
+          resume: SessionRecord(
+            id: 'restored',
+            title: 'Restored',
+            updatedAt: DateTime(2026),
+            cwd: '/p',
+          ),
+        ),
+        start: (_) async => cli,
+        providerEnvironment: (_, _) async => const {},
+        readHistoryPage: (_, {required turns, before}) async => reader,
+      );
+      final restoredTranscript = Transcript();
+      restored.events.listen(restoredTranscript.apply);
+      addTearDown(restored.dispose);
+      await pumpEventQueue();
+      final failed = restoredTranscript.itemAt(
+        restoredTranscript.indexOf('call-failed')!,
+      ) as AgentItem;
+      expect(failed.status, CommandStatus.failed);
+      expect(failed.outcome, isNot('cancelled'));
+    });
 
     test('external CLI closing denies an unanswered hook', () async {
       final cli = FakeCli();
