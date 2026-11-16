@@ -22,6 +22,8 @@ import 'package:baocode/workspace/chat_grid.dart';
 import 'package:baocode/workspace/chat_grid_view.dart';
 import 'package:baocode/workspace/editor_launcher.dart';
 import 'package:baocode/chat/side_panel/side_panel_view.dart';
+import 'package:baocode/chat/side_panel/side_panel_controller.dart';
+import 'package:baocode/chat/side_panel/agent_tasks_page.dart';
 import 'package:baocode/workspace/open_in_editor_button.dart';
 import 'package:baocode/workspace/pane_tabs.dart';
 import 'package:baocode/workspace/dock_host.dart';
@@ -172,6 +174,31 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'Abyss team task entry preserves clicked member and source session',
+    (tester) async {
+      final workspace = await pumpApp(tester);
+      final source = workspace.current!;
+      workspace.chatDock.controller.open('team');
+      await tester.pumpAndSettle();
+      final team = tester.widget<AgentTeamPage>(find.byType(AgentTeamPage));
+      team.onShowTasks('member-fixture');
+      await tester.pump(const Duration(milliseconds: 400));
+      final board = tester.widget<AgentTasksPage>(find.byType(AgentTasksPage));
+      expect(board.session, same(source.session));
+      expect(
+        board.panel.tabsOf(source.session).agentMemberId,
+        'member-fixture',
+      );
+      expect(workspace.chatDock.controller.openPanelIds, contains('agents'));
+      final other = workspace.threads.firstWhere((t) => t.title == second);
+      expect(board.panel.tabsOf(other.session).agentMemberId, isNull);
+      board.panel.showAgentTasks(source.session);
+      expect(board.panel.tabsOf(source.session).agentMemberId, isNull);
+    },
+    skip: !AppEdition.isAbyss,
+  );
 
   group('Abyss single chat dock', skip: !AppEdition.isAbyss, () {
     for (final side in DockSide.values) {

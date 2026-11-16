@@ -133,6 +133,9 @@ const alwaysShownSections = [
 class SidePanelTabs {
   SidePanelSection section = SidePanelSection.changes;
 
+  /// A team member selected in this conversation, not a global agent ID.
+  String? agentMemberId;
+
   /// The plan the agent wrote, on the plan page: none until it writes one.
   SidePanelTab? plan;
 
@@ -634,6 +637,12 @@ class AgentSidePanel extends ChangeNotifier {
   void showSection(Object conversation, SidePanelSection section) {
     tabsOf(conversation).section = section;
     _showFor(conversation);
+  }
+
+  void showAgentTasks(Object conversation, {String? memberId}) {
+    tabsOf(conversation).agentMemberId = memberId;
+    showSection(conversation, SidePanelSection.agents);
+    notifyListeners();
   }
 
   /// Shows [id] on the terminal page: a terminal (its instance), or a

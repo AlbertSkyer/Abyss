@@ -282,3 +282,35 @@
 - 本轮未重新做真实上游运行中任务的拖动/审批压力验证；移动时 session/ChatScreen State 不变由 widget 测试验证。跨整个应用重启阅读锚点仍未新增实现。
 - 新布局/预设的恢复有定向测试和基础重启 GUI 证据；所有自定义坏数据/所有快捷键组合没有穷举真实手工验收。
 - 原生系统浮动窗口、多屏不属于本次实现，整个产品其他目标不据此宣称完成。
+
+## 团队“查看任务”重启为空修复（2026-11-16）
+
+### 原因与修复
+
+- 用户在另一台电脑报告重启后成员仍在、查看任务却为空。本机代码确认：成员/任务计数来自完整宿主账本，而智能体页仅遍历当前已读 transcript（初次最近10轮）；团队入口还丢弃 memberId。没有读取另一台机器数据，不把代码复现冒充该机完整诊断。
+- 新增 ReportsAgentTasks 公共只读投影，每个 run 保留自身 toolUseId、memberId、taskId/runId、状态、模型、报告及原成员卡映射。恢复仍执行 reconcileInterrupted，不凭残留记录伪造在线。
+- 入口按来源 session 保留成员筛选，提供全部任务；页直接列持久任务和各次已保存报告，原始执行过程按需加载，不依赖用户先滚主聊天。旧 transcript 卡未入账本时仍保留入口，不被新索引遮掉。
+- 详情仅显式点击才读取本地历史，每次最多3页，每页沿用20轮；找到即停，重复点击合并，无进展/异常准确收尾，离开视图停止后续批次，不自动派工或重试模型。
+- 原始记录缺失时保留任务/报告并明确提示完整历史不可用；续接共享成员执行历史，不把最新共享卡报告当旧run专属报告。任务详情仍只读，运行时停止入口仅在原session确实提供stop能力时显示。
+
+### 定向验证
+
+- 只读任务页/边界加载、真实磁盘账本重开、成员管理相关组合15项通过，日志 `build/team-task-final-regression.log`。
+- 工作台“查看任务”接收端保留成员与session用例1项通过；原BaoCode任务页9项通过；中英文键/翻译2项通过。日志 `build/team-task-workbench-test.log`、`team-task-baocode-compat.log`、`team-task-l10n-tests.log`。未运行全套测试。
+- 最初数据投影加载标志未清导致测试失败，已修正并重跑。工作台用例用pumpAndSettle碰到加载动画超时，改为显式pump后验证接线；翻译首轮遇到并行Flutter原生资产锁，串行重跑通过。不把失败轮次计为通过。
+
+### 实际 GUI
+
+- 全新人工数据 `build/team-task-restore-gui-20261116/data`，35轮会话中任务位于第1轮，账本同成员两次完成运行；另有完全缺原Agent卡但保留账本的会话。没有复制真实配置或调用付费模型，首次隔离CLI下载不等于模型执行。
+- 实际启动，主聊天停在第32—34轮，不向上翻历史，直接点击恢复成员“查看任务”：两次运行均出现；展开第一run显示FIRST durable report，未加载的历史提示准确。截图 `tasks-from-team.png`、`saved-report-before-load.png`。
+- 显式读取执行历史后找到原卡，再打开只读成员共享历史，无composer。截图 `history-found.png`、`readonly-shared-history.png`。
+- 正常退出重开，再直接从团队查看，列表仍有两项；缺原卡会话读取到末端后显示“已保留任务记录，但完整执行历史不可用”，仍显示保存报告。截图 `restart-tasks.png`、`missing-history.png`，均位于该验收目录且已查看。
+- 最终修复验证包 `dist/Abyss-team-task-restore-20261116-verified/Abyss.exe`，Release与Abyss-only身份检查通过（`build/team-task-final-build.log`）；app.so SHA-256 `E86013521EC3F770BC880BC87D3948444079DBBF2B5D7D199AAEEED1CC26CC70`。最终包再次实际从团队打开两项运行，截图 `final-restart-tasks.png` 已查看；修改模块静态分析无问题（`build/team-task-clean-analyze.log`）。
+- 这些是本机独立夹具的运行证据；尚未在用户报告的另一台电脑复验，不能保证找回被删除且从未保存的完整执行内容。修复不要求删除账本或重建成员。上述验证包内部版本为1.9.8+34；用户随后要求推送发版，发行版本同步为1.9.9+35，重新构建安装器，不覆盖1.9.8 Release。
+
+### 1.9.9 发行构建
+
+- 版本1.9.9+35，版本一致性5项测试通过；完整Release及Inno Setup打包成功，日志 `build/abyss-1.9.9-release-build.log`，原生/AOT独立身份检查通过。
+- 安装器 `dist/Abyss-1.9.9-release/Abyss-1.9.9-setup.exe`，26,047,905字节，SHA-256 `0B115E1ACBFBB203672AFCC4EBE80677815B96838435AA1109CA01CA3F104949`。
+- 新运行目录 `dist/Abyss-1.9.9-windows-x64`，app.so SHA-256 `49315ADD774C041A8F987123742106CA7D726B9B4126F5E659034699797A6A20`。发行包在独立人工数据下实际启动，恢复两项任务，关于显示1.9.9（35）；截图 `release-1.9.9-restored.png`、`release-1.9.9-about.png` 已查看。
+- 安装器未签名；完整隔离安装/卸载与报告问题的另一台电脑复验仍未执行，发版不扩大这些验收结论。

@@ -124,7 +124,8 @@ class ClaudeCodeKernel
         ConfirmsModelSwitch,
         WatchesEdits,
         LoadsHistory,
-        ManagesAgentMembers {
+        ManagesAgentMembers,
+        ReportsAgentTasks {
   ClaudeCodeKernel(
     this.descriptor,
     this._context, {
@@ -153,11 +154,11 @@ class ClaudeCodeKernel
       agentOutcome: _agentOutcome,
       agentChanged: _agentChanged,
     );
+    _sessionId = _context.resume?.id;
     _ledgerReady = _loadTaskLedger(taskLedger);
     _providers.addListener(_providersChanged);
     ExtensionSwitches.changes?.addListener(_applySwitches);
     _live.add(this);
-    _sessionId = _context.resume?.id;
     final settings = _context.settings;
     _work = _pick(settings[KernelChoiceKind.mode.name], _works, 'agent');
     _approval = _pick(
@@ -1620,6 +1621,7 @@ class ClaudeCodeKernel
         _taskLedger?.stopTask(_sessionId!, call);
         _translator.stopAgentTask(taskId);
         _translator.refreshAgentDecisions();
+        _loadAgentTasks();
       }
     }
     _tell('stop_task', {'task_id': taskId});
@@ -2460,6 +2462,57 @@ class ClaudeCodeKernel
     emitInfoChanged();
   }
 
+  @override
+  List<KernelAgentTask> get agentTasks => List.unmodifiable(_agentTasks);
+
+  @override
+  bool get loadingAgentTasks => _loadingAgentTasks;
+
+  @override
+  String? get agentTasksError => _agentTasksError;
+
+  List<KernelAgentTask> _agentTasks = const [];
+  bool _loadingAgentTasks = false;
+  String? _agentTasksError;
+
+  void _loadAgentTasks() {
+    if (_disposed || _loadingAgentTasks) return;
+    final ledger = _taskLedger;
+    final session = _sessionId;
+    if (ledger == null || session == null || _context.chatOnly) return;
+    _loadingAgentTasks = true;
+    _agentTasksError = null;
+    emitInfoChanged();
+    try {
+      final tasks = ledger.tasksFor(session);
+      final cards = <String, String>{};
+      for (final task in tasks) {
+        cards.putIfAbsent(task.memberId, () => task.toolUseId);
+      }
+      _agentTasks = [
+        for (final task in tasks)
+          KernelAgentTask(
+            memberId: task.memberId,
+            toolUseId: task.toolUseId,
+            taskId: task.taskId,
+            runId: task.runId,
+            model: task.model,
+            description: task.description,
+            status: KernelAgentTaskStatus.values.byName(task.status.name),
+            result: task.result,
+            cardId: cards[task.memberId],
+            hostStopped: task.hostStopped,
+            hostCancelled: task.hostCancelled,
+          ),
+      ];
+    } catch (error) {
+      _agentTasksError = '$error';
+    } finally {
+      _loadingAgentTasks = false;
+      emitInfoChanged();
+    }
+  }
+
   AgentTaskLedger? _taskLedger;
   late final Future<void> _ledgerReady;
   final Map<String, String> _memberCalls = {};
@@ -2473,24 +2526,35 @@ class ClaudeCodeKernel
         RemoteLocation.isRemote(_cwd)) {
       return;
     }
+    _loadingAgentTasks = true;
+    _agentTasksError = null;
+    emitInfoChanged();
     try {
       _taskLedger = await (injected ?? AgentTaskLedger.open());
-      if (_disposed) return;
+      if (_disposed) {
+        _loadingAgentTasks = false;
+        return;
+      }
       if (_context.resume?.id case final id?) {
         _taskLedger!.reconcileInterrupted(id);
         final tasks = _taskLedger!.tasksFor(id);
         for (final member in _taskLedger!.membersFor(id)) {
-          final agentId = member.cliAgentId;
-          if (agentId == null) continue;
           final runs = tasks.where((task) => task.memberId == member.memberId);
           if (runs.isEmpty) continue;
           final card = runs.first.toolUseId;
-          _memberCards[agentId] = card;
-          _memberCalls[agentId] = runs.last.toolUseId;
+          if (member.cliAgentId case final agentId?) {
+            _memberCards[agentId] = card;
+            _memberCalls[agentId] = runs.last.toolUseId;
+          }
           _activeCardCalls[card] = runs.last.toolUseId;
         }
       }
+      _loadingAgentTasks = false;
+      _loadAgentTasks();
     } catch (error) {
+      _loadingAgentTasks = false;
+      _agentTasksError = '$error';
+      emitInfoChanged();
       emit(
         ItemUpserted(
           nextSeq,
@@ -2552,6 +2616,7 @@ class ClaudeCodeKernel
       }
     }
     _translator.cancelAgentStart(call);
+    _loadAgentTasks();
   }
 
   void _recordAgentTask(Map<String, Object?> message) {
@@ -2559,6 +2624,13 @@ class ClaudeCodeKernel
     final session = _sessionId;
     if (ledger == null || session == null) return;
     if (message['type'] != 'system') return;
+    if (!const {
+      'task_started',
+      'task_notification',
+      'task_updated',
+    }.contains(message['subtype'])) {
+      return;
+    }
     if (message['subtype'] == 'task_started' &&
         message['task_type'] == 'local_agent') {
       final agentId = message['task_id'] as String?;
@@ -2615,6 +2687,7 @@ class ClaudeCodeKernel
         );
       }
     }
+    _loadAgentTasks();
   }
 
   // --- Output -------------------------------------------------------------------------
@@ -2658,6 +2731,7 @@ class ClaudeCodeKernel
         }
       case 'system' when message['subtype'] == 'init':
         _sessionId = message['session_id'] as String? ?? _sessionId;
+        _loadAgentTasks();
         _reportedModel = message['model'] as String?;
         _capabilities = {
           for (final capability in message['capabilities'] as List? ?? const [])
@@ -3649,6 +3723,7 @@ class ClaudeCodeKernel
   void _exited(int code, String stderr, {String? executable}) {
     if (_sessionId case final session?) {
       _taskLedger?.reconcileInterrupted(session);
+      _loadAgentTasks();
     }
     final wasReady = _health.status == KernelHealthStatus.ready;
     _teardown(answering: false);

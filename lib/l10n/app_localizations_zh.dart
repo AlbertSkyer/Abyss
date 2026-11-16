@@ -80,6 +80,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get teamShowTasks => '查看任务';
 
   @override
+  String get agentTasksAll => '全部任务';
+
+  @override
+  String get agentTasksLoading => '正在读取已保存任务…';
+
+  @override
+  String get agentTasksLoadEarlier => '读取较早历史';
+
+  @override
+  String get agentTasksReadDetails => '读取执行历史';
+
+  @override
+  String get agentTasksOpenDetails => '打开成员共享执行历史';
+
+  @override
+  String get agentTasksNoReport => '本次运行未保存报告。';
+
+  @override
+  String get agentTasksMissingHistory => '已保留任务记录，但完整执行历史不可用。';
+
+  @override
+  String get agentTasksEarlierDetails => '此任务不在已加载历史中，可继续读取较早的一批历史查找。';
+
+  @override
+  String get agentTasksLoadFailed => '读取任务历史失败，可以重试。';
+
+  @override
+  String get agentTasksReport => '本次运行的已保存报告';
+
+  @override
+  String get agentTasksMemberEmpty => '此成员暂无已保存任务。';
+
+  @override
   String get scratchCreate => '继承当前会话';
 
   @override

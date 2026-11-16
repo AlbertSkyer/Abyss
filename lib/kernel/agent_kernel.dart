@@ -418,6 +418,13 @@ abstract interface class ManagesAgentMembers {
   });
 }
 
+/// Reports durable host-agent runs without reading or replaying a transcript.
+abstract interface class ReportsAgentTasks {
+  List<KernelAgentTask> get agentTasks;
+  bool get loadingAgentTasks;
+  String? get agentTasksError;
+}
+
 // --- Sessions ------------------------------------------------------------------
 
 /// A conversation a kernel kept, to list and continue.

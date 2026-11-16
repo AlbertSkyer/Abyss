@@ -183,6 +183,89 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     _ => const [],
   };
 
+  List<KernelAgentTask> get agentTasks => switch (_kernel) {
+    final ReportsAgentTasks kernel => kernel.agentTasks,
+    _ => const [],
+  };
+
+  bool get loadingAgentTasks => switch (_kernel) {
+    final ReportsAgentTasks kernel => kernel.loadingAgentTasks,
+    _ => false,
+  };
+
+  String? get agentTasksError => switch (_kernel) {
+    final ReportsAgentTasks kernel => kernel.agentTasksError,
+    _ => null,
+  };
+
+  List<String>? agentTaskPath(KernelAgentTask task) {
+    for (final entry in agentTree) {
+      if (entry.depth == 0 &&
+          (entry.agent.id == task.cardId || entry.agent.id == task.toolUseId)) {
+        return entry.path;
+      }
+    }
+    return null;
+  }
+
+  Future<void>? _agentTaskHistoryLoad;
+
+  /// Reads bounded local history only; never launches a model or retries work.
+  Future<void> loadAgentTaskHistory(
+    KernelAgentTask task, {
+    bool Function()? shouldContinue,
+  }) async {
+    if (_agentTaskHistoryLoad case final pending?) {
+      await pending;
+      return;
+    }
+    final reading = _loadAgentTaskHistory(task, shouldContinue);
+    _agentTaskHistoryLoad = reading;
+    try {
+      await reading;
+    } finally {
+      _agentTaskHistoryLoad = null;
+    }
+  }
+
+  Future<void> _loadAgentTaskHistory(
+    KernelAgentTask task,
+    bool Function()? shouldContinue,
+  ) async {
+    if (loadingHistory) {
+      final ready = Completer<void>();
+      void changed() {
+        if (!loadingHistory && !ready.isCompleted) ready.complete();
+      }
+
+      addListener(changed);
+      try {
+        changed();
+        await ready.future.timeout(const Duration(seconds: 15));
+      } finally {
+        removeListener(changed);
+      }
+    }
+    for (
+      var page = 0;
+      page < 3 &&
+          !_disposed &&
+          (shouldContinue?.call() ?? true) &&
+          agentTaskPath(task) == null &&
+          hasEarlierHistory;
+      page++
+    ) {
+      final before = prependedCount;
+      await loadEarlier();
+      if (prependedCount == before) {
+        if (hasEarlierHistory) {
+          throw StateError('History reader made no progress');
+        }
+        break;
+      }
+    }
+  }
+
   void updateAgentMember(
     String id, {
     String? name,

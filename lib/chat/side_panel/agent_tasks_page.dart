@@ -14,6 +14,7 @@ import '../widgets/agent_step.dart';
 import '../widgets/hover_builder.dart';
 import '../widgets/pixel_loader.dart';
 import 'side_panel_controller.dart';
+import 'saved_agent_tasks.dart';
 
 /// The conversation's child agents (Agent/Task): one row for each, under
 /// the one it was started by, with how it went and whether it is unread.
@@ -32,12 +33,24 @@ class AgentTasksPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    if (session.agentTasks.isNotEmpty ||
+        session.loadingAgentTasks ||
+        session.agentTasksError != null ||
+        panel.tabsOf(session).agentMemberId != null) {
+      return SavedAgentTasks(panel: panel, session: session);
+    }
     final tree = session.agentTree;
     final roots = [
       for (final entry in tree)
         if (entry.depth == 0) entry,
     ];
     panel.noteAgentGroups([for (final entry in roots) entry.agent.id!]);
+    if (roots.isEmpty &&
+        (session.loadingHistory ||
+            session.hasEarlierHistory ||
+            session.loadingEarlier)) {
+      return AgentHistoryAvailability(session: session);
+    }
     if (roots.isEmpty) {
       return Center(
         key: const ValueKey(('page', SidePanelSection.agents)),

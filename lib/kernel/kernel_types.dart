@@ -501,6 +501,44 @@ class KernelAgentMember {
   final int tasks;
 }
 
+enum KernelAgentTaskStatus {
+  running,
+  completed,
+  failed,
+  cancelled,
+  interrupted,
+}
+
+/// One durable host-agent run. A member's runs retain their own outcomes and
+/// share the original Agent transcript card through [cardId].
+final class KernelAgentTask {
+  const KernelAgentTask({
+    required this.memberId,
+    required this.toolUseId,
+    required this.taskId,
+    this.runId,
+    this.model,
+    this.description,
+    required this.status,
+    this.result,
+    this.cardId,
+    this.hostStopped = false,
+    this.hostCancelled = false,
+  });
+
+  final String memberId;
+  final String toolUseId;
+  final String taskId;
+  final String? runId;
+  final String? model;
+  final String? description;
+  final KernelAgentTaskStatus status;
+  final String? result;
+  final String? cardId;
+  final bool hostStopped;
+  final bool hostCancelled;
+}
+
 /// Where an MCP server stands, as its kernel reports it.
 enum McpServerStatus { connected, pending, failed, needsAuth, disabled }
 

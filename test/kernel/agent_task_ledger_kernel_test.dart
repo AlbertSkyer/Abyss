@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bao_remote/claude.dart' show ClaudeHistoryPage;
 import 'package:baocode/chat/chat_models.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
+import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/kernel/transcript.dart';
 import 'package:baocode/kernel/claude_code/agent_task_ledger.dart';
@@ -206,6 +208,123 @@ void main() {
         AgentTaskStatus.interrupted,
       );
     });
+
+    test(
+      'resumed ledger reports independent runs without an Agent in history',
+      () async {
+        ledger.recordMember(
+          sessionId: 'resume-runs',
+          memberId: 'member-one',
+          cliAgentId: 'cli-one',
+          model: 'model-one',
+        );
+        ledger.recordStart(
+          sessionId: 'resume-runs',
+          toolUseId: 'original-call',
+          memberId: 'member-one',
+          taskId: 'task-one',
+          runId: 'run-one',
+          model: 'model-one',
+          description: 'First task',
+        );
+        ledger.recordEnd(
+          'resume-runs',
+          'original-call',
+          status: AgentTaskStatus.completed,
+          result: 'First result',
+        );
+        ledger.recordStart(
+          sessionId: 'resume-runs',
+          toolUseId: 'second-call',
+          memberId: 'member-one',
+          taskId: 'task-two',
+          runId: 'run-two',
+          description: 'Second task',
+        );
+        ledger.recordMember(sessionId: 'other-session', memberId: 'member-two');
+        ledger.recordStart(
+          sessionId: 'other-session',
+          toolUseId: 'other-call',
+          memberId: 'member-two',
+          taskId: 'other-task',
+        );
+        await ledger.flush();
+        final path = '${directory.path}/resumed-ledger.json';
+        File(ledger.path).copySync(path);
+        final reopened = await AgentTaskLedger.open(path: path);
+        var historyReads = 0;
+        var cliStarts = 0;
+        final ready = Completer<AgentTaskLedger>();
+        final loadingStates = <bool>[];
+        var changes = 0;
+        final kernel = ClaudeCodeKernel(
+          MockKernels.claudeCode,
+          KernelContext(
+            cwd: '/p',
+            resume: SessionRecord(
+              id: 'resume-runs',
+              title: 'Resumed runs',
+              updatedAt: DateTime(2026),
+              cwd: '/p',
+            ),
+          ),
+          start: (_) async {
+            cliStarts++;
+            return FakeCli();
+          },
+          readHistoryPage: (_, {required turns, before}) async {
+            historyReads++;
+            return const ClaudeHistoryPage([]);
+          },
+          taskLedger: ready.future,
+        );
+        kernel.events.listen((event) {
+          if (event is KernelInfoChanged) {
+            changes++;
+            loadingStates.add(kernel.loadingAgentTasks);
+          }
+        });
+        expect(kernel.loadingAgentTasks, isTrue);
+        ready.complete(reopened);
+        await pumpEventQueue();
+        await pumpEventQueue();
+        expect(loadingStates, containsAllInOrder([true, false]));
+        expect(changes, greaterThanOrEqualTo(2));
+        await pumpEventQueue();
+        expect(kernel, isA<ReportsAgentTasks>());
+        expect(kernel.loadingAgentTasks, isFalse);
+        expect(kernel.agentTasksError, isNull);
+        expect(kernel.agentTasks, hasLength(2));
+        final first = kernel.agentTasks[0];
+        final second = kernel.agentTasks[1];
+        expect(first.memberId, 'member-one');
+        expect(first.toolUseId, 'original-call');
+        expect(first.taskId, 'task-one');
+        expect(first.runId, 'run-one');
+        expect(first.model, 'model-one');
+        expect(first.description, 'First task');
+        expect(first.status, KernelAgentTaskStatus.completed);
+        expect(first.result, 'First result');
+        expect(first.cardId, 'original-call');
+        expect(first.hostStopped, isFalse);
+        expect(first.hostCancelled, isFalse);
+        expect(second.toolUseId, 'second-call');
+        expect(second.taskId, 'task-two');
+        expect(second.runId, 'run-two');
+        expect(second.status, KernelAgentTaskStatus.interrupted);
+        expect(second.result, 'Interrupted when host state was rebuilt');
+        expect(second.cardId, 'original-call');
+        expect(
+          kernel.agentTasks.any((t) => t.toolUseId == 'other-call'),
+          isFalse,
+        );
+        expect(cliStarts, 0);
+        expect(historyReads, 1);
+        expect(() => kernel.agentTasks.add(first), throwsUnsupportedError);
+        kernel.dispose();
+        await kernel.stopped;
+      },
+    );
 
     test(
       'manual member continuation is gated and cannot change its model',

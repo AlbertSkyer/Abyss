@@ -4453,7 +4453,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       return AgentTeamPage(
         members: thread.session.agentMembers,
         onUpdate: thread.session.updateAgentMember,
-        onShowTasks: (_) => _dock.open('agents'),
+        onShowTasks: (memberId) {
+          _workspace.select(thread);
+          _sidePanel.showAgentTasks(thread.session, memberId: memberId);
+          _dock.open('agents');
+        },
         statusLabel: (s) => switch (s) {
           AgentMemberStatus.running => l10n.sidePanelAgentRunning,
           AgentMemberStatus.standby => l10n.teamStandby,

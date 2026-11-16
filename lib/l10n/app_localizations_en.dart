@@ -82,6 +82,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String get teamShowTasks => 'Show tasks';
 
   @override
+  String get agentTasksAll => 'All tasks';
+
+  @override
+  String get agentTasksLoading => 'Reading saved tasks…';
+
+  @override
+  String get agentTasksLoadEarlier => 'Read earlier history';
+
+  @override
+  String get agentTasksReadDetails => 'Read execution history';
+
+  @override
+  String get agentTasksOpenDetails => 'Open shared member history';
+
+  @override
+  String get agentTasksNoReport => 'No report was saved for this run.';
+
+  @override
+  String get agentTasksMissingHistory =>
+      'The saved task is retained, but its full execution history is unavailable.';
+
+  @override
+  String get agentTasksEarlierDetails =>
+      'This task is not in the loaded history. Read an earlier batch to look for it.';
+
+  @override
+  String get agentTasksLoadFailed =>
+      'Could not read task history. You can retry.';
+
+  @override
+  String get agentTasksReport => 'Saved report for this run';
+
+  @override
+  String get agentTasksMemberEmpty => 'No saved tasks for this member.';
+
+  @override
   String get scratchCreate => 'Inherit current conversation';
 
   @override

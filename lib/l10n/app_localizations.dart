@@ -236,6 +236,72 @@ abstract class AppLocalizations {
   /// **'Show tasks'**
   String get teamShowTasks;
 
+  /// No description provided for @agentTasksAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All tasks'**
+  String get agentTasksAll;
+
+  /// No description provided for @agentTasksLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading saved tasks…'**
+  String get agentTasksLoading;
+
+  /// No description provided for @agentTasksLoadEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Read earlier history'**
+  String get agentTasksLoadEarlier;
+
+  /// No description provided for @agentTasksReadDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Read execution history'**
+  String get agentTasksReadDetails;
+
+  /// No description provided for @agentTasksOpenDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Open shared member history'**
+  String get agentTasksOpenDetails;
+
+  /// No description provided for @agentTasksNoReport.
+  ///
+  /// In en, this message translates to:
+  /// **'No report was saved for this run.'**
+  String get agentTasksNoReport;
+
+  /// No description provided for @agentTasksMissingHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved task is retained, but its full execution history is unavailable.'**
+  String get agentTasksMissingHistory;
+
+  /// No description provided for @agentTasksEarlierDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'This task is not in the loaded history. Read an earlier batch to look for it.'**
+  String get agentTasksEarlierDetails;
+
+  /// No description provided for @agentTasksLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read task history. You can retry.'**
+  String get agentTasksLoadFailed;
+
+  /// No description provided for @agentTasksReport.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved report for this run'**
+  String get agentTasksReport;
+
+  /// No description provided for @agentTasksMemberEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved tasks for this member.'**
+  String get agentTasksMemberEmpty;
+
   /// No description provided for @scratchCreate.
   ///
   /// In en, this message translates to:
