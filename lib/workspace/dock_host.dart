@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kMiddleMouseButton;
 import 'package:flutter/material.dart';
 
 import '../ide/ide_hover.dart';
@@ -13,15 +14,34 @@ typedef DockPanelBuilder = Widget Function(
   String panelId,
 );
 
-/// Renders a [DockController]. Business panel contents are supplied by the
-/// caller and are looked up only by stable panel ID.
+typedef DockEmptyBuilder = Widget Function(BuildContext context);
+
+/// Business owners can route a drop themselves, including a root-edge drop.
+/// [target] is a panel or group ID, and is null only for the root or empty
+/// dock. A null [side] merges into the target group.
+typedef DockMovePanel = void Function(
+  String panelId,
+  String? target,
+  DockSide? side,
+  bool root,
+);
+
+/// Renders a [DockController]. Panel IDs and all business behavior are opaque
+/// to this module: it never imports or depends on Workspace.
 class DockHost extends StatelessWidget {
   const DockHost({
     super.key,
     required this.controller,
     required this.panelBuilder,
     this.titleBuilder,
+    this.emptyBuilder,
+    this.onActivatePanel,
+    this.onDragPanel,
+    this.onPanelMenu,
+    this.onKeepPanel,
+    this.isPreviewPanel,
     this.onClosePanel,
+    this.onMovePanel,
     this.showCloseButtons = true,
     this.showMaximizeButtons = true,
     this.minPanelExtent = 120,
@@ -34,10 +54,48 @@ class DockHost extends StatelessWidget {
   final DockController controller;
   final DockPanelBuilder panelBuilder;
   final DockPanelBuilder? titleBuilder;
+  final DockEmptyBuilder? emptyBuilder;
+  final ValueChanged<String>? onActivatePanel;
+  final ValueChanged<String>? onDragPanel;
+  final void Function(String panelId, Offset position)? onPanelMenu;
+  final ValueChanged<String>? onKeepPanel;
+  final bool Function(String panelId)? isPreviewPanel;
+
+  /// If supplied, owns closing. The host never calls [DockController.close]
+  /// before this callback, so an owner can ask for confirmation or veto.
   final ValueChanged<String>? onClosePanel;
+  final DockMovePanel? onMovePanel;
   final bool showCloseButtons;
   final bool showMaximizeButtons;
   final double minPanelExtent;
+
+  void activate(String panelId) => onActivatePanel == null
+      ? controller.reveal(panelId)
+      : onActivatePanel!(panelId);
+
+  void close(String panelId) {
+    if (panelId == dockMainPanelId || !showCloseButtons) return;
+    if (onClosePanel case final callback?) {
+      callback(panelId);
+    } else {
+      controller.close(panelId);
+    }
+  }
+
+  void move(
+    String panelId, {
+    String? target,
+    DockSide? side,
+    bool root = false,
+  }) {
+    if (onMovePanel case final callback?) {
+      callback(panelId, target, side, root);
+    } else if (root && side != null) {
+      controller.moveToRoot(panelId, side: side);
+    } else if (target != null) {
+      controller.move(panelId, target: target, side: side);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -47,38 +105,199 @@ class DockHost extends StatelessWidget {
       final group = maximized == null
           ? null
           : _findGroup(controller.root, maximized);
+      final content = _isEmpty(controller.root)
+          ? _EmptyDock(host: this)
+          : group == null
+          ? _DockNodeView(
+              node: controller.root,
+              controller: controller,
+              host: this,
+              path: '',
+            )
+          : _DockGroupView(
+              key: ValueKey(group.groupId),
+              group: group,
+              controller: controller,
+              host: this,
+              maximized: true,
+            );
       return ColoredBox(
         color: AppColors.background,
         child: Padding(
           padding: const EdgeInsets.all(Islands.gap),
-          child: group == null
-              ? _DockNodeView(
-                  node: controller.root,
-                  controller: controller,
-                  host: this,
-                  path: '',
-                )
-              : _DockGroupView(
-                  key: ValueKey(group.groupId),
-                  group: group,
-                  controller: controller,
-                  host: this,
-                  maximized: true,
-                ),
+          child: group == null && !_isEmpty(controller.root)
+              ? _DockRootDropTarget(host: this, child: content)
+              : content,
         ),
       );
     },
   );
 
-  static DockTabs? _findGroup(DockNode node, String panelId) {
+  static bool _isEmpty(DockNode node) => switch (node) {
+    DockTabs() => node.orderedPanelIds.isEmpty,
+    DockSplit() => _isEmpty(node.first) && _isEmpty(node.second),
+  };
+
+  static DockTabs? _findGroup(DockNode? node, String panelId) {
     switch (node) {
       case DockTabs():
         return node.orderedPanelIds.contains(panelId) ? node : null;
       case DockSplit():
         return _findGroup(node.first, panelId) ??
             _findGroup(node.second, panelId);
+      case null:
+        return null;
     }
   }
+}
+
+class _DockRootDropTarget extends StatefulWidget {
+  const _DockRootDropTarget({required this.host, required this.child});
+
+  final DockHost host;
+  final Widget child;
+
+  @override
+  State<_DockRootDropTarget> createState() => _DockRootDropTargetState();
+}
+
+class _DockRootDropTargetState extends State<_DockRootDropTarget> {
+  DockSide? _side;
+
+  void _update(Offset globalPosition) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final position = box.globalToLocal(globalPosition);
+    final side = _edgeSide(position, box.size, fraction: 0.08, maximum: 32);
+    if (_side != side) setState(() => _side = side);
+  }
+
+  void _clear() {
+    if (_side != null) setState(() => _side = null);
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      widget.child,
+      // These edge targets are painted after the groups, so a local group's
+      // edge cannot steal a drop intended for the whole dock.
+      for (final side in DockSide.values)
+        Align(
+          alignment: switch (side) {
+            DockSide.left => Alignment.centerLeft,
+            DockSide.right => Alignment.centerRight,
+            DockSide.top => Alignment.topCenter,
+            DockSide.bottom => Alignment.bottomCenter,
+          },
+          child: SizedBox(
+            width: side == DockSide.left || side == DockSide.right
+                ? 12
+                : double.infinity,
+            height: side == DockSide.top || side == DockSide.bottom
+                ? 12
+                : double.infinity,
+            child: DragTarget<_DockDrag>(
+              onWillAcceptWithDetails: (details) {
+                _update(details.offset);
+                return true;
+              },
+              onMove: (details) => _update(details.offset),
+              onLeave: (_) => _clear(),
+              onAcceptWithDetails: (details) {
+                final dropSide = _side ?? side;
+                _clear();
+                widget.host.move(
+                  details.data.panelId,
+                  target: _rootTarget(widget.host.controller.root),
+                  side: dropSide,
+                  root: true,
+                );
+              },
+              builder: (context, _, _) => const SizedBox.expand(),
+            ),
+          ),
+        ),
+      if (_side != null)
+        IgnorePointer(
+          child: _DropPreview(
+            key: const ValueKey('dock-root-preview'),
+            side: _side!,
+          ),
+        ),
+    ],
+  );
+
+  static String? _rootTarget(DockNode? node) => switch (node) {
+    DockTabs() => node.groupId,
+    DockSplit() => _rootTarget(node.first),
+    null => null,
+  };
+}
+
+DockSide? _edgeSide(
+  Offset position,
+  Size size, {
+  double fraction = 0.3,
+  double maximum = 96,
+}) {
+  if (size.isEmpty) return null;
+  final horizontalEdge = math.min(maximum, size.width * fraction);
+  final verticalEdge = math.min(maximum, size.height * fraction);
+  if (horizontalEdge <= 0 || verticalEdge <= 0) return null;
+  final distances = <(double, DockSide)>[
+    (position.dx / horizontalEdge, DockSide.left),
+    ((size.width - position.dx) / horizontalEdge, DockSide.right),
+    (position.dy / verticalEdge, DockSide.top),
+    ((size.height - position.dy) / verticalEdge, DockSide.bottom),
+  ];
+  distances.sort((a, b) => a.$1.compareTo(b.$1));
+  return distances.first.$1 < 1 ? distances.first.$2 : null;
+}
+
+class _EmptyDock extends StatefulWidget {
+  const _EmptyDock({required this.host});
+
+  final DockHost host;
+
+  @override
+  State<_EmptyDock> createState() => _EmptyDockState();
+}
+
+class _EmptyDockState extends State<_EmptyDock> {
+  var _hovered = false;
+
+  @override
+  Widget build(BuildContext context) => DragTarget<_DockDrag>(
+    onWillAcceptWithDetails: (_) {
+      if (!_hovered) setState(() => _hovered = true);
+      return true;
+    },
+    onLeave: (_) {
+      if (_hovered) setState(() => _hovered = false);
+    },
+    onAcceptWithDetails: (details) {
+      setState(() => _hovered = false);
+      widget.host.move(details.data.panelId, root: true);
+    },
+    builder: (context, _, _) => ColoredBox(
+      key: const ValueKey('dock-empty-drop-target'),
+      color: _hovered
+          ? themeColors['tab.activeForeground'].withValues(alpha: 0.12)
+          : AppColors.code,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child:
+                widget.host.emptyBuilder?.call(context) ??
+                const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _DockNodeView extends StatelessWidget {
@@ -257,61 +476,86 @@ class DockTab extends StatelessWidget {
     required this.panelId,
     required this.onTap,
     this.title,
+    this.feedbackTitle,
     this.groupId,
     this.active = false,
+    this.preview = false,
     this.atStart = false,
     this.onClose,
+    this.onKeep,
+    this.onMenu,
+    this.onDragStarted,
   });
 
   final String panelId;
   final Widget? title;
+  final Widget? feedbackTitle;
   final String? groupId;
   final bool active;
+  final bool preview;
   final bool atStart;
   final VoidCallback onTap;
   final VoidCallback? onClose;
+  final VoidCallback? onKeep;
+  final ValueChanged<Offset>? onMenu;
+  final VoidCallback? onDragStarted;
 
   @override
   Widget build(BuildContext context) {
-    final tab = IdeHover(
-      message: panelId,
-      child: IslandTab(
-        active: active,
-        atStart: atStart,
-        color: AppColors.code,
-        onTap: onTap,
-        builder: (context, foreground) => Container(
-          constraints: const BoxConstraints(minWidth: 72, maxWidth: 190),
-          padding: const EdgeInsets.only(left: 12, right: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: 12,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  child:
-                      title ?? Text(panelId, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-              if (onClose != null)
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: InkResponse(
-                    onTap: onClose,
-                    radius: 12,
-                    hoverColor: Islands.segmentFill(
-                      selected: false,
-                      hovered: true,
+    final tab = Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) {
+        if (event.buttons & kMiddleMouseButton != 0) onClose?.call();
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: onKeep,
+        onSecondaryTapUp: onMenu == null
+            ? null
+            : (details) => onMenu!(details.globalPosition),
+        child: IdeHover(
+          message: panelId,
+          child: IslandTab(
+            active: active,
+            atStart: atStart,
+            color: AppColors.code,
+            onTap: onTap,
+            builder: (context, foreground) => Container(
+              constraints: const BoxConstraints(minWidth: 72, maxWidth: 190),
+              padding: const EdgeInsets.only(left: 12, right: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: DefaultTextStyle.merge(
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 12,
+                        fontStyle: preview ? FontStyle.italic : null,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      child:
+                          title ??
+                          Text(panelId, overflow: TextOverflow.ellipsis),
                     ),
-                    child: Icon(Icons.close, size: 14, color: foreground),
                   ),
-                ),
-            ],
+                  if (onClose != null)
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: InkResponse(
+                        onTap: onClose,
+                        radius: 12,
+                        hoverColor: Islands.segmentFill(
+                          selected: false,
+                          hovered: true,
+                        ),
+                        child: Icon(Icons.close, size: 14, color: foreground),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -319,10 +563,12 @@ class DockTab extends StatelessWidget {
     if (groupId == null) return tab;
     return Draggable<_DockDrag>(
       data: _DockDrag(panelId, groupId!),
+      onDragStarted: onDragStarted,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Material(
         color: Colors.transparent,
         child: DecoratedBox(
+          key: ValueKey('dock-drag-feedback-$panelId'),
           decoration: BoxDecoration(
             color: AppColors.surfaceRaised,
             borderRadius: BorderRadius.circular(Islands.controlRadius),
@@ -330,12 +576,16 @@ class DockTab extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text(
-              panelId,
+            child: DefaultTextStyle.merge(
               style: TextStyle(
                 color: themeColors['tab.activeForeground'],
                 fontSize: 12,
+                fontStyle: preview ? FontStyle.italic : null,
               ),
+              child:
+                  feedbackTitle ??
+                  title ??
+                  Text(panelId, overflow: TextOverflow.ellipsis),
             ),
           ),
         ),
@@ -372,18 +622,7 @@ class _DockGroupViewState extends State<_DockGroupView> {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final position = box.globalToLocal(globalPosition);
-    final size = box.size;
-    final horizontalEdge = math.min(96.0, size.width * 0.3);
-    final verticalEdge = math.min(72.0, size.height * 0.3);
-    DockSide? side;
-    final distances = <(double, DockSide)>[
-      (position.dx / horizontalEdge, DockSide.left),
-      ((size.width - position.dx) / horizontalEdge, DockSide.right),
-      (position.dy / verticalEdge, DockSide.top),
-      ((size.height - position.dy) / verticalEdge, DockSide.bottom),
-    ];
-    distances.sort((a, b) => a.$1.compareTo(b.$1));
-    if (distances.first.$1 < 1) side = distances.first.$2;
+    final side = _edgeSide(position, box.size, fraction: 0.3, maximum: 96);
     if (_dropSide != side || _mergeTarget) {
       setState(() {
         _dropSide = side;
@@ -398,11 +637,7 @@ class _DockGroupViewState extends State<_DockGroupView> {
       _dropSide = null;
       _mergeTarget = false;
     });
-    widget.controller.move(
-      drag.panelId,
-      target: widget.group.groupId,
-      side: side,
-    );
+    widget.host.move(drag.panelId, target: widget.group.groupId, side: side);
   }
 
   @override
@@ -424,7 +659,7 @@ class _DockGroupViewState extends State<_DockGroupView> {
       onLeave: (_) => setState(() => _mergeTarget = false),
       onAcceptWithDetails: (details) {
         setState(() => _mergeTarget = false);
-        controller.move(details.data.panelId, target: group.groupId);
+        widget.host.move(details.data.panelId, target: group.groupId);
       },
       builder: (context, candidates, _) => ColoredBox(
         color: candidates.isEmpty
@@ -478,7 +713,12 @@ class _DockGroupViewState extends State<_DockGroupView> {
             ],
           ),
           if (_dropSide != null)
-            IgnorePointer(child: _DropPreview(side: _dropSide!)),
+            IgnorePointer(
+              child: _DropPreview(
+                key: const ValueKey('dock-local-preview'),
+                side: _dropSide!,
+              ),
+            ),
         ],
       ),
     );
@@ -497,7 +737,7 @@ class _DockGroupViewState extends State<_DockGroupView> {
     return DragTarget<_DockDrag>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) =>
-          widget.controller.move(details.data.panelId, target: panelId),
+          widget.host.move(details.data.panelId, target: panelId),
       builder: (context, candidates, _) => DecoratedBox(
         decoration: BoxDecoration(
           border: candidates.isEmpty
@@ -522,10 +762,25 @@ class _DockGroupViewState extends State<_DockGroupView> {
                 : Builder(
                     builder: (context) => host.titleBuilder!(context, panelId),
                   ),
-            onTap: () => widget.controller.reveal(panelId),
+            feedbackTitle: host.titleBuilder == null
+                ? null
+                : Builder(
+                    builder: (context) => host.titleBuilder!(context, panelId),
+                  ),
+            preview: host.isPreviewPanel?.call(panelId) ?? false,
+            onTap: () => host.activate(panelId),
             onClose: panelId != dockMainPanelId && host.showCloseButtons
-                ? () => (host.onClosePanel ?? widget.controller.close)(panelId)
+                ? () => host.close(panelId)
                 : null,
+            onKeep: host.onKeepPanel == null
+                ? null
+                : () => host.onKeepPanel!(panelId),
+            onMenu: host.onPanelMenu == null
+                ? null
+                : (position) => host.onPanelMenu!(panelId, position),
+            onDragStarted: host.onDragPanel == null
+                ? null
+                : () => host.onDragPanel!(panelId),
           ),
         ),
       ),
@@ -564,7 +819,7 @@ class _MaximizeButton extends StatelessWidget {
 }
 
 class _DropPreview extends StatelessWidget {
-  const _DropPreview({required this.side});
+  const _DropPreview({super.key, required this.side});
   final DockSide side;
 
   @override

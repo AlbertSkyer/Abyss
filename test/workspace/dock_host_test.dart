@@ -1,5 +1,7 @@
 import 'package:baocode/workspace/dock_host.dart';
 import 'package:baocode/workspace/dock_layout.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton, kSecondaryMouseButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,6 +9,16 @@ Widget _host(
   DockController controller,
   DockPanelBuilder builder, {
   double minPanelExtent = 120,
+  DockPanelBuilder? titleBuilder,
+  DockEmptyBuilder? emptyBuilder,
+  ValueChanged<String>? onActivatePanel,
+  ValueChanged<String>? onDragPanel,
+  void Function(String panelId, Offset position)? onPanelMenu,
+  ValueChanged<String>? onKeepPanel,
+  bool Function(String panelId)? isPreviewPanel,
+  ValueChanged<String>? onClosePanel,
+  DockMovePanel? onMovePanel,
+  bool showCloseButtons = true,
 }) => MaterialApp(
   home: Scaffold(
     body: SizedBox(
@@ -15,7 +27,17 @@ Widget _host(
       child: DockHost(
         controller: controller,
         panelBuilder: builder,
+        titleBuilder: titleBuilder,
+        emptyBuilder: emptyBuilder,
+        onActivatePanel: onActivatePanel,
+        onDragPanel: onDragPanel,
+        onPanelMenu: onPanelMenu,
+        onKeepPanel: onKeepPanel,
+        isPreviewPanel: isPreviewPanel,
+        onClosePanel: onClosePanel,
+        onMovePanel: onMovePanel,
         minPanelExtent: minPanelExtent,
+        showCloseButtons: showCloseButtons,
       ),
     ),
   ),
@@ -177,6 +199,283 @@ void main() {
     expect(find.text('body:main-chat'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('dynamic panel IDs share activation, preview and owner actions', (
+    tester,
+  ) async {
+    final controller = DockController(
+      availablePanelIds: const ['chat:alpha', 'chat:beta', 'tool:terminal'],
+      root: DockTabs(
+        groupId: 'mixed',
+        orderedPanelIds: const ['chat:alpha', 'chat:beta', 'tool:terminal'],
+        active: 'chat:alpha',
+      ),
+    );
+    addTearDown(controller.dispose);
+    final activations = <String>[];
+    final kept = <String>[];
+    final closed = <String>[];
+    final menus = <(String, Offset)>[];
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        titleBuilder: (context, id) => Text('title:$id'),
+        isPreviewPanel: (id) => id == 'chat:beta',
+        onActivatePanel: activations.add,
+        onKeepPanel: kept.add,
+        onClosePanel: closed.add,
+        onPanelMenu: (id, position) => menus.add((id, position)),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('dock-tab-chat:beta')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('dock-tab-tool:terminal')),
+      findsOneWidget,
+    );
+    final previewTab = tester.widget<DockTab>(
+      find.byKey(const ValueKey('dock-tab-chat:beta')),
+    );
+    expect(previewTab.preview, isTrue);
+
+    await tester.tap(find.text('title:chat:beta'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(activations, ['chat:beta']);
+    expect(_activePanel(controller, 'chat:beta'), 'chat:alpha');
+
+    await tester.tap(find.text('title:chat:beta'));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.text('title:chat:beta'));
+    await tester.pump();
+    expect(kept, ['chat:beta']);
+
+    await tester.tap(
+      find.text('title:chat:beta'),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pump();
+    expect(menus, hasLength(1));
+    expect(menus.single.$1, 'chat:beta');
+    expect(menus.single.$2, tester.getCenter(find.text('title:chat:beta')));
+
+    await tester.tap(find.text('title:chat:beta'), buttons: kMiddleMouseButton);
+    await tester.pump();
+    expect(closed, ['chat:beta']);
+    expect(controller.openPanelIds, contains('chat:beta'));
+    expect(find.text('body:chat:beta', skipOffstage: false), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('close button is delegated without forcing controller close', (
+    tester,
+  ) async {
+    final controller = DockController();
+    addTearDown(controller.dispose);
+    String? closed;
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        onClosePanel: (id) => closed = id,
+      ),
+    );
+    final close = find.descendant(
+      of: find.byKey(const ValueKey('dock-tab-files')),
+      matching: find.byIcon(Icons.close),
+    );
+    await tester.ensureVisible(close);
+    await tester.pumpAndSettle();
+    await tester.tap(close);
+    await tester.pump();
+    expect(closed, 'files');
+    expect(controller.openPanelIds, contains('files'));
+    expect(find.text('body:files'), findsOneWidget);
+  });
+
+  testWidgets('drag uses the real title and notifies drag owner', (
+    tester,
+  ) async {
+    final controller = DockController();
+    addTearDown(controller.dispose);
+    String? dragged;
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        titleBuilder: (context, id) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.folder),
+            Flexible(
+              child: Text('business:$id', overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        onDragPanel: (id) => dragged = id,
+      ),
+    );
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('dock-tab-files'))),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    expect(dragged, 'files');
+    final feedback = find.byKey(const ValueKey('dock-drag-feedback-files'));
+    expect(feedback, findsOneWidget);
+    expect(
+      find.descendant(of: feedback, matching: find.text('business:files')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: feedback, matching: find.byIcon(Icons.folder)),
+      findsOneWidget,
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('local drops use controller move and root edges are dispatched', (
+    tester,
+  ) async {
+    final controller = DockController();
+    addTearDown(controller.dispose);
+    final moves = <(String, String?, DockSide?, bool)>[];
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        onMovePanel: (id, target, side, root) =>
+            moves.add((id, target, side, root)),
+      ),
+    );
+
+    final files = find.byKey(const ValueKey('dock-tab-files'));
+    final main = find.byKey(const ValueKey('dock-tab-main-chat'));
+    await tester.timedDrag(
+      files,
+      Offset(tester.getCenter(main).dx + 18, tester.getRect(main).bottom - 4) -
+          tester.getCenter(files),
+      const Duration(milliseconds: 400),
+    );
+    await tester.pumpAndSettle();
+    expect(moves.single, ('files', 'main-chat', null, false));
+    expect(controller.openPanelIds.length, 2);
+    expect(_activePanel(controller, 'files'), 'files');
+    moves.clear();
+
+    for (final side in DockSide.values) {
+      final destination = _rootEdge(tester, side);
+      final origin = tester.getCenter(files);
+      final gesture = await tester.startGesture(
+        origin,
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveTo(origin + const Offset(20, 20));
+      await tester.pump();
+      await gesture.moveTo(destination);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('dock-root-preview')),
+        findsOneWidget,
+        reason: 'root $side preview',
+      );
+      expect(find.byKey(const ValueKey('dock-local-preview')), findsNothing);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(moves, hasLength(1), reason: 'root $side drop');
+      expect(moves.single.$1, 'files');
+      expect(moves.single.$2, 'main-chat-group');
+      expect(moves.single.$3, side);
+      expect(moves.single.$4, isTrue);
+      moves.clear();
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty dock shows builder and accepts a root drop', (
+    tester,
+  ) async {
+    final controller = EmptyDockController();
+    addTearDown(controller.dispose);
+    final moves = <(String, String?, DockSide?, bool)>[];
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        emptyBuilder: (context) => const Text('dock is empty'),
+        onMovePanel: (id, target, side, root) =>
+            moves.add((id, target, side, root)),
+      ),
+    );
+    expect(find.text('dock is empty'), findsOneWidget);
+    expect(find.byType(DockTab), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            Positioned(
+              left: 20,
+              top: 20,
+              child: DockTab(
+                key: const ValueKey('empty-source'),
+                panelId: 'chat:empty',
+                groupId: 'source',
+                onTap: () {},
+              ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: SizedBox(
+                width: 500,
+                height: 400,
+                child: DockHost(
+                  controller: controller,
+                  panelBuilder: (context, id) => Text('body:$id'),
+                  emptyBuilder: (context) => const Text('dock is empty'),
+                  onMovePanel: (id, target, side, root) =>
+                      moves.add((id, target, side, root)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final target = tester.getCenter(
+      find.byKey(const ValueKey('dock-empty-drop-target')),
+    );
+    await tester.timedDrag(
+      find.byKey(const ValueKey('empty-source')),
+      target - tester.getCenter(find.byKey(const ValueKey('empty-source'))),
+      const Duration(milliseconds: 400),
+    );
+    await tester.pumpAndSettle();
+    expect(moves.single, ('chat:empty', null, null, true));
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Offset _rootEdge(WidgetTester tester, DockSide side) {
+  final root = tester.getRect(find.byType(DockHost));
+  return switch (side) {
+    DockSide.left => Offset(root.left + 10, root.center.dy),
+    DockSide.right => Offset(root.right - 10, root.center.dy),
+    DockSide.top => Offset(root.center.dx, root.top + 10),
+    DockSide.bottom => Offset(root.center.dx, root.bottom - 10),
+  };
+}
+
+class EmptyDockController extends DockController {
+  EmptyDockController() : super(availablePanelIds: const []);
+
+  @override
+  DockNode get root =>
+      DockTabs(groupId: 'empty', orderedPanelIds: const [], active: '');
 }
 
 String _activePanel(DockController controller, String panelId) {

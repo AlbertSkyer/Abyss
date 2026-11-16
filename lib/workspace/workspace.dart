@@ -26,6 +26,8 @@ import '../remote/remote_location.dart';
 import '../remote/ssh_host.dart' show SshHostState, SshHosts;
 import 'agent_title.dart';
 import 'chat_grid.dart';
+import 'chat_dock.dart';
+import 'dock_layout.dart';
 import 'editor_launcher.dart';
 import 'preference_store.dart';
 import 'project_workspace.dart';
@@ -356,6 +358,76 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     preserveTabs: AppEdition.isAbyss,
   );
 
+  late final ChatDock<AgentThread> chatDock = ChatDock<AgentThread>(
+    referenceOf: (thread) =>
+        thread.id ?? {'new': thread.project.path, 'slot': _dockSlot(thread)},
+    resolveReference: _resolveDockThread,
+    hasDraft: _hasDraft,
+    onChanged: _chatDockChanged,
+  );
+  bool _dockReady = false;
+  bool get dockReady => _dockReady;
+  final Expando<String> _dockSlots = Expando();
+  int _dockSlotSerial = 0;
+  String _dockSlot(AgentThread thread) => _dockSlots[thread] ??=
+      '${DateTime.now().microsecondsSinceEpoch}-${_dockSlotSerial++}';
+  String _draftKey(AgentThread thread) =>
+      thread.id ??
+      (thread.session.kernelContext.chatOnly
+          ? 'scratch-new:${thread.project.path}'
+          : AppEdition.isAbyss
+          ? 'chat-new:${_dockSlot(thread)}'
+          : '$_newDraft${thread.project.path}');
+
+  AgentThread? _resolveDockThread(Object reference, String panelId) {
+    if (reference is String) {
+      return _threads
+          .where(
+            (t) =>
+                t.id == reference &&
+                !t.archived &&
+                !isScratch(t) &&
+                !isAppFolder(t.project.path),
+          )
+          .firstOrNull;
+    }
+    if (reference case {'new': final String path}) {
+      final project = _projects.where((p) => p.path == path).firstOrNull;
+      if (project == null || isAppFolder(path)) return null;
+      final slot = (reference as Map)['slot'];
+      final thread = _newThread(
+        project,
+        dockSlot: slot is String ? slot : null,
+      );
+      return thread;
+    }
+    return null;
+  }
+
+  void _chatDockChanged() {
+    if (!AppEdition.isAbyss || !_dockReady || _disposed) return;
+    _selected = chatDock.selected;
+    if (_windowActive && chatDock.visibleChats.contains(_selected)) {
+      _selected?._markSeen();
+    }
+    notifyListeners();
+  }
+
+  List<AgentThread> get openChats => AppEdition.isAbyss
+      ? chatDock.openChats
+      : _grid.panes.expand(_grid.tabs).toList();
+  List<AgentThread> get visibleChats =>
+      AppEdition.isAbyss ? chatDock.visibleChats : _grid.panes;
+  bool isChatOpen(AgentThread thread) => AppEdition.isAbyss
+      ? chatDock.openChats.contains(thread)
+      : _hasPane(thread);
+  List<AgentThread> chatTabsOf(AgentThread thread) =>
+      AppEdition.isAbyss ? chatDock.tabsOf(thread) : _grid.tabs(thread);
+  AgentThread? chatNeighbor(AgentThread thread, PaneSide side) =>
+      AppEdition.isAbyss
+      ? chatDock.neighbor(thread, DockSide.values.byName(side.name))
+      : _grid.neighbor(thread, side);
+
   bool _loading = false;
   bool get loading => _loading;
 
@@ -421,7 +493,27 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     for (final folder in {?_ideFolder, ..._windowFolders}) {
       _ensureIdeChat(folder);
     }
-    _restoreChatView();
+    final keptDock = _keptChatView;
+    if (AppEdition.isAbyss && keptDock?['version'] == 2) {
+      final restored = chatDock.restore(keptDock);
+      if (restored) _keptChatView = null;
+      _chatViewRestored = restored;
+      _emptyChatView = chatDock.openChats.isEmpty;
+    } else {
+      _restoreChatView();
+      if (AppEdition.isAbyss) {
+        final focused = _selected;
+        chatDock.migrateLegacy(_workbenchView?['dock'], _grid);
+        if (focused != null && chatDock.openChats.contains(focused)) {
+          chatDock.activate(focused);
+        }
+      }
+    }
+    if (AppEdition.isAbyss) {
+      _dockReady = true;
+      _selected = chatDock.selected;
+      _grid.clear();
+    }
     if (!_disposed) resumes.resume = _resumeAfterReset;
     if (_selected == null && _projects.isNotEmpty && !_emptyChatView) {
       create();
@@ -578,7 +670,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       return thread;
     }
     // Into its pane: the focused one is what [create] shows the new in.
-    if (_grid.contains(thread)) _focus(thread);
+    if (_hasPane(thread)) _focus(thread);
     final moved = create(project: project);
     if (_isUntouched(thread)) _discard(thread);
     return moved;
@@ -855,6 +947,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
       kernel: codex,
     );
     add(gateway, 'Flaky integration test on CI', const Duration(days: 9));
+    if (AppEdition.isAbyss) workspace._dockReady = true;
     workspace._focus(workspace.threads.first);
     return workspace;
   }
@@ -1531,6 +1624,14 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// The agents of the app's own folders (a bot's) out of the panes: never
   /// shown here, their user on the phone.
   void _leaveAppFolders() {
+    if (AppEdition.isAbyss && _dockReady) {
+      for (final thread in [...chatDock.openChats]) {
+        if (isAppFolder(thread.project.path)) chatDock.close(thread);
+      }
+      _selected = chatDock.selected;
+      notifyListeners();
+      return;
+    }
     for (final thread in _threads) {
       if (isAppFolder(thread.project.path)) _grid.forget(thread);
     }
@@ -2353,6 +2454,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// Takes [thread] off the list, to be listed again from where its
   /// session is kept now: nothing of it forgotten, its session closed.
   void _drop(AgentThread thread) {
+    if (AppEdition.isAbyss && _dockReady) chatDock.close(thread);
     _grid.forget(thread);
     final listener = _listeners.remove(thread);
     if (listener != null) thread.session.removeListener(listener);
@@ -2500,6 +2602,8 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
           ? !paths.contains(key.substring(_newDraft.length))
           : key.startsWith('scratch-new:')
           ? !paths.contains(key.substring('scratch-new:'.length))
+          : key.startsWith('chat-new:')
+          ? false
           : !ids.contains(key),
     );
     if (_drafts.length != drafts) _saveDrafts();
@@ -2551,13 +2655,17 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   void _followDraft(AgentThread thread) {
     final draft = thread.session.draft;
     final id = thread.id;
-    final key =
-        id ??
-        '${thread.session.kernelContext.chatOnly ? 'scratch-new:' : _newDraft}${thread.project.path}';
-    if (id != null ||
+    final key = _draftKey(thread);
+    if (AppEdition.isAbyss ||
+        id != null ||
         thread.session.kernelContext.chatOnly ||
         _newDrafts.remove(thread.project.path)) {
-      if (_drafts[key] case final kept?) _decodeDraft(kept, draft);
+      final kept =
+          _drafts[key] ??
+          (id == null && _newDrafts.remove(thread.project.path)
+              ? _drafts['$_newDraft${thread.project.path}']
+              : null);
+      if (kept != null) _decodeDraft(kept, draft);
     }
     draft.onSaved = () => _draftChanged(thread);
   }
@@ -2567,9 +2675,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     // before a subsequent sidebar click can replace a newly edited preview.
     if (AppEdition.isAbyss && _hasDraft(thread)) pinChatTab(thread);
     final draft = thread.session.draft;
-    final key =
-        thread.id ??
-        '${thread.session.kernelContext.chatOnly ? 'scratch-new:' : _newDraft}${thread.project.path}';
+    final key = _draftKey(thread);
     if (_draftKeys[thread] case final was? when was != key) {
       _drafts.remove(was);
     }
@@ -3039,7 +3145,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   /// The panes to save: as kept, until [load] has shown them again.
   Object? _chatViewToSave() {
-    if (!_chatViewRestored) return _keptChatView;
+    if (!_chatViewRestored || (AppEdition.isAbyss && !_dockReady)) {
+      return _keptChatView;
+    }
     final view = _chatView;
     _chatViewSaved = jsonEncode(view);
     return view;
@@ -3235,6 +3343,12 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// in the chat's panes while its window shows, or as the chat of one of
   /// theirs. Either way, in a window of its own.
   bool isShown(AgentThread thread) =>
+      (AppEdition.isAbyss &&
+              _dockReady &&
+              _layout == WorkspaceLayout.chat &&
+              (ideWindows == null || _chatWindowShown)
+          ? chatDock.visibleChats.contains(thread)
+          : false) ||
       _windowAgents.contains(thread) ||
       (ideWindows != null
           ? (_chatWindowShown && _grid.contains(thread)) ||
@@ -3278,6 +3392,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// folder. Each pane's other tabs too, by id: those under it ([ChatGrid.
   /// under]'s order) and all its tabs in their order.
   Map<String, Object?>? get _chatView {
+    if (AppEdition.isAbyss && _dockReady) return chatDock.toJson();
     if (_grid.isEmpty) return AppEdition.isAbyss ? {'panes': const []} : null;
     final panes = _grid.panes;
     final focused = _selected;
@@ -3477,7 +3592,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// closed or given its id.
   @override
   void notifyListeners() {
-    if (_chatViewRestored && jsonEncode(_chatView) != _chatViewSaved) {
+    if (_chatViewRestored &&
+        (!AppEdition.isAbyss || _dockReady) &&
+        jsonEncode(_chatView) != _chatViewSaved) {
       _save();
     }
     super.notifyListeners();
@@ -3487,6 +3604,18 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// place of the focused one. In Abyss a closed session becomes a preview.
   void select(AgentThread thread) {
     if (isAppFolder(thread.project.path)) return;
+    if (AppEdition.isAbyss && _dockReady) {
+      _rememberSelection(thread);
+      if (isChatOpen(thread)) {
+        chatDock.activate(thread);
+      } else {
+        chatDock.open(thread, preview: true);
+      }
+      _selected = thread;
+      _followInSidebar(thread);
+      notifyListeners();
+      return;
+    }
     if (AppEdition.isAbyss &&
         !_grid.contains(thread) &&
         !_grid.isCovered(thread)) {
@@ -3516,10 +3645,17 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   final Map<AgentThread, AgentThread> _activeChatTabs = {};
   AgentThread? _chatGroup;
 
-  AgentThread? get activeChatGroup => _chatGroup;
+  AgentThread? get activeChatGroup =>
+      AppEdition.isAbyss && _dockReady ? _selected : _chatGroup;
   List<AgentThread> get chatTabsInActiveGroup =>
-      _chatGroup == null ? const [] : _grid.tabs(_chatGroup!);
-  bool isPreviewChat(AgentThread thread) => _previewChats.contains(thread);
+      AppEdition.isAbyss && _dockReady
+      ? (_selected == null ? const [] : chatDock.tabsOf(_selected!))
+      : _chatGroup == null
+      ? const []
+      : _grid.tabs(_chatGroup!);
+  bool isPreviewChat(AgentThread thread) => AppEdition.isAbyss && _dockReady
+      ? chatDock.isPreview(thread)
+      : _previewChats.contains(thread);
 
   AgentThread? _focusedChatGroup() {
     if (_selected case final selected? when _grid.groupOf(selected) != null) {
@@ -3561,6 +3697,13 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   void openChatTab(AgentThread thread) {
     if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return;
+    if (_dockReady) {
+      _rememberSelection(thread);
+      chatDock.open(thread);
+      _selected = thread;
+      notifyListeners();
+      return;
+    }
     _rememberSelection(thread);
     _previewChats.remove(thread);
     if (_grid.groupOf(thread) != null) {
@@ -3584,6 +3727,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   void previewChat(AgentThread thread) {
     if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return;
+    if (_dockReady) {
+      select(thread);
+      return;
+    }
     _rememberSelection(thread);
     if (_grid.groupOf(thread) == null) _previewChat(thread);
     _activateTab(thread);
@@ -3646,12 +3793,17 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   void pinChatTab(AgentThread thread) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.pin(thread);
+      return;
+    }
     if (_grid.groupOf(thread) == null || !_previewChats.remove(thread)) return;
     notifyListeners();
   }
 
   bool canOpenChatRight(AgentThread thread) {
     if (!AppEdition.isAbyss || isAppFolder(thread.project.path)) return false;
+    if (_dockReady) return true;
     final group = _focusedChatGroup();
     if (group == null) return true;
     return _grid.neighbor(group, PaneSide.right) != null ||
@@ -3660,6 +3812,14 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   void openChatRight(AgentThread thread) {
     if (!canOpenChatRight(thread)) return;
+    if (_dockReady) {
+      final target = _selected;
+      _rememberSelection(thread);
+      chatDock.open(thread, target: target, side: DockSide.right);
+      _selected = thread;
+      notifyListeners();
+      return;
+    }
     final source = _focusedChatGroup();
     if (source == null) {
       openChatTab(thread);
@@ -3687,6 +3847,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   /// Moves a tab into the group containing [target], not its whole old group.
   void moveChatTab(AgentThread thread, AgentThread target) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.move(thread, target: chatDock.panelId(target));
+      return;
+    }
     final group = _grid.groupOf(target);
     if (group == null || identical(thread, target)) return;
     _previewChats.remove(thread);
@@ -3725,6 +3889,16 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     AgentThread target, {
     bool after = false,
   }) {
+    if (AppEdition.isAbyss && _dockReady) {
+      final group = chatDock.groupOf(target);
+      if (group == null || identical(thread, target)) return;
+      final tabs = chatDock.tabsOf(target);
+      final next = after
+          ? tabs.elementAtOrNull(tabs.indexOf(target) + 1)
+          : target;
+      chatDock.reorder(thread, group: group.groupId, before: next);
+      return;
+    }
     var group = _grid.groupOf(target);
     if (group == null || identical(thread, target)) return;
     _previewChats.remove(thread);
@@ -3745,6 +3919,12 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
 
   /// Closes only this display tab; the session, draft and execution survive.
   void closeChatTab(AgentThread thread) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.close(thread);
+      _selected = chatDock.selected;
+      notifyListeners();
+      return;
+    }
     final group = _grid.groupOf(thread);
     if (group == null) return;
     final wasFocused = identical(thread, _selected);
@@ -3807,7 +3987,14 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
         continue;
       }
       if (_selected case final here?) to.add(here);
-      if (AppEdition.isAbyss) {
+      if (AppEdition.isAbyss && _dockReady) {
+        if (isChatOpen(thread)) {
+          chatDock.activate(thread);
+        } else {
+          chatDock.open(thread, preview: true);
+        }
+        _selected = thread;
+      } else if (AppEdition.isAbyss) {
         if (_grid.groupOf(thread) == null) _previewChat(thread);
         _activateTab(thread);
       } else {
@@ -3821,6 +4008,13 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   void _focus(AgentThread thread) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.open(thread);
+      _selected = thread;
+      thread._markSeen();
+      _snapshots[thread] = thread._snapshot;
+      return;
+    }
     thread._markSeen();
     _snapshots[thread] = thread._snapshot;
     // An aside shows where the one it was asked beside does, or another
@@ -3872,13 +4066,24 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// Whether [thread] has a pane: shown, or covered by another.
-  bool _hasPane(AgentThread thread) =>
-      _grid.contains(thread) || _grid.isCovered(thread);
+  bool _hasPane(AgentThread thread) => AppEdition.isAbyss && _dockReady
+      ? chatDock.openChats.contains(thread)
+      : _grid.contains(thread) || _grid.isCovered(thread);
 
   /// Shows [thread] in the half of [target]'s pane on its [side], and
   /// focuses it; where it shows already, only focuses it. Nothing where
   /// [target]'s pane cannot be split that way (see [ChatGrid.canSplit]).
   void openBeside(AgentThread thread, AgentThread target, PaneSide side) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.open(
+        thread,
+        target: target,
+        side: DockSide.values.byName(side.name),
+      );
+      _selected = thread;
+      notifyListeners();
+      return;
+    }
     if (!_grid.contains(thread)) {
       if (!_grid.canSplit(target, side)) return;
       _grid.split(target, side, thread);
@@ -3889,6 +4094,12 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// Shows [thread] in [target]'s pane (see [_showInPlaceOf]), and focuses
   /// it; where it shows already, only focuses it.
   void openInPlaceOf(AgentThread target, AgentThread thread) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.open(thread, target: target);
+      _selected = thread;
+      notifyListeners();
+      return;
+    }
     if (!_grid.contains(target)) return;
     if (!_grid.contains(thread)) _showInPlaceOf(target, thread);
     select(thread);
@@ -3897,12 +4108,24 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// Rearranges an existing pane: beside [target] on [side], or swapping
   /// their places. The agents keep running; the moved one stays focused.
   void rearrangePane(AgentThread thread, AgentThread target, {PaneSide? side}) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.move(
+        thread,
+        target: chatDock.panelId(target),
+        side: side == null ? null : DockSide.values.byName(side.name),
+      );
+      return;
+    }
     if (_grid.rearrange(thread, target, side: side)) select(thread);
   }
 
   /// Shows [covered], under [pane] (see [ChatGrid.cover]), in [pane]'s
   /// place, [pane] going under it; focused.
   void raiseCovered(AgentThread pane, AgentThread covered) {
+    if (AppEdition.isAbyss && _dockReady) {
+      select(covered);
+      return;
+    }
     if (!_grid.under(pane).contains(covered)) return;
     _grid.raise(pane, covered);
     select(covered);
@@ -3911,6 +4134,10 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// Takes [covered] from under [pane]: its tab closed, the agent goes on
   /// in the sidebar.
   void closeCovered(AgentThread pane, AgentThread covered) {
+    if (AppEdition.isAbyss && _dockReady) {
+      closeChatTab(covered);
+      return;
+    }
     if (!_grid.under(pane).contains(covered)) return;
     _grid.forget(covered);
     notifyListeners();
@@ -3928,8 +4155,9 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// Whether [thread]'s pane can close: another shows beside it.
-  bool canClosePane(AgentThread thread) =>
-      _grid.contains(thread) && (AppEdition.isAbyss || _grid.length > 1);
+  bool canClosePane(AgentThread thread) => AppEdition.isAbyss && _dockReady
+      ? isChatOpen(thread)
+      : _grid.contains(thread) && (AppEdition.isAbyss || _grid.length > 1);
 
   /// Closes [thread]'s pane: the agent it covered shows there again, else
   /// the one beside it takes its place; the last one stays. The agent goes
@@ -3989,7 +4217,11 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   /// A new, empty agent in [project], listed here but not shown.
-  AgentThread _newThread(Project project, {bool chatOnly = false}) {
+  AgentThread _newThread(
+    Project project, {
+    bool chatOnly = false,
+    String? dockSlot,
+  }) {
     final kernel =
         switch (agentSetup?.call(project.path)?.kernel) {
           final id? => kernels.where((k) => k.id == id).firstOrNull,
@@ -4018,6 +4250,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
         historyCount: 0,
       ),
     );
+    if (dockSlot != null) _dockSlots[thread] = dockSlot;
     _add(thread);
     _listen(thread); // Opens it.
     return thread;
@@ -4672,6 +4905,13 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   }
 
   void _leaveMany(Set<AgentThread> gone) {
+    if (AppEdition.isAbyss && _dockReady) {
+      for (final thread in gone) {
+        chatDock.close(thread);
+      }
+      _selected = chatDock.selected;
+      return;
+    }
     gone.forEach(_grid.forget);
     final shown = gone.where(_grid.contains).toList();
     for (final thread in shown) {
@@ -4710,6 +4950,11 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// the last one shows the most recent remaining agent instead, or a new
   /// one.
   void _leave(AgentThread gone) {
+    if (AppEdition.isAbyss && _dockReady) {
+      chatDock.close(gone);
+      _selected = chatDock.selected;
+      return;
+    }
     _grid.forget(gone);
     if (!_grid.contains(gone)) return;
     // An aside: the one it was asked beside, in its place.
@@ -4752,6 +4997,7 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
     _disposed = true;
     if (resumes.resume == _resumeAfterReset) resumes.resume = null;
     icons.removeListener(notifyListeners);
+    if (AppEdition.isAbyss) chatDock.dispose();
     for (final MapEntry(key: path, value: listener) in _unreached.entries) {
       SshHosts.instance[RemoteLocation.hostOf(path)!].removeListener(listener);
     }

@@ -874,11 +874,9 @@ class _WindowHeaderState extends State<WindowHeader> {
             ),
           ),
         ),
-      if (!widget.workspace.grid.isEmpty) ...[
+      if (widget.workspace.openChats.isNotEmpty) ...[
         const HeaderMenuItem.rule(),
-        for (final thread in widget.workspace.grid.panes.expand(
-          widget.workspace.grid.tabs,
-        ))
+        for (final thread in widget.workspace.openChats)
           HeaderMenuItem(
             thread.localizedTitle(l10n),
             checked: identical(thread, widget.workspace.current),

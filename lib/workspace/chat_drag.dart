@@ -23,11 +23,15 @@ class ChatDrop {
     this.fits = true,
     this.rearrange = false,
     this.covers = false,
+    this.dockTarget,
+    this.dockRoot = false,
   });
 
   final AgentThread thread;
   final AgentThread target;
   final PaneSide? side;
+  final String? dockTarget;
+  final bool dockRoot;
 
   /// Where its pane would be, in the grid.
   final Rect preview;
@@ -58,7 +62,9 @@ class ChatDrop {
       other.growth == growth &&
       other.fits == fits &&
       other.rearrange == rearrange &&
-      other.covers == covers;
+      other.covers == covers &&
+      other.dockTarget == dockTarget &&
+      other.dockRoot == dockRoot;
 
   @override
   int get hashCode => Object.hash(
@@ -70,6 +76,8 @@ class ChatDrop {
     fits,
     rearrange,
     covers,
+    dockTarget,
+    dockRoot,
   );
 }
 

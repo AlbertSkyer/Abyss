@@ -242,3 +242,43 @@
 - 实际启动 setup，看到“Setup - Abyss 1.9.7”及默认 `%LOCALAPPDATA%/Programs/Abyss` 目标目录，截图 `build/abyss-1.9.7-installer-welcome.png`；在写入前取消。**无可用隔离安装环境，完整安装/卸载及其他电脑首次运行未实测**；未在当前用户下安装再卸载，以免覆盖现有注册。
 - 安装器 **未签名**，可能出现 SmartScreen/未知发布者提示；不建议关闭系统保护。无需开发机 Flutter/Dart/Rust SDK；首次 CLI 下载和模型服务配置需要网络及用户自己的账号/API。Git 功能需要目标机安装 Git，语言开发工具另行安装；远程服务端首次使用需下载。不能称完全离线包。
 - 本批不等于整个产品完成：原生浮动多屏、完整队列/故障切换、跨重启阅读锚点及完整任务证据仍待后续。
+
+## 单个对话标签全工作区停靠（2026-11-16）
+
+### 实现范围
+
+- Abyss 主会话不再整体嵌在 `main-chat` 四窗格容器内。每个对话是统一 Dock 树的动态 `chat:*` 面板，可与文件/终端等工具混合成标签组，并向局部分组或整个内容区的四边拆分。
+- Workspace 持有停靠协调器和唯一会话绑定；保留原 AgentThread、ChatSession 与 GlobalKey，拖动不复制会话或启动新请求。BaoCode 仍使用原 ChatGrid/PaneTabs。
+- 对话标签提供标题、状态标记、预览样式、固定/关闭/右键菜单；侧栏打开、右侧打开、导航、快捷键和窗口菜单查询统一树。工具获得焦点时保留最后主会话作为工具归属，不强行显示隐藏会话。
+- 版本化保存动态绑定、组顺序、活动项和选中会话；旧 `chat + workbench.dock` 一次性迁移。新会话未取得 session ID 时使用独立 slot，首次获得 ID 不改变 panel key；同项目多个新聊天草稿分别保存。
+- 预设保存聊天插槽而非具体 session，应用时保留全部当前会话；关闭只移除显示，后台任务和草稿不因此结束。空工作区可恢复，不自动复活最后关闭会话。
+
+### 定向验证
+
+- 停靠状态、DockHost 与 ChatDock 协调器：**43 项通过**，日志 `build/chat-dock-release-model-tests.log`。
+- Abyss 工作台/单对话四向真实 widget 拖拽、旧布局迁移、新会话草稿重启恢复及 scratch 相关筛选：**14 项通过**，日志 `build/chat-dock-release-integration-tests.log`。scratch 完整文件与持久化组合此前另有 6 项通过，重叠用例不累计。
+- BaoCode 焦点/侧栏共享路径定向 **2 项通过**，日志 `build/chat-dock-baocode-compat.log`。
+- 修改模块 analyze 无问题，日志 `build/chat-dock-release-analyze.log`；未运行全套测试。早期迁移注册通知重入、空树恢复及测试夹具/手势等待问题已修正并重跑，未把失败轮次算通过。
+
+### 实际 GUI 与验证包
+
+- 全新人工历史与数据目录 `build/chat-dock-gui-20261116/data`，只复用此前自建的两个无敏感内容假会话，不复制任何用户或 BaoCode 凭据。本轮不发送付费模型请求；隔离目录首次自动下载了外部 CLI。
+- preview 包实际将 Beta 对话拖到文件下方、整体上/下/左/右边缘，再与文件合并标签；Alpha 不随动。截图 `build/chat-dock-gui-20261116/{beta-below-files,beta-root-top,beta-root-bottom,beta-root-left,beta-root-right,beta-merged-files}.png` 均已查看。
+- 在界面输入未发送的 `BETA dock draft`，移动、关闭后从侧栏找回、正常退出再重开均保留。截图 `closed-reopened.png`、`restarted.png`。
+- 最终新目录 `dist/Abyss-chat-dock-20261116-verified/Abyss.exe`，Release/独立身份检查通过，日志 `build/chat-dock-verified-build.log`；app.so SHA-256 `0FD15ED7F1821A5A733BA9F7731B44A574FEB2EF4DED6D6DFAC9E7426E7AF95A`。
+- 最终包实际恢复布局和草稿、将 Beta 合并回 Alpha 标签组，再仅拆出 Beta 到文件下方；截图 `final-restored.png`、`final-merged-conversations.png`、`final-split-one.png` 已查看。验收后正常退出隔离实例，原版 BaoCode 仍响应，未操作其配置或进程。
+- 上述功能验收使用标识清晰的本地验证包，内部版本为 1.9.7+33，并非新安装版本。用户随后明确要求提交推送和 GitHub Release，本批发版版本同步为 **1.9.8+34**；不覆盖 GitHub 1.9.7 Release 或其安装器，不删除旧包。
+
+### 1.9.8 发布构建
+
+- 版本 **1.9.8+34**，版本一致性 5 项测试通过；完整重新 Release 构建与 Inno Setup 打包成功，日志 `build/abyss-1.9.8-release-build.log`。未使用 skip-build 或覆盖旧发行目录。
+- 安装器 `dist/Abyss-1.9.8-release/Abyss-1.9.8-setup.exe`，**26,016,116 字节**；SHA-256 `A9269F03DBC268B91A09AC1296FC5BBA5701B1083E8E04BF1C932D4277BD36F8`。
+- 运行目录 `dist/Abyss-1.9.8-windows-x64`，app.so SHA-256 `2819B15775E17296C5F75095DD7864A68D3310EC4CBE4BE069FD23077F57F7AB`；独立身份检查通过。
+- 该发行包使用同一独立人工数据实际启动，布局和 BETA 未发送草稿恢复，关于页面显示 1.9.8（34）。截图 `build/chat-dock-gui-20261116/release-1.9.8-{restored,about}.png` 已查看；未把此前包截图当新版本截图。
+- 发布附件仅含安装器、安装说明与校验文件；未包含配置或历史。未签名、完整隔离安装/卸载及第二台电脑首次使用未实测的限制保持不变。
+
+### 边界
+
+- 本轮未重新做真实上游运行中任务的拖动/审批压力验证；移动时 session/ChatScreen State 不变由 widget 测试验证。跨整个应用重启阅读锚点仍未新增实现。
+- 新布局/预设的恢复有定向测试和基础重启 GUI 证据；所有自定义坏数据/所有快捷键组合没有穷举真实手工验收。
+- 原生系统浮动窗口、多屏不属于本次实现，整个产品其他目标不据此宣称完成。

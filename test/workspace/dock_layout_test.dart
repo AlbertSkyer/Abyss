@@ -184,6 +184,232 @@ void main() {
     expect((controller.root as DockSplit).ratio, 0.95);
   });
 
+  test('generic empty layout opens dynamic chat panels without main chat', () {
+    final controller = DockController(
+      availablePanelIds: const ['tools'],
+      requiredPanelId: null,
+    );
+    addTearDown(controller.dispose);
+    final empty = controller.root as DockTabs;
+    expect(empty.orderedPanelIds, isEmpty);
+    expect(empty.active, '');
+    expect(empty.copyWith(orderedPanelIds: const []).active, '');
+    expect(controller.isEmpty, isTrue);
+    expect(controller.focusedGroup, isNull);
+    expect(controller.openPanelIds, isEmpty);
+    expect(controller.availablePanelIds, {'tools'});
+    expect(controller.open('tools'), isTrue);
+    expect(controller.close('tools'), isTrue);
+    expect(controller.isEmpty, isTrue);
+    expect(controller.toJson()['version'], dockLayoutVersion);
+
+    expect(controller.registerPanel('chat:one'), isTrue);
+    expect(controller.registerPanel('chat:one'), isFalse);
+    controller.registerPanels(const ['chat:two', 'chat:two', '']);
+    expect(controller.openPanelIds, isEmpty);
+    expect(controller.open('chat:one'), isTrue);
+    expect(controller.open('chat:two'), isTrue);
+    expect(_group(controller.root, 'chat:one').orderedPanelIds, [
+      'chat:one',
+      'chat:two',
+    ]);
+    expect(controller.availablePanelIds.contains('main-chat'), isFalse);
+    expect(controller.close('chat:one'), isTrue);
+    expect(controller.close('chat:two'), isTrue);
+    expect(controller.isEmpty, isTrue);
+  });
+
+  test(
+    'unregister closes only that dynamic panel and preserves required ID',
+    () {
+      final controller =
+          DockController(
+              availablePanelIds: const ['chat:one', 'chat:two'],
+              requiredPanelId: null,
+            )
+            ..open('chat:one')
+            ..open('chat:two');
+      addTearDown(controller.dispose);
+      expect(controller.unregisterPanel('chat:one'), isTrue);
+      expect(controller.openPanelIds, {'chat:two'});
+      expect(controller.availablePanelIds, {'chat:two'});
+      expect(controller.open('chat:one'), isFalse);
+      expect(controller.unregisterPanel('chat:one'), isFalse);
+      expect(controller.unregisterPanel('chat:two'), isTrue);
+      expect(controller.isEmpty, isTrue);
+
+      final required = DockController(
+        availablePanelIds: const ['other'],
+        requiredPanelId: 'required',
+      );
+      addTearDown(required.dispose);
+      expect(required.openPanelIds, {'required'});
+      expect(required.close('required'), isFalse);
+      expect(required.unregisterPanel('required'), isFalse);
+      required.open('other');
+      expect(required.close('other'), isTrue);
+      expect(required.openPanelIds, {'required'});
+      expect(required.removePanel('required'), isTrue);
+      expect(required.isEmpty, isTrue);
+    },
+  );
+
+  test('replaceRoot is atomic and empty split branches collapse', () {
+    final controller = DockController(
+      availablePanelIds: const ['one', 'two'],
+      requiredPanelId: null,
+    );
+    addTearDown(controller.dispose);
+    final replacement = DockSplit(
+      axis: DockAxis.vertical,
+      ratio: 0.4,
+      first: DockTabs(
+        groupId: 'g1',
+        orderedPanelIds: const ['one', 'one'],
+        active: 'one',
+      ),
+      second: DockTabs(
+        groupId: 'g2',
+        orderedPanelIds: const ['two'],
+        active: 'two',
+      ),
+    );
+    expect(controller.replaceRoot(replacement), isTrue);
+    expect(controller.openPanelIds, {'one', 'two'});
+    expect(controller.availablePanelIds, {'one', 'two'});
+    expect(controller.focusedGroup!.groupId, 'g2');
+    expect(controller.focusGroup('g1'), isTrue);
+    controller.open('two');
+    expect(controller.openPanelIds, {'one', 'two'});
+
+    final before = controller.toJson();
+    expect(
+      controller.replaceRoot(
+        DockTabs(
+          groupId: 'invalid',
+          orderedPanelIds: const ['one', 'not-registered'],
+          active: 'one',
+        ),
+      ),
+      isFalse,
+    );
+    expect(controller.toJson(), before);
+    expect(controller.availablePanelIds.contains('not-registered'), isFalse);
+    expect(controller.focusGroup('missing'), isFalse);
+
+    final collapsed = DockController(
+      availablePanelIds: const ['one'],
+      requiredPanelId: null,
+      root: DockSplit(
+        axis: DockAxis.horizontal,
+        ratio: 0.5,
+        first: DockTabs(
+          groupId: 'empty',
+          orderedPanelIds: const [],
+          active: '',
+        ),
+        second: DockTabs(
+          groupId: 'one-group',
+          orderedPanelIds: const ['one'],
+          active: 'one',
+        ),
+      ),
+    );
+    addTearDown(collapsed.dispose);
+    expect(collapsed.root, isA<DockTabs>());
+    expect((collapsed.root as DockTabs).groupId, 'one-group');
+  });
+
+  test(
+    'dynamic JSON restores IDs, preserves empty state and de-duplicates',
+    () {
+      final restored = DockController.fromJson(
+        {
+          'version': 1,
+          'root': {
+            'type': 'split',
+            'axis': 'horizontal',
+            'ratio': 0.5,
+            'first': {
+              'type': 'tabs',
+              'groupId': 'chats',
+              'orderedPanelIds': ['chat:one', 'chat:one', 'chat:two'],
+              'active': 'chat:two',
+            },
+            'second': {
+              'type': 'tabs',
+              'groupId': 'other',
+              'orderedPanelIds': ['chat:one', 'tools'],
+              'active': 'tools',
+            },
+          },
+        },
+        availablePanelIds: const ['tools'],
+        requiredPanelId: null,
+      );
+      addTearDown(restored.dispose);
+      expect(restored.openPanelIds, {'chat:one', 'chat:two', 'tools'});
+      expect(restored.availablePanelIds, restored.openPanelIds);
+      expect(restored.availablePanelIds.contains('main-chat'), isFalse);
+      expect(_group(restored.root, 'chat:one').active, 'chat:two');
+      expect(_group(restored.root, 'tools').orderedPanelIds, ['tools']);
+      expect(restored.toJson()['version'], 1);
+
+      final empty =
+          DockController.fromJson(
+            restored.toJson(),
+            availablePanelIds: const ['tools'],
+            requiredPanelId: null,
+          )..loadJson({
+            'version': 1,
+            'root': {
+              'type': 'tabs',
+              'groupId': 'empty',
+              'orderedPanelIds': const [],
+              'active': '',
+            },
+          });
+      addTearDown(empty.dispose);
+      expect(empty.isEmpty, isTrue);
+      expect(empty.openPanelIds, isEmpty);
+      expect(empty.availablePanelIds, restored.availablePanelIds);
+      empty.open('chat:one');
+      expect(empty.openPanelIds, {'chat:one'});
+    },
+  );
+
+  for (final side in DockSide.values) {
+    test('${side.name} root move docks at the complete tree edge', () {
+      final controller =
+          DockController(
+              availablePanelIds: const ['one', 'two', 'three'],
+              requiredPanelId: null,
+            )
+            ..open('one')
+            ..open('two');
+      addTearDown(controller.dispose);
+      controller.open('three');
+      controller.move('three', target: 'one', side: DockSide.bottom);
+      expect(controller.root, isA<DockSplit>());
+      final oldRoot = controller.root;
+      expect(controller.moveToRoot('three', side: side), isTrue);
+      final root = controller.root as DockSplit;
+      expect(
+        root.axis,
+        side == DockSide.left || side == DockSide.right
+            ? DockAxis.horizontal
+            : DockAxis.vertical,
+      );
+      final movedFirst = side == DockSide.left || side == DockSide.top;
+      final moved = movedFirst ? root.first : root.second;
+      final remainder = movedFirst ? root.second : root.first;
+      expect((moved as DockTabs).orderedPanelIds, ['three']);
+      expect(remainder, isNot(same(oldRoot)));
+      expect(controller.openPanelIds, {'one', 'two', 'three'});
+      expect(controller.focusedGroup!.orderedPanelIds, ['three']);
+    });
+  }
+
   test('bad presets and standalone bad nodes safely restore main layout', () {
     for (final bad in [
       null,

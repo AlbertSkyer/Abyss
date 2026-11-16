@@ -27,10 +27,12 @@ enum DockSide { left, right, top, bottom }
 sealed class DockNode {
   const DockNode._();
 
+  bool get isEmpty;
+  bool get isNotEmpty => !isEmpty;
+
   Map<String, Object?> toJson();
 
-  /// Reads a standalone node. Unknown panel IDs cannot be inferred safely here,
-  /// so all non-empty IDs in the value are accepted and de-duplicated.
+  /// Reads a standalone node using the legacy main-panel requirement.
   static DockNode fromJson(Object? value) {
     final allowed = <String>{dockMainPanelId};
     _collectPanelIds(value, allowed);
@@ -46,7 +48,7 @@ sealed class DockNode {
     }
     return seen.contains(dockMainPanelId)
         ? node
-        : DockController._addMainToFirstGroup(node);
+        : DockController._addPanelToFirstGroup(node, dockMainPanelId);
   }
 
   static void _collectPanelIds(Object? value, Set<String> ids) {
@@ -67,26 +69,38 @@ sealed class DockNode {
 
 @immutable
 final class DockTabs extends DockNode {
-  DockTabs({
-    required this.groupId,
+  factory DockTabs({
+    required String groupId,
     required List<String> orderedPanelIds,
     required String active,
-  }) : orderedPanelIds = List.unmodifiable(
-         LinkedHashSet<String>.from(
-           orderedPanelIds.where((id) => id.isNotEmpty),
-         ),
-       ),
-       active = orderedPanelIds.contains(active)
-           ? active
-           : orderedPanelIds.isEmpty
-           ? active
-           : orderedPanelIds.first,
-       assert(groupId != ''),
+  }) {
+    final ids = List<String>.unmodifiable(
+      LinkedHashSet<String>.from(orderedPanelIds.where((id) => id.isNotEmpty)),
+    );
+    return DockTabs._(
+      groupId: groupId,
+      orderedPanelIds: ids,
+      active: ids.contains(active)
+          ? active
+          : ids.isEmpty
+          ? ''
+          : ids.first,
+    );
+  }
+
+  const DockTabs._({
+    required this.groupId,
+    required this.orderedPanelIds,
+    required this.active,
+  }) : assert(groupId != ''),
        super._();
 
   final String groupId;
   final List<String> orderedPanelIds;
   final String active;
+
+  @override
+  bool get isEmpty => orderedPanelIds.isEmpty;
 
   DockTabs copyWith({
     String? groupId,
@@ -97,7 +111,13 @@ final class DockTabs extends DockNode {
     return DockTabs(
       groupId: groupId ?? this.groupId,
       orderedPanelIds: ids,
-      active: active ?? (ids.contains(this.active) ? this.active : ids.first),
+      active:
+          active ??
+          (ids.contains(this.active)
+              ? this.active
+              : ids.isEmpty
+              ? ''
+              : ids.first),
     );
   }
 
@@ -141,6 +161,9 @@ final class DockSplit extends DockNode {
   final DockNode first;
   final DockNode second;
 
+  @override
+  bool get isEmpty => first.isEmpty && second.isEmpty;
+
   DockSplit copyWith({double? ratio, DockNode? first, DockNode? second}) =>
       DockSplit(
         axis: axis,
@@ -159,52 +182,91 @@ final class DockSplit extends DockNode {
   };
 }
 
-/// Owns only dock layout state. It never owns or constructs panel contents.
+/// Owns only generic dock layout state, never panel contents or business types.
 class DockController extends ChangeNotifier {
   DockController({
     List<String> availablePanelIds = dockDefaultPanelIds,
     DockNode? root,
-  }) : _availablePanelIds = <String>{
-         dockMainPanelId,
+    String? requiredPanelId = dockMainPanelId,
+  }) : _requiredPanelId = requiredPanelId,
+       _availablePanelIds = <String>{
+         if (requiredPanelId != null && requiredPanelId.isNotEmpty)
+           requiredPanelId,
          ...availablePanelIds.where((id) => id.isNotEmpty),
        } {
-    _root = root == null
-        ? _defaultRoot(_availablePanelIds)
-        : _sanitize(root.toJson(), _availablePanelIds) ??
-              _defaultRoot(_availablePanelIds);
+    assert(requiredPanelId == null || requiredPanelId.isNotEmpty);
+    _root = _initialRoot(root);
   }
 
   factory DockController.fromJson(
     Object? json, {
     List<String> availablePanelIds = dockDefaultPanelIds,
+    String? requiredPanelId = dockMainPanelId,
   }) {
-    final controller = DockController(availablePanelIds: availablePanelIds);
+    final controller = DockController(
+      availablePanelIds: availablePanelIds,
+      requiredPanelId: requiredPanelId,
+    );
     controller.loadJson(json);
     return controller;
   }
 
   late DockNode _root;
   final Set<String> _availablePanelIds;
+  final String? _requiredPanelId;
   String? _maximizedPanelId;
+  String? _focusedGroupId;
   var _groupSerial = 0;
 
   DockNode get root => _root;
   String? get maximizedPanelId => _maximizedPanelId;
+  String? get requiredPanelId => _requiredPanelId;
   Set<String> get availablePanelIds => UnmodifiableSetView(_availablePanelIds);
   Set<String> get openPanelIds => UnmodifiableSetView(_panelsIn(_root));
+  bool get isEmpty => _root.isEmpty;
+  bool get isNotEmpty => !isEmpty;
+
+  /// The group selected as the target for new tabs, if the tree is non-empty.
+  DockTabs? get focusedGroup {
+    if (_focusedGroupId != null) {
+      final focused = _groupById(_root, _focusedGroupId!);
+      if (focused != null) return focused;
+    }
+    return _root.isEmpty ? null : _rightmostGroup(_root);
+  }
 
   static Set<String> _panelsIn(DockNode node) => switch (node) {
     DockTabs() => node.orderedPanelIds.toSet(),
     DockSplit() => {..._panelsIn(node.first), ..._panelsIn(node.second)},
   };
 
-  static DockNode _defaultRoot(Iterable<String> available) {
+  static DockTabs _emptyRoot() =>
+      DockTabs(groupId: 'dock-empty', orderedPanelIds: const [], active: '');
+
+  DockNode _initialRoot(DockNode? root) {
+    if (root == null) return _defaultRoot(_availablePanelIds);
+    _focusedGroupId = root is DockTabs ? root.groupId : null;
+    return _sanitize(
+          root.toJson(),
+          _availablePanelIds,
+          requiredPanelId: _requiredPanelId,
+        ) ??
+        _defaultRoot(_availablePanelIds);
+  }
+
+  DockNode _defaultRoot(Iterable<String> available) {
+    final required = _requiredPanelId;
+    if (required == null) return _emptyRoot();
     final main = DockTabs(
-      groupId: 'main-chat-group',
-      orderedPanelIds: const [dockMainPanelId],
-      active: dockMainPanelId,
+      groupId: required == dockMainPanelId
+          ? 'main-chat-group'
+          : 'required-panel-group',
+      orderedPanelIds: [required],
+      active: required,
     );
-    if (!available.contains('files')) return main;
+    if (required != dockMainPanelId || !available.contains('files')) {
+      return main;
+    }
     return DockSplit(
       axis: DockAxis.horizontal,
       ratio: 0.68,
@@ -215,6 +277,76 @@ class DockController extends ChangeNotifier {
         active: 'files',
       ),
     );
+  }
+
+  /// Registers an ID as available to open; it does not open a panel.
+  bool registerPanel(String panelId) {
+    if (panelId.isEmpty || _availablePanelIds.contains(panelId)) return false;
+    _availablePanelIds.add(panelId);
+    notifyListeners();
+    return true;
+  }
+
+  /// Registers several IDs in one notification, without opening any panels.
+  void registerPanels(Iterable<String> panelIds) {
+    var changed = false;
+    for (final id in panelIds) {
+      if (id.isNotEmpty && _availablePanelIds.add(id)) changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// Closes an open ID and removes it from future [open] operations.
+  bool unregisterPanel(String panelId) {
+    if (panelId == _requiredPanelId || !_availablePanelIds.contains(panelId)) {
+      return false;
+    }
+    _availablePanelIds.remove(panelId);
+    if (openPanelIds.contains(panelId)) {
+      _root = _removeFrom(_root, panelId) ?? _emptyRoot();
+    }
+    if (_maximizedPanelId == panelId) _maximizedPanelId = null;
+    notifyListeners();
+    return true;
+  }
+
+  /// Removes an open panel, including a required panel, without unregistering.
+  bool removePanel(String panelId) {
+    if (!openPanelIds.contains(panelId)) return false;
+    _root = _removeFrom(_root, panelId) ?? _emptyRoot();
+    if (_maximizedPanelId == panelId) _maximizedPanelId = null;
+    notifyListeners();
+    return true;
+  }
+
+  bool focusGroup(String groupId) {
+    if (_groupById(_root, groupId) == null) return false;
+    if (_focusedGroupId == groupId) return true;
+    _focusedGroupId = groupId;
+    notifyListeners();
+    return true;
+  }
+
+  /// Replaces the entire tree atomically after validating registered panel IDs.
+  /// Unlike [loadJson], this never treats tree IDs as newly available panels.
+  bool replaceRoot(DockNode next) {
+    final raw = next.toJson();
+    final ids = <String>{};
+    DockNode._collectPanelIds(raw, ids);
+    if (!ids.every(_availablePanelIds.contains)) return false;
+    final sanitized = _sanitize(
+      raw,
+      _availablePanelIds,
+      requiredPanelId: _requiredPanelId,
+    );
+    if (sanitized == null) return false;
+    _root = sanitized;
+    if (_maximizedPanelId != null &&
+        !openPanelIds.contains(_maximizedPanelId)) {
+      _maximizedPanelId = null;
+    }
+    notifyListeners();
+    return true;
   }
 
   DockTabs? _groupForPanel(DockNode node, String panelId) {
@@ -287,23 +419,32 @@ class DockController extends ChangeNotifier {
     if (!_availablePanelIds.contains(panelId)) return false;
     if (openPanelIds.contains(panelId)) return reveal(panelId);
 
-    // Keep the initial central conversation on its own; subsequent opens join
-    // the existing right-hand group rather than creating a group per panel.
-    if (_root case DockTabs group
+    if (_root.isEmpty) {
+      _root = DockTabs(
+        groupId: _newGroupId(),
+        orderedPanelIds: [panelId],
+        active: panelId,
+      );
+      _focusedGroupId = (_root as DockTabs).groupId;
+    } else if (_root case DockTabs group
         when group.orderedPanelIds.length == 1 &&
-            group.active == dockMainPanelId) {
+            group.active == _requiredPanelId) {
+      // Keep the initial central conversation on its own; subsequent opens
+      // join the existing right-hand group rather than making one per panel.
+      final target = DockTabs(
+        groupId: _newGroupId(),
+        orderedPanelIds: [panelId],
+        active: panelId,
+      );
       _root = DockSplit(
         axis: DockAxis.horizontal,
         ratio: 0.68,
         first: group,
-        second: DockTabs(
-          groupId: _newGroupId(),
-          orderedPanelIds: [panelId],
-          active: panelId,
-        ),
+        second: target,
       );
+      _focusedGroupId = target.groupId;
     } else {
-      final target = _rightmostGroup(_root);
+      final target = focusedGroup!;
       _root = _replaceGroup(
         _root,
         target.groupId,
@@ -312,6 +453,7 @@ class DockController extends ChangeNotifier {
           active: panelId,
         ),
       );
+      _focusedGroupId = target.groupId;
     }
     if (_maximizedPanelId != null) _maximizedPanelId = panelId;
     notifyListeners();
@@ -323,8 +465,11 @@ class DockController extends ChangeNotifier {
     if (group == null) return false;
     final changedMaximize =
         _maximizedPanelId != null && _maximizedPanelId != panelId;
-    if (group.active == panelId && !changedMaximize) return true;
+    if (group.active == panelId && !changedMaximize) {
+      return focusGroup(group.groupId);
+    }
     if (changedMaximize) _maximizedPanelId = panelId;
+    _focusedGroupId = group.groupId;
     _root = _replaceGroup(
       _root,
       group.groupId,
@@ -335,11 +480,38 @@ class DockController extends ChangeNotifier {
   }
 
   bool close(String panelId) {
-    if (panelId == dockMainPanelId || !openPanelIds.contains(panelId)) {
+    if (panelId == _requiredPanelId || !openPanelIds.contains(panelId)) {
       return false;
     }
-    _root = _removeFrom(_root, panelId)!;
+    _root = _removeFrom(_root, panelId) ?? _emptyRoot();
     if (_maximizedPanelId == panelId) _maximizedPanelId = null;
+    notifyListeners();
+    return true;
+  }
+
+  /// Moves a panel to an edge of the complete tree, not just its current group.
+  bool moveToRoot(String panelId, {required DockSide side}) {
+    if (_groupForPanel(_root, panelId) == null) return false;
+    if (_root case DockTabs group) {
+      if (group.orderedPanelIds.length == 1) return false;
+      return move(panelId, target: group.groupId, side: side);
+    }
+    final next = _removeFrom(_root, panelId);
+    if (next == null) return false;
+    final moved = DockTabs(
+      groupId: _newGroupId(next),
+      orderedPanelIds: [panelId],
+      active: panelId,
+    );
+    final horizontal = side == DockSide.left || side == DockSide.right;
+    final movedFirst = side == DockSide.left || side == DockSide.top;
+    _root = DockSplit(
+      axis: horizontal ? DockAxis.horizontal : DockAxis.vertical,
+      ratio: 0.5,
+      first: movedFirst ? moved : next,
+      second: movedFirst ? next : moved,
+    );
+    _focusedGroupId = moved.groupId;
     notifyListeners();
     return true;
   }
@@ -366,6 +538,7 @@ class DockController extends ChangeNotifier {
         source.groupId,
         (group) => group.copyWith(orderedPanelIds: ids, active: panelId),
       );
+      _focusedGroupId = source.groupId;
       notifyListeners();
       return true;
     }
@@ -409,6 +582,7 @@ class DockController extends ChangeNotifier {
       );
     }
     _root = next;
+    _focusedGroupId = _groupForPanel(_root, panelId)?.groupId;
     notifyListeners();
     return true;
   }
@@ -468,8 +642,10 @@ class DockController extends ChangeNotifier {
     'root': _root.toJson(),
   };
 
-  /// Loads a map or an encoded JSON string. Any bad preset safely restores the
-  /// default layout; maximize state is deliberately not persisted.
+  /// Loads a map or encoded JSON string. Version 1 remains the wire format.
+  /// Valid `chat:` IDs are registered first so dynamic panels can restore.
+  /// Other IDs retain the available-panel whitelist and legacy sanitization.
+  /// Maximize state is deliberately not persisted.
   void loadJson(Object? json) {
     Object? value = json;
     if (value is String) {
@@ -481,30 +657,44 @@ class DockController extends ChangeNotifier {
     }
     DockNode? next;
     if (value is Map && value['version'] == dockLayoutVersion) {
-      next = _sanitize(value['root'], _availablePanelIds);
+      final ids = <String>{};
+      DockNode._collectPanelIds(value['root'], ids);
+      _availablePanelIds.addAll(
+        ids.where((id) => id.startsWith('chat:') && id.length > 5),
+      );
+      next = _sanitize(
+        value['root'],
+        _availablePanelIds,
+        requiredPanelId: _requiredPanelId,
+      );
     }
     _root = next ?? _defaultRoot(_availablePanelIds);
+    _focusedGroupId = _root.isEmpty ? null : _rightmostGroup(_root).groupId;
     _maximizedPanelId = null;
     notifyListeners();
   }
 
-  static DockNode? _sanitize(Object? value, Set<String> available) {
+  static DockNode? _sanitize(
+    Object? value,
+    Set<String> available, {
+    required String? requiredPanelId,
+  }) {
     final seen = <String>{};
     final groups = <String>{};
     final node = _readNode(value, available, seen, groups);
     if (node == null) return null;
-    if (seen.contains(dockMainPanelId)) return node;
-    return _addMainToFirstGroup(node);
+    if (requiredPanelId == null || seen.contains(requiredPanelId)) return node;
+    return _addPanelToFirstGroup(node, requiredPanelId);
   }
 
-  static DockNode _addMainToFirstGroup(DockNode node) {
+  static DockNode _addPanelToFirstGroup(DockNode node, String panelId) {
     switch (node) {
       case DockTabs():
         return node.copyWith(
-          orderedPanelIds: [dockMainPanelId, ...node.orderedPanelIds],
+          orderedPanelIds: [panelId, ...node.orderedPanelIds],
         );
       case DockSplit():
-        return node.copyWith(first: _addMainToFirstGroup(node.first));
+        return node.copyWith(first: _addPanelToFirstGroup(node.first, panelId));
     }
   }
 
@@ -544,7 +734,6 @@ DockNode? _readNode(
       for (final id in rawIds) {
         if (id is String && allowed.contains(id) && seen.add(id)) ids.add(id);
       }
-      if (ids.isEmpty) return null;
       final requestedGroup = value['groupId'];
       var groupId = requestedGroup is String && requestedGroup.isNotEmpty
           ? requestedGroup
@@ -552,6 +741,13 @@ DockNode? _readNode(
       var suffix = 0;
       while (!groups.add(groupId)) {
         groupId = 'dock-group-${++suffix}';
+      }
+      if (ids.isEmpty) {
+        return DockTabs(
+          groupId: groupId,
+          orderedPanelIds: const [],
+          active: '',
+        );
       }
       final active = value['active'];
       return DockTabs(
@@ -562,8 +758,8 @@ DockNode? _readNode(
     case 'split':
       final first = _readNode(value['first'], allowed, seen, groups);
       final second = _readNode(value['second'], allowed, seen, groups);
-      if (first == null) return second;
-      if (second == null) return first;
+      if (first == null || first.isEmpty) return second;
+      if (second == null || second.isEmpty) return first;
       final rawRatio = value['ratio'];
       final ratio = rawRatio is num ? rawRatio.toDouble() : double.nan;
       return DockSplit(

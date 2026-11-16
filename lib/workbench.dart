@@ -155,6 +155,7 @@ import 'workspace/islands.dart';
 import 'workspace/pane_tabs.dart';
 import 'workspace/dock_layout.dart';
 import 'workspace/dock_host.dart';
+import 'workspace/thread_status_mark.dart';
 import 'chat/side_panel/agent_team_page.dart';
 import 'workspace/chat_terminal.dart';
 import 'workspace/terminal_deck.dart';
@@ -469,10 +470,13 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     if (mounted) setState(() {});
   }
 
-  late final DockController _dock = DockController()..addListener(_dockChanged);
-  bool _dockRestoring = false;
+  late final DockController _dock =
+      (AppEdition.isAbyss ? _workspace.chatDock.controller : DockController())
+        ..addListener(_dockChanged);
+  final bool _dockRestoring = false;
   final Map<String, Object?> _dockPresets = {};
   final Map<String, GlobalKey> _dockKeys = {};
+  final GlobalKey _dockHostKey = GlobalKey();
   AgentThread? _scratchThread;
   bool _scratchOpening = false;
   bool _scratchFocused = false;
@@ -485,7 +489,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   }
 
   void _keepDock() {
-    if (!_dockRestoring && AppEdition.isAbyss) {
+    if (!_dockRestoring && AppEdition.isAbyss && _workspace.dockReady) {
       _workspace.keepWorkbenchView({
         ...?_workspace.workbenchView,
         'shown': _docked,
@@ -591,7 +595,89 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   }
 
   /// An agent dragged from the sidebar onto the conversations.
-  late final ChatDrag _drag = ChatDrag(onDrop: _drop, onStart: _closeDrawer);
+  late final ChatDrag _drag = ChatDrag(onDrop: _drop, onStart: _closeDrawer)
+    ..resolve = AppEdition.isAbyss ? _resolveDockDrag : null;
+
+  ChatDrop? _resolveDockDrag(AgentThread thread, Offset position) {
+    if (_replacingChat || _showsIde) return null;
+    final box = _dockHostKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final local = box.globalToLocal(position);
+    final bounds = Offset.zero & box.size;
+    if (!bounds.contains(local)) return null;
+    DockSide? edge(Rect r, double limit) {
+      final distances = <(double, DockSide)>[
+        (local.dx - r.left, DockSide.left),
+        (r.right - local.dx, DockSide.right),
+        (local.dy - r.top, DockSide.top),
+        (r.bottom - local.dy, DockSide.bottom),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      return distances.first.$1 < limit ? distances.first.$2 : null;
+    }
+
+    DockTabs? target;
+    var targetBounds = bounds;
+    void visit(DockNode node, Rect r) {
+      if (!r.contains(local)) return;
+      if (node is DockTabs) {
+        target = node;
+        targetBounds = r;
+        return;
+      }
+      final split = node as DockSplit;
+      if (split.axis == DockAxis.horizontal) {
+        final x = r.left + r.width * split.ratio;
+        visit(split.first, Rect.fromLTRB(r.left, r.top, x, r.bottom));
+        visit(split.second, Rect.fromLTRB(x, r.top, r.right, r.bottom));
+      } else {
+        final y = r.top + r.height * split.ratio;
+        visit(split.first, Rect.fromLTRB(r.left, r.top, r.right, y));
+        visit(split.second, Rect.fromLTRB(r.left, y, r.right, r.bottom));
+      }
+    }
+
+    visit(_dock.root, bounds);
+    final rootSide = edge(bounds, 24);
+    final side =
+        rootSide ??
+        edge(targetBounds, math.min(72, targetBounds.shortestSide * 0.25));
+    final area = rootSide == null ? targetBounds : bounds;
+    final preview = switch (side) {
+      DockSide.left => Rect.fromLTWH(
+        area.left,
+        area.top,
+        area.width / 2,
+        area.height,
+      ),
+      DockSide.right => Rect.fromLTWH(
+        area.center.dx,
+        area.top,
+        area.width / 2,
+        area.height,
+      ),
+      DockSide.top => Rect.fromLTWH(
+        area.left,
+        area.top,
+        area.width,
+        area.height / 2,
+      ),
+      DockSide.bottom => Rect.fromLTWH(
+        area.left,
+        area.center.dy,
+        area.width,
+        area.height / 2,
+      ),
+      null => area,
+    };
+    return ChatDrop(
+      thread: thread,
+      target: thread,
+      side: side == null ? null : PaneSide.values.byName(side.name),
+      preview: preview.shift(box.localToGlobal(Offset.zero)),
+      dockTarget: target?.groupId ?? '',
+      dockRoot: rootSide != null || _dock.isEmpty,
+    );
+  }
 
   void _setPinned(bool pinned) {
     setState(() => _pinned = pinned);
@@ -795,11 +881,6 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   void _restoreWorkbench() {
     if (_workspace.workbenchView case final view?) {
       _workspace.removeListener(_restoreWorkbench);
-      if (AppEdition.isAbyss && view['dock'] != null) {
-        _dockRestoring = true;
-        _dock.loadJson(view['dock']);
-        _dockRestoring = false;
-      }
       if (view['dockPresets'] case final Map presets) {
         _dockPresets.addAll(presets.cast<String, Object?>());
       }
@@ -959,7 +1040,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     _dockSaveTimer?.cancel();
     if (AppEdition.isAbyss) _keepDock();
     _dock.removeListener(_dockChanged);
-    _dock.dispose();
+    if (!AppEdition.isAbyss) _dock.dispose();
     ChannelGate.current?.removeListener(_channelGateChanged);
     for (final edits in _ideAgentEdits.values) {
       edits.dispose();
@@ -1114,7 +1195,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     }
     final current = _workspace.current;
     // One agent alone is the one pane.
-    final panes = _workspace.grid.isEmpty ? [?current] : _workspace.grid.panes;
+    final panes = AppEdition.isAbyss
+        ? _workspace.visibleChats
+        : _workspace.grid.isEmpty
+        ? [?current]
+        : _workspace.grid.panes;
     final agents = _agentsInOrder();
     return {
       'workbench.action.toggleSidebarVisibility': _toggle,
@@ -1136,7 +1221,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         ChatCommandIds.newChat: _newAgent
       else if (WindowControls.canPickDirectory)
         ChatCommandIds.newChat: () => unawaited(_openFolder()),
-      if (current != null && panes.length > 1)
+      if (current != null && _workspace.canClosePane(current))
         ChatCommandIds.closePane: () => _workspace.closePane(current),
       if (agents.isNotEmpty) ...{
         ChatCommandIds.nextAgent: () => _openAgentBy(1),
@@ -1378,9 +1463,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// The panes beside [current] each way, and its tabs: only those there
   /// are to go to.
   Map<String, VoidCallback> _paneArrowCommands(AgentThread? current) {
-    final grid = _workspace.grid;
-    if (current == null || !grid.contains(current)) return const {};
-    final tabs = grid.tabs(current);
+    if (current == null || !_workspace.isChatOpen(current)) return const {};
+    final tabs = _workspace.chatTabsOf(current);
     return {
       for (final (side, command) in [
         (PaneSide.left, ChatCommandIds.focusPaneLeft),
@@ -1388,7 +1472,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         (PaneSide.top, ChatCommandIds.focusPaneUp),
         (PaneSide.bottom, ChatCommandIds.focusPaneDown),
       ])
-        if (grid.neighbor(current, side) case final next?)
+        if (_workspace.chatNeighbor(current, side) case final next?)
           command: () => _openAgent(next),
       if (tabs.length > 1) ...{
         ChatCommandIds.nextPaneTab: () => _openPaneTab(current, tabs, 1),
@@ -1407,7 +1491,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   /// The pane [step] away from the focused one, row by row, round.
   void _focusPaneBy(int step) {
-    final panes = _workspace.grid.panes;
+    final panes = _workspace.visibleChats;
     if (panes.length < 2) return;
     final at = panes.indexWhere(
       (thread) => identical(thread, _workspace.current),
@@ -4072,17 +4156,54 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   Widget _withSidePanel(Widget child, {required bool showToggle}) =>
       AppEdition.isAbyss && !_replacingChat
       ? DockHost(
+          key: _dockHostKey,
           maximizeLabel: context.l10n.windowMaximize,
           restoreLabel: context.l10n.windowRestore,
           controller: _dock,
-          titleBuilder: (context, id) => Text(
-            _dockTitle(id),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          titleBuilder: (context, id) {
+            final title = Text(
+              _dockTitle(id),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+            final thread = _workspace.chatDock.threadFor(id);
+            if (thread == null) return title;
+            return ThreadStatusBuilder(
+              thread,
+              (context, status) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (status != ThreadStatus.idle) ...[
+                    ThreadStatusMark(status),
+                    const SizedBox(width: 5),
+                  ],
+                  Flexible(child: title),
+                ],
+              ),
+            );
+          },
+          emptyBuilder: (context) => _buildChat(showToggle: showToggle),
+          onActivatePanel: _activateDockPanel,
+          onDragPanel: _keepDockChat,
+          onKeepPanel: _keepDockChat,
+          isPreviewPanel: (id) => switch (_workspace.chatDock.threadFor(id)) {
+            final thread? => _workspace.isPreviewChat(thread),
+            null => false,
+          },
+          onClosePanel: (id) {
+            final thread = _workspace.chatDock.threadFor(id);
+            if (thread == null) {
+              _dock.close(id);
+            } else {
+              _workspace.closeChatTab(thread);
+            }
+          },
+          onPanelMenu: _dockPanelMenu,
+          onMovePanel: (id, target, side, root) => _workspace.chatDock
+              .movePanel(id, target: target ?? '', side: side, root: root),
           panelBuilder: (context, id) => KeyedSubtree(
             key: _dockKeys.putIfAbsent(id, GlobalKey.new),
-            child: id == dockMainPanelId ? child : _buildDockPanel(id),
+            child: _buildDockPanel(id),
           ),
         )
       : AgentSidePanelArea(
@@ -4123,8 +4244,57 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           child: child,
         );
 
+  void _activateDockPanel(String id) {
+    _workspace.chatDock.focusPanel(id);
+    if (_workspace.chatDock.threadFor(id) case final thread?) {
+      _workspace.select(thread);
+      _focusChat(thread);
+    }
+  }
+
+  void _keepDockChat(String id) {
+    if (_workspace.chatDock.threadFor(id) case final thread?) {
+      _workspace.pinChatTab(thread);
+    }
+  }
+
+  void _dockPanelMenu(String id, Offset position) {
+    final thread = _workspace.chatDock.threadFor(id);
+    if (thread == null) return;
+    final l10n = context.l10n;
+    unawaited(
+      showIdeMenu(
+        context,
+        position: position,
+        entries: [
+          if (_workspace.isPreviewChat(thread))
+            IdeMenuAction(
+              l10n.workspaceKeepChatTab,
+              onSelected: () => _workspace.pinChatTab(thread),
+            ),
+          IdeMenuAction(
+            l10n.workspaceOpenChatRight,
+            onSelected: () => _workspace.openChatRight(thread),
+          ),
+          IdeMenuAction(
+            l10n.tabClose,
+            onSelected: () => _workspace.closeChatTab(thread),
+          ),
+          IdeMenuAction(
+            l10n.tabCloseOthers,
+            onSelected: () {
+              for (final other in [..._workspace.chatTabsOf(thread)]) {
+                if (!identical(other, thread)) _workspace.closeChatTab(other);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   List<HeaderMenuItem> _dockWindowItems() => [
-    for (final id in dockDefaultPanelIds)
+    for (final id in dockDefaultPanelIds.where((id) => id != dockMainPanelId))
       HeaderMenuItem(
         _dockTitle(id),
         checked: _dock.openPanelIds.contains(id),
@@ -4147,7 +4317,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       context.l10n.dockResetLayout,
       onSelected: () {
         final defaults = DockController();
-        _dock.loadJson(defaults.toJson());
+        _workspace.chatDock.applyPreset(defaults.toJson());
         defaults.dispose();
       },
     ),
@@ -4163,7 +4333,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     for (final name in _dockPresets.keys)
       HeaderMenuItem(
         name,
-        onSelected: () => _dock.loadJson(_dockPresets[name]),
+        onSelected: () => _workspace.chatDock.applyPreset(_dockPresets[name]!),
       ),
   ];
 
@@ -4188,7 +4358,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       next.open('terminal');
       next.move('terminal', target: 'main-chat', side: DockSide.bottom);
     }
-    _dock.loadJson(next.toJson());
+    _workspace.chatDock.applyPreset(next.toJson());
     next.dispose();
   }
 
@@ -4236,23 +4406,34 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       );
       if (overwrite != 0) return;
     }
-    _dockPresets[name] = _dock.toJson();
+    _dockPresets[name] = _workspace.chatDock.presetJson();
     _dockChanged();
   }
 
-  String _dockTitle(String id) => switch (id) {
-    'main-chat' => context.l10n.dockMainChat,
-    'team' => context.l10n.dockTeam,
-    'scratch' => context.l10n.dockScratch,
-    _ =>
-      SidePanelSection.values
-              .where((s) => s.name == id)
-              .firstOrNull
-              ?.label(context) ??
-          id,
-  };
+  String _dockTitle(String id) =>
+      _workspace.chatDock.threadFor(id)?.localizedTitle(context.l10n) ??
+      switch (id) {
+        'main-chat' => context.l10n.dockMainChat,
+        'team' => context.l10n.dockTeam,
+        'scratch' => context.l10n.dockScratch,
+        _ =>
+          SidePanelSection.values
+                  .where((s) => s.name == id)
+                  .firstOrNull
+                  ?.label(context) ??
+              id,
+      };
 
   Widget _buildDockPanel(String id) {
+    if (_workspace.chatDock.threadFor(id) case final chat?) {
+      return Listener(
+        onPointerDown: (_) {
+          _workspace.chatDock.focusPanel(id);
+          if (!identical(_workspace.current, chat)) _workspace.select(chat);
+        },
+        child: _buildChat(showToggle: false, pane: chat, docked: true),
+      );
+    }
     final thread = _agentThread ?? _workspace.current;
     if (id == 'scratch') return _buildScratchPanel(thread);
     if (thread == null) return const SizedBox.shrink();
@@ -5119,6 +5300,18 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// An agent from the sidebar, or a pane's title bar, released over the
   /// conversations.
   void _drop(ChatDrop drop) {
+    if (AppEdition.isAbyss && drop.dockTarget != null) {
+      _workspace.openChatTab(drop.thread);
+      _workspace.chatDock.move(
+        drop.thread,
+        target: drop.dockTarget!,
+        side: drop.side == null
+            ? null
+            : DockSide.values.byName(drop.side!.name),
+        root: drop.dockRoot,
+      );
+      return;
+    }
     final growth = drop.growth;
     if (growth != Size.zero) {
       // Wide enough, the window would dock the sidebar, which would take
@@ -5335,6 +5528,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     OpenEditor? Function()? openEditor,
     bool showsTerminals = false,
     bool layered = true,
+    bool docked = false,
   }) {
     final thread = pane ?? _workspace.current;
     // Windows keeps the toggle and the pin in its header (see
@@ -5471,7 +5665,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         ),
       ],
     ];
-    final draggable = !embedded && !place.alone && _agentThread == null;
+    final draggable =
+        !docked && !embedded && !place.alone && _agentThread == null;
     // The session as built with, for the reload to tell a swap from (see
     // [_reloadedElsewhere]).
     _chatSessions[thread] = thread.session;
@@ -5488,7 +5683,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         onSummarizeTitle: () => _workspace.summarizeTitle(thread),
         // Those under it as tabs in place of its title, where they show so.
         titleTabs:
-            !embedded &&
+            !docked &&
+                !embedded &&
                 (AppEdition.isAbyss ||
                     (_workspace.paneTabs && under.isNotEmpty))
             ? _paneTabStrip(thread)
@@ -5544,7 +5740,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         // A pane's card is under the window's row (see [_panesTitleBar]).
         windowTitleBar: place.top && !inPane,
         titleBar: !(place.alone && _titleInHeader),
-        focused: place.alone || identical(thread, _workspace.current),
+        focused: docked
+            ? _workspace.visibleChats.contains(thread) &&
+                  identical(thread, _workspace.current)
+            : place.alone || identical(thread, _workspace.current),
         // On a card of its own, but in the IDE; of several side by side,
         // the focused one's outlined.
         island: embedded ? null : AppColors.conversationSurface,

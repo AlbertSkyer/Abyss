@@ -139,24 +139,117 @@ Offset near(Rect rect, PaneSide side) => switch (side) {
 
 void main() {
   group('Abyss dock workbench', skip: !AppEdition.isAbyss, () {
-    testWidgets('real panels open from Window and move without replacing chat', (tester) async {
-      await pumpApp(tester);
-      final host = tester.widget<DockHost>(find.byType(DockHost));
-      expect(find.byType(ChatScreen), findsOneWidget);
-      for (final id in ['changes', 'terminal', 'usage', 'plan', 'agents', 'team', 'scratch']) {
-        host.controller.open(id);
+    testWidgets(
+      'real panels open from Window and move without replacing chat',
+      (tester) async {
+        final workspace = await pumpApp(tester);
+        final chatId = workspace.chatDock.panelId(workspace.current!);
+        final host = tester.widget<DockHost>(find.byType(DockHost));
+        expect(find.byType(ChatScreen), findsOneWidget);
+        for (final id in [
+          'changes',
+          'terminal',
+          'usage',
+          'plan',
+          'agents',
+          'team',
+          'scratch',
+        ]) {
+          host.controller.open(id);
+          await tester.pump();
+          expect(host.controller.openPanelIds, contains(id));
+          host.controller.move(id, target: chatId, side: DockSide.bottom);
+          await tester.pump();
+          expect(host.controller.openPanelIds, contains(chatId));
+          host.controller.close(id);
+          await tester.pump();
+        }
+        expect(find.byType(ChatScreen), findsOneWidget);
+        host.controller.open('team');
         await tester.pump();
-        expect(host.controller.openPanelIds, contains(id));
-        host.controller.move(id, target: 'main-chat', side: DockSide.bottom);
-        await tester.pump();
-        expect(host.controller.openPanelIds, contains('main-chat'));
-        host.controller.close(id);
-        await tester.pump();
-      }
-      expect(find.byType(ChatScreen), findsOneWidget);
-      host.controller.open('team');
-      await tester.pump();
-      expect(find.byType(AgentTeamPage), findsOneWidget);
+        expect(find.byType(AgentTeamPage), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('Abyss single chat dock', skip: !AppEdition.isAbyss, () {
+    for (final side in DockSide.values) {
+      testWidgets(
+        'individual conversation docks ${side.name} of a tool and merges back',
+        (tester) async {
+          final workspace = await pumpApp(tester);
+          final a = workspace.current!;
+          final b = workspace.threads.firstWhere((t) => t.title == second);
+          workspace.openChatTab(b);
+          await tester.pumpAndSettle();
+          final before = tester.state(pane(second));
+          final session = b.session;
+          b.session.draft.save(
+            'DOCK draft',
+            const TextSelection.collapsed(offset: 10),
+            const [],
+          );
+          final dock = workspace.chatDock;
+          final id = dock.panelId(b);
+          dock.controller.open('files');
+          dock.controller.move(
+            'files',
+            target: dock.panelId(a),
+            side: DockSide.right,
+          );
+          await tester.pumpAndSettle();
+          final body = tester.getRect(
+            find.byKey(const ValueKey('dock-panel-files')),
+          );
+          final point = switch (side) {
+            DockSide.left => Offset(body.left + 45, body.center.dy),
+            DockSide.right => Offset(body.right - 45, body.center.dy),
+            DockSide.top => Offset(body.center.dx, body.top + 45),
+            DockSide.bottom => Offset(body.center.dx, body.bottom - 45),
+          };
+          final source = find.byKey(ValueKey('dock-tab-$id'));
+          await tester.drag(source, point - tester.getCenter(source));
+          await tester.pumpAndSettle();
+          expect(dock.groupOf(a)!.orderedPanelIds, isNot(contains(id)));
+          expect(dock.groupOf(b)!.orderedPanelIds, [id]);
+          expect(tester.state(pane(second)), same(before));
+          expect(b.session, same(session));
+          expect(b.session.draft.content, 'DOCK draft');
+          final target = find.byKey(ValueKey('dock-tab-${dock.panelId(a)}'));
+          await tester.drag(
+            source,
+            tester.getCenter(target) - tester.getCenter(source),
+          );
+          await tester.pumpAndSettle();
+          expect(dock.groupOf(a), same(dock.groupOf(b)));
+          expect(
+            find.byType(ChatScreen, skipOffstage: false),
+            findsNWidgets(2),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+
+    testWidgets('sidebar drag opens a conversation beside a tool', (
+      tester,
+    ) async {
+      final workspace = await pumpApp(tester);
+      final a = workspace.current!;
+      workspace.chatDock.controller.open('files');
+      workspace.chatDock.controller.move(
+        'files',
+        target: workspace.chatDock.panelId(a),
+        side: DockSide.right,
+      );
+      await tester.pumpAndSettle();
+      final body = tester.getRect(
+        find.byKey(const ValueKey('dock-panel-files')),
+      );
+      await dropAgent(tester, second, Offset(body.center.dx, body.bottom - 60));
+      expect(workspace.openChats.map((t) => t.title), contains(second));
+      expect(workspace.visibleChats, hasLength(2));
       expect(tester.takeException(), isNull);
     });
   });
@@ -175,9 +268,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Open in New Tab'));
       await tester.pumpAndSettle();
-      expect(workspace.grid.tabs(other), containsAll([original, other]));
+      expect(workspace.chatTabsOf(other), containsAll([original, other]));
       expect(workspace.isPreviewChat(other), isFalse);
-      expect(find.byType(PaneTabs), findsOneWidget);
+      expect(find.byType(PaneTabs), findsNothing);
+      expect(
+        find.byKey(ValueKey('dock-tab-${workspace.chatDock.panelId(other)}')),
+        findsOneWidget,
+      );
 
       workspace.select(original);
       await tester.pumpAndSettle();
@@ -189,7 +286,7 @@ void main() {
       await tester.tap(find.text('Open to the Right'));
       await tester.pumpAndSettle();
       expect(paneTitles(tester), unorderedEquals([first, second]));
-      expect(workspace.grid.panes.toSet().length, 2);
+      expect(workspace.visibleChats.toSet().length, 2);
       expect(identical(other.session, workspace.current!.session), isTrue);
       workspace.closeChatTab(other);
       await tester.pumpAndSettle();
@@ -207,16 +304,14 @@ void main() {
       workspace.openChatTab(b);
       workspace.openChatTab(c);
       await tester.pumpAndSettle();
-      Finder tab(String title) => find.descendant(
-        of: find.byType(PaneTabs),
-        matching: find.text(title),
-      );
+      Finder tab(String title) =>
+          find.descendant(of: find.byType(DockTab), matching: find.text(title));
       await tester.drag(
         tab(third),
         tester.getCenter(tab(first)) - tester.getCenter(tab(third)),
       );
       await tester.pumpAndSettle();
-      expect(workspace.grid.tabs(workspace.current!).first, same(c));
+      expect(workspace.chatTabsOf(workspace.current!).first, same(c));
       workspace.select(a);
       workspace.openChatRight(b);
       await tester.pumpAndSettle();
@@ -225,9 +320,12 @@ void main() {
         tester.getCenter(tab(second)) - tester.getCenter(tab(third)),
       );
       await tester.pumpAndSettle();
-      expect(workspace.grid.tabs(workspace.current!), [c, b]);
-      expect(workspace.grid.groupOf(a), isNot(workspace.grid.groupOf(c)));
-      expect(workspace.grid.panes, hasLength(2));
+      expect(workspace.chatTabsOf(workspace.current!), [c, b]);
+      expect(
+        workspace.chatDock.groupOf(a),
+        isNot(workspace.chatDock.groupOf(c)),
+      );
+      expect(workspace.visibleChats, hasLength(2));
     });
 
     testWidgets('preview browsing replaces only an unedited preview', (
@@ -241,7 +339,7 @@ void main() {
       expect(workspace.isPreviewChat(a), isTrue);
       workspace.select(b);
       await tester.pumpAndSettle();
-      expect(workspace.grid.groupOf(a), isNull);
+      expect(workspace.isChatOpen(a), isFalse);
       expect(workspace.isPreviewChat(b), isTrue);
       b.session.draft.save(
         'Keep this draft',
@@ -251,11 +349,11 @@ void main() {
       expect(workspace.isPreviewChat(b), isFalse);
       workspace.select(a);
       await tester.pumpAndSettle();
-      expect(workspace.grid.tabs(a), contains(b));
+      expect(workspace.chatTabsOf(a), contains(b));
       expect(b.session.draft.content, 'Keep this draft');
       workspace.closeChatTab(a);
       workspace.closeChatTab(b);
-      for (final tab in [...workspace.grid.panes]) {
+      for (final tab in [...workspace.openChats]) {
         workspace.closeChatTab(tab);
       }
       await tester.pumpAndSettle();
