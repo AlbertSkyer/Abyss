@@ -356,3 +356,13 @@
 - 配套修复版本1.9.11+37，扩展0.1.0/ID及原生宿主保持不变，不要求重装扩展、修改registry或关闭UAC。最初仅本地修复交付；用户随后明确要求提交推送并发布1.9.11 GitHub Release，复用已核验安装器，保留1.9.10及旧附件。发版不扩大提升令牌环境的验收结论。
 - 安装器 `dist/Abyss-1.9.11-owner-fix-delivery/Abyss-1.9.11-setup.exe`，26,400,978字节，SHA-256 `5B5DD92833147A8FE14A2ED67F849149EB41327EE7E4BE5C774EA4CE5CD0A31A`；完整Release/ISCC成功，日志 `build/abyss-1.9.11-owner-fix-build.log`。
 - 实际启动新目录 `dist/Abyss-1.9.11-owner-fix`，about显示1.9.11（37），实际port/lock owner均匹配当前用户且DACL受保护，未输出令牌。app.so SHA-256 `3054DE3F5A1C3E30D21C9A1EF990AC2A419315AC5C456D75A103A3E2499D99B7`。BaoCode loopback定向2项、版本5项另通过；未运行全套。
+
+## 自动派工并发可配置（2026-11-17）
+
+- 1.9.12+38：设置 → 通用 → 子代理并发上限，可选整数1–16，默认3，保存于Abyss自己的 `abyss.agents.autoDispatchConcurrency`。缺失、越界或非整数回退3；选择默认值移除配置键。仅约束每个主会话的自动派工，不改变手动审批和CLI前三个模型alias接线。
+- 内核实时读取配置，运行任务与待启动预留合计占名额；待命成员不占。提高对后续派工生效，调低不停止已有任务。主代理上下文与拒绝消息报告当前上限；满额仍提示等待，未实现自动排队。
+- 定向测试：Abyss内核/账本/版本18项，设置8项，ARB资源2项通过；BaoCode相同内核目标3项通过、5项Abyss专用跳过；修改模块静态分析无问题。未运行全套，未发起付费模型调用。内核使用FakeCli覆盖1/2/5并发、默认3、预留转运行、实时升降、错误/完成释放及手动审批。
+- 设置widget测试验证菜单内容、选项回调、真实文件持久化/重载及恢复默认；菜单关闭后回调需额外帧，在fake-async测试中分离回调与真实I/O。真实鼠标选择另通过下述Release GUI验收，不把回调测试称为完整点击测试。
+- 实际启动 `dist/Abyss-1.9.12-concurrency`，隔离 `ABYSS_DATA_DIR`：默认3，鼠标选择7，关闭自动派工，正常退出/重启后仍显示7及关闭状态；再鼠标恢复3，确认键移除。所有截图已查看，about显示1.9.12（38），最后正常退出测试进程；不修改原版BaoCode或用户正式配置。
+- 完整Release/ISCC及三项独立身份检查通过，构建日志 `build/abyss-1.9.12-concurrency-build.log`。安装包 `dist/Abyss-1.9.12-concurrency-delivery/Abyss-1.9.12-setup.exe`，26,398,077字节，SHA-256 `C163972EFFA1EF46DA1B76FC84539A6DBBF97E343C361CDAE9E099BD5C822BF3`。app.so SHA-256 `6FBD559AAEB3BD8666F13206A81A58F0364BE4D7FE238838D8F1B75BD5BEC674`。
+- 用户授权测试后提交推送至origin并发布v1.9.12，保留旧Release。安装器未签名；完整隔离安装/升级/卸载、第二台电脑及内置Administrator浏览器修复复验仍未完成，本次并发改动不扩大此前验收结论。

@@ -296,6 +296,10 @@ class GeneralSettingsPage extends StatelessWidget {
         final detail = _attributionDetail(context, current);
         final mainWindow = MainWindow.parse(settings?[MainWindow.settingKey]);
         final mainWindowShown = mainWindowName(context, mainWindow);
+        final autoDispatchConcurrency =
+            AbyssWorkbenchSettings.parseAutoDispatchConcurrency(
+              settings?[AbyssWorkbenchSettings.autoDispatchConcurrencyKey],
+            );
         return SettingsPage(
           title: l10n.generalSettingsTitle,
           children: [
@@ -405,6 +409,40 @@ class GeneralSettingsPage extends StatelessWidget {
                     onChanged: (on) => _write(
                       AbyssWorkbenchSettings.autoDispatchKey,
                       on ? null : false,
+                    ),
+                  ),
+                if (AppEdition.isAbyss)
+                  SettingsRow(
+                    label: l10n.generalSettingsAutoDispatchConcurrency,
+                    description:
+                        l10n.generalSettingsAutoDispatchConcurrencyDescription,
+                    trailing: SettingsDropdown(
+                      current: '$autoDispatchConcurrency',
+                      semanticLabel: l10n
+                          .generalSettingsAutoDispatchConcurrencyLabel(
+                            autoDispatchConcurrency,
+                          ),
+                      entries: () => [
+                        for (
+                          var value =
+                              AbyssWorkbenchSettings.minAutoDispatchConcurrency;
+                          value <=
+                              AbyssWorkbenchSettings.maxAutoDispatchConcurrency;
+                          value++
+                        )
+                          IdeMenuAction(
+                            '$value',
+                            checked: value == autoDispatchConcurrency,
+                            onSelected: () => _write(
+                              AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
+                              value ==
+                                      AbyssWorkbenchSettings
+                                          .defaultAutoDispatchConcurrency
+                                  ? null
+                                  : value,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 if (AppEdition.isAbyss)

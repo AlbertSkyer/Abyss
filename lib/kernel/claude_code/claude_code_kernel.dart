@@ -1951,6 +1951,7 @@ class ClaudeCodeKernel
         : _taskLedger?.membersFor(_sessionId!) ?? <AgentMemberRecord>[];
     return '<system-reminder>Abyss dispatch mode: '
         '${AbyssWorkbenchSettings.automatic() ? 'automatic' : 'manual approval'}. '
+        '${AbyssWorkbenchSettings.automatic() ? 'Automatic dispatch concurrency limit for this main session: ${AbyssWorkbenchSettings.autoDispatchConcurrency()}. Running tasks and pending starts occupy slots; standby members do not. When full, wait for a task to finish; do not retry rejected calls or create replacements. ' : ''}'
         'Allowed child models supported by this CLI session: ${jsonEncode(pool)}. '
         'CLI model aliases: ${jsonEncode({for (final ref in pool) ref: _cliAgentModels[ref]})}. '
         'User-configured capability tags (preferences, not guarantees): ${jsonEncode({for (final ref in pool) ref: _providers.subagentCapabilities(ref)})}. '
@@ -2137,12 +2138,13 @@ class ClaudeCodeKernel
                 .tasksFor(_sessionId!)
                 .where((task) => task.status == AgentTaskStatus.running)
                 .toList();
-      if (running.length + _dispatchReservations.length >= 3 ||
+      final limit = AbyssWorkbenchSettings.autoDispatchConcurrency();
+      if (running.length + _dispatchReservations.length >= limit ||
           (continuation &&
               running.any((task) => task.memberId == member!.memberId))) {
         _denyDispatch(
           requestId,
-          'No dispatch slot is available. Wait for a running task to finish; do not create a replacement.',
+          'No dispatch slot is available (limit: $limit). Wait for a running task to finish; do not create a replacement.',
         );
         return;
       }

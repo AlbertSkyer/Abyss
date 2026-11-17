@@ -7,12 +7,16 @@ import 'package:baocode/kernel/kernel_event.dart';
 import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/platform/data_dir.dart';
 import 'package:baocode/platform/app_edition.dart';
+import 'package:baocode/ide/ide_menu.dart';
 import 'package:baocode/settings/abyss_workbench_settings.dart';
 import 'package:baocode/settings/pages/general_page.dart';
+import 'package:baocode/settings/pages/settings_dropdown.dart';
+import 'package:baocode/settings/pages/settings_widgets.dart';
 import 'package:baocode/settings/user_settings.dart';
 import 'package:baocode/sidebar/sidebar.dart';
 import 'package:baocode/workspace/workspace.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _TaskKernel implements AgentKernel {
@@ -140,6 +144,154 @@ void main() {
     expect(AbyssWorkbenchSettings.automatic(), isFalse);
   });
 
+  test('automatic dispatch concurrency accepts only integers from 1 to 16', () {
+    expect(
+      AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
+      'abyss.agents.autoDispatchConcurrency',
+    );
+    expect(AbyssWorkbenchSettings.defaultAutoDispatchConcurrency, 3);
+    expect(AbyssWorkbenchSettings.minAutoDispatchConcurrency, 1);
+    expect(AbyssWorkbenchSettings.maxAutoDispatchConcurrency, 16);
+    for (var value = 1; value <= 16; value++) {
+      expect(AbyssWorkbenchSettings.parseAutoDispatchConcurrency(value), value);
+    }
+    for (final value in [
+      null,
+      0,
+      -1,
+      17,
+      100,
+      1.0,
+      3.0,
+      3.5,
+      '3',
+      '16',
+      true,
+      false,
+      const <int>[],
+    ]) {
+      expect(
+        AbyssWorkbenchSettings.parseAutoDispatchConcurrency(value),
+        3,
+        reason: '$value must use the default',
+      );
+    }
+  });
+
+  test(
+    'automatic dispatch concurrency reads current settings and has a seam',
+    () async {
+      expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 3);
+      await files.settings.update(
+        AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
+        7,
+      );
+      expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 7);
+      final original = AbyssWorkbenchSettings.autoDispatchConcurrency;
+      addTearDown(
+        () => AbyssWorkbenchSettings.autoDispatchConcurrency = original,
+      );
+      AbyssWorkbenchSettings.autoDispatchConcurrency = () => 11;
+      expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 11);
+    },
+  );
+
+  testWidgets('Abyss concurrency dropdown persists, reloads and keeps its '
+      'value when automatic dispatch is off', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const key = AbyssWorkbenchSettings.autoDispatchConcurrencyKey;
+    await tester.runAsync(
+      () =>
+          files.settings.update(AbyssWorkbenchSettings.autoDispatchKey, false),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GeneralSettingsPage(settings: files.settings)),
+      ),
+    );
+    await tester.pump();
+    final row = find.byWidgetPredicate(
+      (widget) =>
+          widget is SettingsRow && widget.label == 'Subagent concurrency limit',
+    );
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.byType(SettingsSwitch)),
+      findsNothing,
+    );
+    final dropdown = find.descendant(
+      of: row,
+      matching: find.byType(SettingsDropdown),
+    );
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '3');
+    expect(
+      find.textContaining('Standby members do not count.'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Lowering the limit does not stop running tasks'),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(dropdown);
+    await tester.tap(dropdown);
+    await tester.pump(const Duration(milliseconds: 100));
+    final actions = tester
+        .widget<SettingsDropdown>(dropdown)
+        .entries()
+        .cast<IdeMenuAction>();
+    expect(actions.map((action) => action.label), [
+      for (var value = 1; value <= 16; value++) '$value',
+    ]);
+    expect(actions.where((action) => action.checked).single.label, '3');
+    expect(find.text('7'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    // Run the menu callback with real file I/O outside the fake-async zone.
+    await tester.runAsync(() async {
+      actions.singleWhere((action) => action.label == '7').onSelected!();
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (files.settings[key] != 7 && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pump();
+    expect(files.settings[key], 7);
+    expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
+    expect(AbyssWorkbenchSettings.automatic(), isFalse);
+    expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 7);
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '7');
+
+    final reloaded = UserSettings(files.settings.path);
+    addTearDown(reloaded.dispose);
+    await tester.runAsync(reloaded.load);
+    expect(reloaded[key], 7);
+
+    final reset = tester
+        .widget<SettingsDropdown>(dropdown)
+        .entries()
+        .cast<IdeMenuAction>()
+        .singleWhere((action) => action.label == '3');
+    await tester.runAsync(() async {
+      reset.onSelected!();
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (files.settings.values.containsKey(key) &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pump();
+    expect(files.settings.values.containsKey(key), isFalse);
+    expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '3');
+    await tester.runAsync(reloaded.load);
+    expect(reloaded.values.containsKey(key), isFalse);
+    expect(reloaded[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !AppEdition.isAbyss);
+
   testWidgets('Abyss automatic dispatch switch writes false and removes on', (
     tester,
   ) async {
@@ -161,7 +313,7 @@ void main() {
     await tester.ensureVisible(label);
     await tester.runAsync(() async {
       await tester.tap(label);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     });
     await tester.pump();
     expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
@@ -216,9 +368,10 @@ void main() {
     final label = find.text('Show subagent tasks in the sidebar');
     expect(label, findsOneWidget);
     await tester.ensureVisible(label);
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await tester.tap(label);
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     });
     await tester.pump();
     expect(files.settings[AbyssWorkbenchSettings.sidebarAgentTasksKey], isTrue);

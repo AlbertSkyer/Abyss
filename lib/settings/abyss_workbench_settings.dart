@@ -11,6 +11,11 @@ import 'user_settings.dart';
 abstract final class AbyssWorkbenchSettings {
   static const sidebarAgentTasksKey = 'abyss.sidebar.showAgentTasks';
   static const autoDispatchKey = 'abyss.agents.autoDispatch';
+  static const autoDispatchConcurrencyKey =
+      'abyss.agents.autoDispatchConcurrency';
+  static const defaultAutoDispatchConcurrency = 3;
+  static const minAutoDispatchConcurrency = 1;
+  static const maxAutoDispatchConcurrency = 16;
 
   /// On for Abyss unless explicitly disabled. Model choice is still limited
   /// to the allowed pool; this does not change dangerous-tool permissions.
@@ -20,6 +25,23 @@ abstract final class AbyssWorkbenchSettings {
   /// Tests can replace this without attaching a settings file.
   static bool Function() automatic = () =>
       parseAuto(SettingsFiles.instance.settings[autoDispatchKey]);
+
+  /// Only an integer in the supported range is a valid concurrency choice.
+  static int parseAutoDispatchConcurrency(Object? value) {
+    if (value is int &&
+        value >= minAutoDispatchConcurrency &&
+        value <= maxAutoDispatchConcurrency) {
+      return value;
+    }
+    return defaultAutoDispatchConcurrency;
+  }
+
+  /// The current limit for automatically dispatched main-session tasks.
+  /// Tests can replace this without attaching a settings file.
+  static int Function() autoDispatchConcurrency = () =>
+      parseAutoDispatchConcurrency(
+        SettingsFiles.instance.settings[autoDispatchConcurrencyKey],
+      );
 
   /// Set by [attach]; a notifier keeps this a display-only concern of the
   /// sidebar rather than adding workspace or session state.

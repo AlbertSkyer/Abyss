@@ -14386,6 +14386,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'Dispatches tasks only to models in the allowed pool, without asking you to confirm each subtask. When off, both new and continued tasks require manual confirmation. Permissions for dangerous tools are unchanged.';
 
   @override
+  String get generalSettingsAutoDispatchConcurrency =>
+      'Subagent concurrency limit';
+
+  @override
+  String get generalSettingsAutoDispatchConcurrencyDescription =>
+      'Per main session, the maximum automatically dispatched subagents running or holding a pending-start reservation at once. Standby members do not count. Lowering the limit does not stop running tasks; the choice is kept while automatic dispatch is off.';
+
+  @override
+  String generalSettingsAutoDispatchConcurrencyLabel(int count) {
+    return 'Subagent concurrency limit: $count';
+  }
+
+  @override
   String get generalSettingsSidebarAgentTasks =>
       'Show subagent tasks in the sidebar';
 

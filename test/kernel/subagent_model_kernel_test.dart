@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:baocode/chat/chat_models.dart';
+import 'package:baocode/kernel/claude_code/agent_task_ledger.dart';
 import 'package:baocode/chat/widgets/agent_step.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/kernel_types.dart';
@@ -39,8 +42,15 @@ const _providers = [_first, _second];
 
 void main() {
   final automatic = AbyssWorkbenchSettings.automatic;
-  setUp(() => AbyssWorkbenchSettings.automatic = () => false);
-  tearDown(() => AbyssWorkbenchSettings.automatic = automatic);
+  final concurrency = AbyssWorkbenchSettings.autoDispatchConcurrency;
+  setUp(() {
+    AbyssWorkbenchSettings.automatic = () => false;
+    AbyssWorkbenchSettings.autoDispatchConcurrency = () => 3;
+  });
+  tearDown(() {
+    AbyssWorkbenchSettings.automatic = automatic;
+    AbyssWorkbenchSettings.autoDispatchConcurrency = concurrency;
+  });
   test('Abyss routes selected pool models through CLI aliases without changing agent type', () async {
     final providers = ModelProviders.memory(providers: _providers);
     await providers.setSubagentPool(['@fx/gpt-6.1-sol', '@ap/gpt-6.1-sol']);
@@ -174,6 +184,155 @@ void main() {
     },
     skip: !AppEdition.isAbyss,
   );
+
+  for (final initialLimit in [1, 2, 5]) {
+    test(
+      'automatic concurrency $initialLimit counts starts and running tasks live',
+      () async {
+        var limit = initialLimit;
+        AbyssWorkbenchSettings.automatic = () => true;
+        AbyssWorkbenchSettings.autoDispatchConcurrency = () => limit;
+        final directory = await Directory.systemTemp.createTemp(
+          'abyss-concurrency',
+        );
+        final ledger = await AgentTaskLedger.open(
+          path: '${directory.path}/ledger.json',
+        );
+        final providers = ModelProviders.memory(providers: _providers);
+        await providers.setSubagentPool(['@fx/gpt-6.1-sol']);
+        final cli = FakeCli();
+        final kernel = ClaudeCodeKernel(
+          MockKernels.claudeCode,
+          const KernelContext(
+            cwd: '/p',
+            settings: {'model': '@fx/gpt-6.1-sol'},
+          ),
+          start: (_) async => cli,
+          providers: providers,
+          taskLedger: Future.value(ledger),
+          providerEnvironment: (_, model) async => {'ANTHROPIC_MODEL': model},
+        );
+        addTearDown(() async {
+          kernel.dispose();
+          await kernel.stopped;
+          await ledger.flush();
+          await directory.delete(recursive: true);
+        });
+        kernel.send(
+          const KernelTurn(
+            id: 'dispatch-turn',
+            text: 'Analyze independent tasks',
+          ),
+        );
+        await pumpEventQueue(times: 20);
+        expect(
+          cli.users.toString(),
+          contains('concurrency limit for this main session: $initialLimit'),
+        );
+        cli.push({
+          'type': 'system',
+          'subtype': 'init',
+          'session_id': 'concurrency-session',
+        });
+        await pumpEventQueue();
+
+        Future<Map> dispatch(String id) async {
+          cli.push({
+            'type': 'control_request',
+            'request_id': id,
+            'request': {
+              'subtype': 'hook_callback',
+              'callback_id': 'baocode-approve-agent',
+              'input': {
+                'tool_name': 'Agent',
+                'tool_use_id': id,
+                'tool_input': {
+                  'description': 'Independent task',
+                  'prompt': 'Read only',
+                  'subagent_type': 'general-purpose',
+                  'model': 'sonnet',
+                },
+              },
+            },
+          });
+          await pumpEventQueue();
+          return cli.responses.last['hookSpecificOutput'] as Map;
+        }
+
+        for (var i = 0; i < initialLimit; i++) {
+          expect((await dispatch('start-$i'))['permissionDecision'], 'allow');
+        }
+        expect((await dispatch('full'))['permissionDecision'], 'deny');
+        cli.push({
+          'type': 'system',
+          'subtype': 'task_started',
+          'task_id': 'member-first',
+          'task_type': 'local_agent',
+          'tool_use_id': 'start-0',
+          'model': '@fx/gpt-6.1-sol',
+        });
+        await pumpEventQueue();
+        expect(
+          ledger.tasksFor('concurrency-session').single.status,
+          AgentTaskStatus.running,
+        );
+        // Moving a reservation to the running ledger must neither free nor double-count it.
+        expect((await dispatch('still-full'))['permissionDecision'], 'deny');
+        limit++;
+        expect((await dispatch('raised'))['permissionDecision'], 'allow');
+        expect((await dispatch('raised-full'))['permissionDecision'], 'deny');
+        limit = 1;
+        final denied = await dispatch('lowered');
+        expect(denied['permissionDecision'], 'deny');
+        expect(denied['permissionDecisionReason'], contains('(limit: 1)'));
+        expect(
+          ledger.tasksFor('concurrency-session').single.status,
+          AgentTaskStatus.running,
+        );
+        expect(cli.requests('interrupt'), isEmpty);
+
+        // Failed starts release reservations, but lowering must leave running work alone.
+        for (final id in [
+          for (var i = 1; i < initialLimit; i++) 'start-$i',
+          'raised',
+        ]) {
+          cli.push({
+            'type': 'user',
+            'message': {
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'tool_result',
+                  'tool_use_id': id,
+                  'is_error': true,
+                  'content': 'Start failed',
+                },
+              ],
+            },
+          });
+        }
+        await pumpEventQueue();
+        expect((await dispatch('running-full'))['permissionDecision'], 'deny');
+        cli.push({
+          'type': 'system',
+          'subtype': 'task_notification',
+          'task_id': 'member-first',
+          'tool_use_id': 'start-0',
+          'status': 'completed',
+        });
+        await pumpEventQueue();
+        expect(
+          ledger.tasksFor('concurrency-session').single.status,
+          AgentTaskStatus.completed,
+        );
+        expect(
+          (await dispatch('after-completion'))['permissionDecision'],
+          'allow',
+        );
+      },
+      skip: !AppEdition.isAbyss,
+    );
+  }
 
   test('a subagent\'s model, a bare id, is the upstream\'s the session is '
       'on, not the first with a model of that id', () async {

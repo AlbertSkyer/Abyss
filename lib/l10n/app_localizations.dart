@@ -23395,6 +23395,24 @@ abstract class AppLocalizations {
   /// **'Dispatches tasks only to models in the allowed pool, without asking you to confirm each subtask. When off, both new and continued tasks require manual confirmation. Permissions for dangerous tools are unchanged.'**
   String get generalSettingsAutoDispatchDescription;
 
+  /// No description provided for @generalSettingsAutoDispatchConcurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent concurrency limit'**
+  String get generalSettingsAutoDispatchConcurrency;
+
+  /// No description provided for @generalSettingsAutoDispatchConcurrencyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Per main session, the maximum automatically dispatched subagents running or holding a pending-start reservation at once. Standby members do not count. Lowering the limit does not stop running tasks; the choice is kept while automatic dispatch is off.'**
+  String get generalSettingsAutoDispatchConcurrencyDescription;
+
+  /// No description provided for @generalSettingsAutoDispatchConcurrencyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Subagent concurrency limit: {count}'**
+  String generalSettingsAutoDispatchConcurrencyLabel(int count);
+
   /// No description provided for @generalSettingsSidebarAgentTasks.
   ///
   /// In en, this message translates to:

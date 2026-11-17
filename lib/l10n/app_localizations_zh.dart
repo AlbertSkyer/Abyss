@@ -13574,6 +13574,18 @@ class AppLocalizationsZh extends AppLocalizations {
       '仅从允许的模型池派工，不弹子任务确认。关闭后，新建和续接都需手动确认，危险工具权限不变。';
 
   @override
+  String get generalSettingsAutoDispatchConcurrency => '子代理并发上限';
+
+  @override
+  String get generalSettingsAutoDispatchConcurrencyDescription =>
+      '每个主会话中，自动模式下正在运行的子代理和待启动预留合计占用的名额上限，待命成员不占名额。调低上限不会停止正在运行的任务；关闭自动派工后仍保留此设置。';
+
+  @override
+  String generalSettingsAutoDispatchConcurrencyLabel(int count) {
+    return '子代理并发上限：$count';
+  }
+
+  @override
   String get generalSettingsSidebarAgentTasks => '在侧边栏显示子代理任务';
 
   @override
