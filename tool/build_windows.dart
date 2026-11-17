@@ -60,7 +60,7 @@
 // the remote server's gzipped builds, which the app downloads instead of
 // carrying them (tool/build_remote_server.dart), to upload with the
 // release.
-import 'dart:convert' show ascii;
+import 'dart:convert' show ascii, jsonDecode, jsonEncode;
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
@@ -81,12 +81,9 @@ const _symbolsRelative = r'build\symbols';
 List<String> _required(String product) => [
   product == 'Abyss' ? 'Abyss.exe' : 'baocode.exe',
   'flutter_windows.dll',
-  // The browsers' native messaging host belongs only to BaoCode. Abyss has
-  // no extension and must not register, replace or stop BaoCode's host.
-  if (product == 'BaoCode') ...[
-    'baocode-browser-host.exe',
-    'dev.baocode.browser.json',
-  ],
+  product == 'Abyss' ? 'abyss-browser-host.exe' : 'baocode-browser-host.exe',
+  product == 'Abyss' ? 'dev.abyss.browser.json' : 'dev.baocode.browser.json',
+  if (product == 'Abyss') r'browser_extension\unpacked\manifest.json',
   // What writes down a fast fail (windows/wer), which the app registers.
   product == 'Abyss' ? 'abyss_wer.dll' : 'baocode_wer.dll',
   // The VC++ runtime, carried rather than taken from System32, which may
@@ -256,6 +253,21 @@ Future<void> main(List<String> arguments) async {
     _step('Using the bundle already built');
   }
 
+  if (abyss) {
+    final extensionOutput = Directory(
+      '${root.path}\\build\\abyss-extension-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    await _run('node', [
+      'tool/build_abyss_extension.mjs',
+      '--out',
+      extensionOutput.path,
+    ], root.path);
+    final extensionBundle = Directory('${bundle.path}\\browser_extension');
+    if (extensionBundle.existsSync()) {
+      extensionBundle.deleteSync(recursive: true);
+    }
+    _copyTree(extensionOutput, extensionBundle);
+  }
   _step('Checking the bundle');
   _checkBundle(bundle, _required(product));
   if (abyss) {
@@ -461,6 +473,21 @@ void _checkBundle(Directory directory, List<String> required) {
   );
 }
 
+void _copyTree(Directory source, Directory target) {
+  target.createSync(recursive: true);
+  for (final entry in source.listSync(followLinks: false)) {
+    final destination =
+        '${target.path}\\${entry.uri.pathSegments.where((s) => s.isNotEmpty).last}';
+    if (entry is Directory) {
+      _copyTree(entry, Directory(destination));
+    } else if (entry is File) {
+      entry.copySync(destination);
+    } else {
+      _fail('Extension bundle must not contain links.');
+    }
+  }
+}
+
 /// Native isolation strings are checked in the artifacts, not just their
 /// sources: a quoted include once picked a source-directory BaoCode header
 /// instead of the generated Abyss one and forwarded Abyss to BaoCode.
@@ -521,6 +548,29 @@ void _checkIndependentIdentity(Directory bundle) {
       'BaoCode Markdown',
     ],
   );
+  check(
+    'abyss-browser-host.exe',
+    ['abyss-browser.port', 'Abyss-browser-bridge'],
+    ['baocode-browser.port'],
+  );
+  final identity = jsonDecode(
+    File('${Directory.current.path}/browser_extension/abyss.json')
+        .readAsStringSync(),
+  ) as Map;
+  final hostManifest = jsonDecode(
+    File('${bundle.path}\\dev.abyss.browser.json').readAsStringSync(),
+  ) as Map;
+  final extensionManifest = jsonDecode(
+    File('${bundle.path}\\browser_extension\\unpacked\\manifest.json')
+        .readAsStringSync(),
+  ) as Map;
+  if (hostManifest['name'] != 'dev.abyss.browser' ||
+      hostManifest['path'] != 'abyss-browser-host.exe' ||
+      jsonEncode(hostManifest['allowed_origins']) !=
+          jsonEncode(['chrome-extension://${identity['extensionId']}/']) ||
+      extensionManifest['key'] != identity['publicKey']) {
+    _fail('Abyss browser extension and host identities do not match.');
+  }
   check(
     r'data\app.so',
     [

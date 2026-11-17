@@ -1,0 +1,9 @@
+{
+  "name": "@APP_BROWSER_HOST@",
+  "description": "@APP_PRODUCT@",
+  "path": "@APP_BROWSER_HOST_TARGET@.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "@APP_BROWSER_ORIGIN@"
+  ]
+}

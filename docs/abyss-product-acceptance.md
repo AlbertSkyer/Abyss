@@ -314,3 +314,34 @@
 - 安装器 `dist/Abyss-1.9.9-release/Abyss-1.9.9-setup.exe`，26,047,905字节，SHA-256 `0B115E1ACBFBB203672AFCC4EBE80677815B96838435AA1109CA01CA3F104949`。
 - 新运行目录 `dist/Abyss-1.9.9-windows-x64`，app.so SHA-256 `49315ADD774C041A8F987123742106CA7D726B9B4126F5E659034699797A6A20`。发行包在独立人工数据下实际启动，恢复两项任务，关于显示1.9.9（35）；截图 `release-1.9.9-restored.png`、`release-1.9.9-about.png` 已查看。
 - 安装器未签名；完整隔离安装/卸载与报告问题的另一台电脑复验仍未执行，发版不扩大这些验收结论。
+
+## 独立 Abyss 浏览器扩展（2026-11-16）
+
+### 实现与隔离
+
+- Windows Chrome/Edge 首批离线扩展0.1.0，配套应用1.9.10+36。共享原MV3/CDP实现，通过独立identity entry生成Abyss品牌、公钥、图标与本地化；不复制维护第二套协议。
+- 独立ID `kecjiojfloffimkeghgongilhienkdlh`，host `dev.abyss.browser`，exe `abyss-browser-host.exe`，组名Abyss。新密钥在仓库外生成，公开key/ID固定，私钥未输出/打包/提交并限制访问权限；不读取BaoCode密钥。
+- Dart与host使用独立TEMP/Abyss-browser-bridge端点，loopback随机token与精确origin校验保留；创建私有目录，host打开文件后核对owner/DACL并拒绝reparse。BaoCode端点/扩展身份不变。
+- CMake生成本edition host/manifest；build工具要求Abyss自身文件且继续禁止BaoCode宿主混入。安装/卸载仅注册自身Chrome/Edge/Chromium叶键，Abyss停止脚本仅匹配本安装目录完整host路径，不全局按进程名杀BaoCode或其他目录实例。
+- 随包提供unpacked目录和ZIP，设置页指向本地目录并隐藏BaoCode商店入口，不伪造Abyss商店地址。ZIP包含GPL许可和来源说明。Windows portable仍不自动写registry。
+- 内部 `mcp__baocode__browser_*` 保留兼容命名，通过外部CLI SDK通道调用；chatOnly禁用工具/MCP的边界不变。共享范围/权限集合未扩大，Abyss与BaoCode分组不互认。
+
+### 定向与实际验证
+
+- Node生成物/公钥ID/权限/两edition共享隔离4项通过（`build/abyss-extension-verified-tests.log`）；ZIP根目录/引用/无私钥检查通过，固定归档时间戳。
+- Windows原生Abyss和BaoCode宿主均实际编译并执行断言，0 failures；覆盖私有端点接受、Everyone/Users/NULL DACL拒绝、reparse目录、origin隔离等。外owner设置需要SeRestore等权限，测试明确SKIP未伪称通过（`build/abyss-browser-host-final-tests.log`）。
+- Abyss桥接/私有目录/设置/身份/chatOnly定向15通过、5个原Unix用例在Windows跳过；默认设置/bridge与安装脚本也按相关组执行。安装脚本/版本组合11通过、BaoCode下载兼容组合7通过、Abyss下载不访问BaoCode+翻译/chatOnly组合7通过（日志browser/abyss-browser前缀）。不累计重叠用例，不运行全套。
+- 修改模块静态分析无问题（`build/browser-clean-analyze.log`）。安装器两edition曾用空夹具compile-only验证，最终完整Abyss ISCC打包成功；没有把fake进程选择/注册文本检查当完整升级卸载实测。
+- **真实Edge通过**：新临时profile、仅临时Abyss HKCU leaf注册，实际扩展→真实host→Dart→SDK读取人工网页，输入点击改变标题，截图。最终包host/unpacked复验通过（`build/abyss-final-edge-live.log`）。
+- **真实Chrome通过**：branded Chrome未接受命令行load-extension，使用临时profile扩展页开启开发者模式、加载目录后连接成功，执行同一人工网页操作和截图（`build/abyss-chrome-live2.log`）。没有改默认profile、企业策略或关闭保护。首轮等待超时失败不计通过。
+- 外部CLI kernel的sdkMcpServers与mcp_message经FakeCli协议帧驱动到真实Edge成功（`build/abyss-edge-kernel-live2.log`）；这不是付费模型端到端请求，也不是本轮启动真实CLI二进制调用证据。
+- 配套应用实际启动，浏览器设置显示本地扩展目录及Microsoft Edge已连接；关闭开关后状态隐藏/连接断开，恢复开关后重连。截图 `build/abyss-browser-{settings-live,app-connected,app-disabled}.png`及网页截图已查看。
+- 测试结束仅关闭自建浏览器/应用进程、恢复Abyss专用registry快照；Chrome/Edge的临时Abyss注册均检查为不存在。没有修改BaoCode注册项或默认浏览器profile。
+
+### 本地交付与限制
+
+- 最终目录 `dist/Abyss-1.9.10-browser-final-delivery`；setup26,397,602字节，SHA-256 `B48720D846CFA7BE071C39AAFA6C2ADF1247CF4CA7B4E39759B63097F63FA0BC`。
+- 扩展ZIP59,962字节，SHA-256 `9C42991ABF2F004CB73626FADE57EC7A15354285536BB811FB2E6DF608F79F11`。app.so SHA-256 `BEA7C44D992E7355DF6BB6048B8FBD67E050E2EFA5B8CEF702260605A761CB82`。完整构建日志 `build/abyss-browser-1.9.10-final-build.log`，三项独立身份检查通过。
+- 未执行完整隔离安装/升级/卸载，未在另一台电脑实测；安装器未签名。最初仅本地交付；2026-11-17用户明确要求提交推送并发布GitHub Release，使用已核验的1.9.10安装器和0.1.0扩展ZIP，保留1.9.9及旧附件。不商店上架，发版不扩大上述验收结论。
+- 自动化页面操作、SDK调用与共享拒绝覆盖已述场景；真实toolbar共享/取消、所有console/network诊断操作及长时间重连未逐项穷举手工验收。macOS/Linux的Abyss扩展本次不启用、不宣称支持。
+- 安装步骤及权限限制见 `docs/abyss-browser-extension.md`。

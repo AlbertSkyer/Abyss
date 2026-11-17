@@ -64,7 +64,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
-# Only BaoCode's extension may use this host. Abyss has none of its own yet.
+# Each product's own extension, host and native messaging manifest.
 if(APP_BUNDLE_BROWSER)
   add_subdirectory("BrowserBridge")
 endif()
@@ -99,9 +99,9 @@ install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
 
 # The browsers' native messaging host and its manifest, beside the app.
 if(APP_BUNDLE_BROWSER)
-  install(TARGETS baocode-browser-host RUNTIME
+  install(TARGETS ${APP_BROWSER_HOST_TARGET} RUNTIME
     DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
-  install(FILES "BrowserBridge/dev.baocode.browser.json"
+  install(FILES "${BROWSER_BRIDGE_MANIFEST}"
     DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
 endif()
 

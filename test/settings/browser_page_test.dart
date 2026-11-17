@@ -4,6 +4,7 @@ import 'package:baocode/browser/browser_bridge.dart';
 import 'package:baocode/browser/browser_tools.dart' show BrowserHistory;
 import 'package:baocode/settings/pages/browser_page.dart';
 import 'package:baocode/settings/user_settings.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -53,10 +54,22 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('Chrome Web Store'), findsOneWidget);
-      expect(find.text('Install Manually (Developer Mode)'), findsOneWidget);
-      expect(find.text('Open Store'), findsOneWidget);
-      expect(find.text('Download Zip'), findsOneWidget);
+      if (AppEdition.isAbyss) {
+        expect(find.text('Chrome Web Store'), findsNothing);
+        expect(find.text('Open Store'), findsNothing);
+        if (Platform.isWindows) {
+          expect(
+            find.text('Abyss browser extension (Windows)'),
+            findsOneWidget,
+          );
+          expect(find.text('Open extension folder'), findsOneWidget);
+        }
+      } else {
+        expect(find.text('Chrome Web Store'), findsOneWidget);
+        expect(find.text('Install Manually (Developer Mode)'), findsOneWidget);
+        expect(find.text('Open Store'), findsOneWidget);
+        expect(find.text('Download Zip'), findsOneWidget);
+      }
       if (!Platform.isMacOS) return;
 
       // Never connected: it says to get the extension.

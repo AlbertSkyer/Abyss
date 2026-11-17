@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 import '../chat/chat_models.dart' show ToolKind;
 import '../kernel/claude_code/claude_sdk_tools.dart';
 import '../platform/data_dir.dart';
+import '../platform/app_edition.dart';
 import 'browser_analysis.dart';
 import 'browser_bridge.dart';
 import 'browser_records.dart';
@@ -211,15 +212,15 @@ Do not use the browser tools to scrape or bulk-collect data from government, hea
       name: 'browser_tabs',
       description:
           "Lists the tabs of the user's browser shared with you (the "
-          '"BaoCode" tab group): their ids, titles and URLs. You can only '
-          'use these; the user shares more with the BaoCode button of the '
+          '"${AppEdition.name}" tab group): their ids, titles and URLs. You can only '
+          'use these; the user shares more with the ${AppEdition.name} button of the '
           'browser toolbar, or opens them for you with browser_open.',
       inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
       run: (input, call) async {
         final browser = _browser();
         final tabs = await browser.request('tabs.list') as List? ?? const [];
         if (tabs.isEmpty) {
-          return 'No tab is shared with BaoCode in ${browser.browser}. '
+          return 'No tab is shared with ${AppEdition.name} in ${browser.browser}. '
               'Open one with browser_open.';
         }
         return [
@@ -231,7 +232,7 @@ Do not use the browser tools to scrape or bulk-collect data from government, hea
     ClaudeSdkTool(
       name: 'browser_open',
       description:
-          "Opens a URL in a new tab of the user's browser, in the BaoCode "
+          "Opens a URL in a new tab of the user's browser, in the ${AppEdition.name} "
           'tab group, and waits for it to load. Returns the tab id and what '
           'is on screen: the elements to act on (refs) and the words. '
           'Close the tabs you open (browser_close) once done with them, '
@@ -344,21 +345,21 @@ Do not use the browser tools to scrape or bulk-collect data from government, hea
     if (browsers.isNotEmpty) return browsers.first;
     if (bridge.otherApp) {
       throw StateError(
-        'Another BaoCode is connected to the browser: quit it first.',
+        'Another ${AppEdition.name} is connected to the browser: quit it first.',
       );
     }
     if (bridge.mismatched case [final browser, ...]) {
       throw StateError(
         browser.protocol < BrowserBridge.protocol
-            ? "BaoCode's extension in ${browser.browser} is too old for "
-                  'this BaoCode: the user needs to update it (Settings → '
+            ? "${AppEdition.name}'s extension in ${browser.browser} is too old for "
+                  'this ${AppEdition.name}: the user needs to update it (Settings → '
                   'Browser says how).'
-            : "BaoCode's extension in ${browser.browser} is newer than "
-                  'this BaoCode: the user needs to update BaoCode.',
+            : "${AppEdition.name}'s extension in ${browser.browser} is newer than "
+                  'this ${AppEdition.name}: the user needs to update ${AppEdition.name}',
       );
     }
     throw StateError(
-      "No browser is connected: the user needs BaoCode's extension in "
+      "No browser is connected: the user needs ${AppEdition.name}'s extension in "
       'Chrome (or Edge, Brave, Arc), with the browser running.',
     );
   }

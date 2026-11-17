@@ -110,6 +110,36 @@ abstract class AppLocalizations {
   /// **'Optional comma-separated preferences, such as fast, analysis, implementation or review. Tags guide the parent; they are not performance guarantees.'**
   String get agentCapabilitiesDescription;
 
+  /// No description provided for @abyssBrowserInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Abyss browser extension (Windows)'**
+  String get abyssBrowserInstall;
+
+  /// No description provided for @abyssBrowserInstallDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Open chrome://extensions or edge://extensions, enable Developer mode, and load the unpacked folder below. Keep this folder installed. Only tabs shared with Abyss are accessible; offline extensions update manually.'**
+  String get abyssBrowserInstallDescription;
+
+  /// No description provided for @abyssBrowserOpenFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Open extension folder'**
+  String get abyssBrowserOpenFolder;
+
+  /// No description provided for @abyssBrowserMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The extension files are missing. Install the complete Abyss Windows package, not just Abyss.exe.'**
+  String get abyssBrowserMissing;
+
+  /// No description provided for @abyssBrowserGuide.
+  ///
+  /// In en, this message translates to:
+  /// **'Installation guide'**
+  String get abyssBrowserGuide;
+
   /// No description provided for @dockMainChat.
   ///
   /// In en, this message translates to:

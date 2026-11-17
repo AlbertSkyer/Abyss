@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:baocode/browser/extension_store.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -43,6 +44,12 @@ void main() {
 
   test("the store's page is the site's, kept for when it does not answer, "
       'and by the id before it ever did', () async {
+    if (AppEdition.isAbyss) {
+      expect(await fetch(), ExtensionStore.installationGuide);
+      expect(await ExtensionStore.resolve(), ExtensionStore.installationGuide);
+      expect(cache.listSync(), isEmpty);
+      return;
+    }
     expect(await fetch(), ExtensionStore.fallback);
     expect(
       '${ExtensionStore.fallback}',

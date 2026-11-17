@@ -30,7 +30,10 @@
   #define CliFlag "--abyss-cli"
   #define AgentFlag "--abyss-agent"
   #define LinkFlag "--abyss-link"
-  #define BundleBrowser 0
+  #define BundleBrowser 1
+  #define BrowserHostName "dev.abyss.browser"
+  #define BrowserHostBinary "abyss-browser-host.exe"
+  #define BrowserHostManifest "dev.abyss.browser.json"
 #elif AppEdition == "BaoCode"
   #define ProductName "BaoCode"
   #define BinaryName "baocode.exe"
@@ -41,6 +44,9 @@
   #define AgentFlag "--baocode-agent"
   #define LinkFlag "--baocode-link"
   #define BundleBrowser 1
+  #define BrowserHostName "dev.baocode.browser"
+  #define BrowserHostBinary "baocode-browser-host.exe"
+  #define BrowserHostManifest "dev.baocode.browser.json"
 #else
   #error AppEdition must be Abyss or BaoCode
 #endif
@@ -136,27 +142,19 @@ Name: "contextmenu"; \
 [Files]
 ; The whole bundle: the edition's executable, engine and plugin DLLs, data\
 ; (the AOT app.so and flutter_assets), remote\ (VERSION and servers.json),
-; and openssh\. Abyss carries no BaoCode browser host.
-#if BundleBrowser
-Source: "{#BundleDir}\*"; Excludes: "\baocode-browser-host.exe"; \
+; openssh\, and the edition's own browser host and extension. Each edition
+; stops only its own host before replacing it.
+Source: "{#BundleDir}\*"; Excludes: "\{#BrowserHostBinary}"; \
   DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#BundleDir}\baocode-browser-host.exe"; DestDir: "{app}"; \
+Source: "{#BundleDir}\{#BrowserHostBinary}"; DestDir: "{app}"; \
   Flags: ignoreversion; BeforeInstall: ReplaceBrowserHost
-#else
-Source: "{#BundleDir}\*"; DestDir: "{app}"; \
-  Flags: ignoreversion recursesubdirs createallsubdirs
-#endif
 
 [InstallDelete]
 ; A host ReplaceBrowserHost moved out of the way, at an install before.
-#if BundleBrowser
-Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
-#endif
+Type: files; Name: "{app}\{#BrowserHostBinary}.*.old"
 
 [UninstallDelete]
-#if BundleBrowser
-Type: files; Name: "{app}\baocode-browser-host.exe.*.old"
-#endif
+Type: files; Name: "{app}\{#BrowserHostBinary}.*.old"
 
 [Icons]
 Name: "{group}\{#ProductName}"; Filename: "{app}\{#BinaryName}"
@@ -258,37 +256,36 @@ Root: HKA; Subkey: "Software\Classes\{#UrlScheme}\DefaultIcon"; ValueType: strin
 Root: HKA; Subkey: "Software\Classes\{#UrlScheme}\shell\open\command"; \
   ValueType: string; ValueName: ""; \
   ValueData: """{app}\{#BinaryName}"" {#LinkFlag} ""%1"""
-#if BundleBrowser
-; The browsers' native messaging host for BaoCode's extension, always
-; (windows/BrowserBridge): a browser finds dev.baocode.browser.json, beside
-; baocode.exe, by its key, and the manifest names the host beside it.
+; The browsers' native messaging host for this edition's extension, always
+; (windows/BrowserBridge): a browser finds the edition's manifest beside its
+; executable by its own leaf key, and the manifest names the host beside it.
+; The other edition's host name and keys are never written or removed.
 ; Chrome's key is also the one Brave, Vivaldi and other Chromium browsers
-; read; Edge and Chromium read their own. The keys above go at uninstall
-; too when nothing else is left in them (the browser is not installed).
+; read; Edge and Chromium read their own. Parent keys go at uninstall only
+; when nothing else is left in them (another host or no installed browser).
 Root: HKA; Subkey: "Software\Google"; ValueType: none; \
   Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Google\Chrome"; ValueType: none; \
   Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Google\Chrome\NativeMessagingHosts"; \
   ValueType: none; Flags: uninsdeletekeyifempty
-Root: HKA; Subkey: "Software\Google\Chrome\NativeMessagingHosts\dev.baocode.browser"; \
+Root: HKA; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#BrowserHostName}"; \
   ValueType: string; ValueName: ""; \
-  ValueData: "{app}\dev.baocode.browser.json"; Flags: uninsdeletekey
+  ValueData: "{app}\{#BrowserHostManifest}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Microsoft\Edge"; ValueType: none; \
   Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts"; \
   ValueType: none; Flags: uninsdeletekeyifempty
-Root: HKA; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\dev.baocode.browser"; \
+Root: HKA; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#BrowserHostName}"; \
   ValueType: string; ValueName: ""; \
-  ValueData: "{app}\dev.baocode.browser.json"; Flags: uninsdeletekey
+  ValueData: "{app}\{#BrowserHostManifest}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Chromium"; ValueType: none; \
   Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Chromium\NativeMessagingHosts"; \
   ValueType: none; Flags: uninsdeletekeyifempty
-Root: HKA; Subkey: "Software\Chromium\NativeMessagingHosts\dev.baocode.browser"; \
+Root: HKA; Subkey: "Software\Chromium\NativeMessagingHosts\{#BrowserHostName}"; \
   ValueType: string; ValueName: ""; \
-  ValueData: "{app}\dev.baocode.browser.json"; Flags: uninsdeletekey
-#endif
+  ValueData: "{app}\{#BrowserHostManifest}"; Flags: uninsdeletekey
 ; Unticked: what an earlier install added goes.
 Root: HKA; Subkey: "Software\Classes\*\shell\{#ProductName}"; ValueType: none; \
   Tasks: not contextmenu; Flags: deletekey
@@ -351,21 +348,78 @@ begin
   CloseHandle(App);
 end;
 
-#if BundleBrowser
-// The browser extension's host (baocode-browser-host.exe), which Chrome or
-// Edge keeps running while the extension is connected: it has no window,
-// so CloseApplications does not close it, and replacing or removing it
-// fails ("DeleteFile failed; code 5"). Ended first; the extension connects
-// again on its own (each minute), to the host installed.
+// The browser extension's host has no window, so CloseApplications does not
+// close it. End it before replacing or removing it; the extension reconnects
+// on its own (each minute) to the host installed.
+#if AppEdition == "BaoCode"
+// BaoCode keeps its existing image-name behavior. In particular, an Abyss
+// install never calls taskkill by either product's image name.
 procedure EndBrowserHost;
 var
   Code: Integer;
 begin
   if Exec(ExpandConstant('{sys}\taskkill.exe'),
-    '/F /IM baocode-browser-host.exe', '', SW_HIDE,
+    '/F /IM {#BrowserHostBinary}', '', SW_HIDE,
     ewWaitUntilTerminated, Code) then
-    Log(Format('taskkill baocode-browser-host.exe: %d', [Code]));
+    Log(Format('taskkill {#BrowserHostBinary}: %d', [Code]));
 end;
+#else
+function SetEnvironmentVariable(Name: String; Value: String): BOOL;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+
+// This script is fixed ASCII, written by this installer, never downloaded.
+// The path travels only through the environment, so quotes, ampersands and
+// other shell characters in {app} are data rather than PowerShell syntax.
+// Name restricts the CIM query, but ExecutablePath alone decides which PID
+// may be stopped: a same-named host elsewhere, and BaoCode's host, do not
+// match. The comparison ignores case, as Windows paths do; it has no prefix,
+// wildcard or substring matching.
+const
+  BrowserHostStopScript =
+    '$ErrorActionPreference = ''Stop''' + #13#10 +
+    '$target = $env:ABYSS_BROWSER_HOST_TARGET' + #13#10 +
+    'if ([string]::IsNullOrEmpty($target)) {' + #13#10 +
+    '  throw ''ABYSS_BROWSER_HOST_TARGET is empty''' + #13#10 +
+    '}' + #13#10 +
+    'Get-CimInstance -ClassName Win32_Process -Filter "Name = ''{#BrowserHostBinary}''" |' + #13#10 +
+    '  Where-Object {' + #13#10 +
+    '    $_.ExecutablePath -and' + #13#10 +
+    '    [string]::Equals($_.ExecutablePath, $target, [System.StringComparison]::OrdinalIgnoreCase)' + #13#10 +
+    '  } | ForEach-Object {' + #13#10 +
+    '    Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop' + #13#10 +
+    '  }' + #13#10;
+
+procedure EndBrowserHost;
+var
+  Code: Integer;
+  Script: String;
+begin
+  Script := ExpandConstant('{tmp}\abyss-browser-host-stop.ps1');
+  if not SaveStringToFile(Script, BrowserHostStopScript, False) then
+  begin
+    Log('Could not write the Abyss browser host stop script');
+    Exit;
+  end;
+  try
+    if not SetEnvironmentVariable('ABYSS_BROWSER_HOST_TARGET',
+      ExpandConstant('{app}\{#BrowserHostBinary}')) then
+    begin
+      Log('Could not set ABYSS_BROWSER_HOST_TARGET');
+      Exit;
+    end;
+    if Exec(ExpandConstant(
+        '{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
+        Script + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      Log(Format('Abyss browser host path-matched stop: %d', [Code]))
+    else
+      Log('Could not start PowerShell to stop the Abyss browser host');
+  finally
+    SetEnvironmentVariable('ABYSS_BROWSER_HOST_TARGET', '');
+    DeleteFile(Script);
+  end;
+end;
+#endif
 
 // Right before the host is replaced, ended again: the extension connects
 // each minute, and the install takes long enough for it to have started the
@@ -379,7 +433,7 @@ var
   Old: String;
 begin
   EndBrowserHost;
-  Host := ExpandConstant('{app}\baocode-browser-host.exe');
+  Host := ExpandConstant('{app}\{#BrowserHostBinary}');
   if (not FileExists(Host)) or DeleteFile(Host) then
     Exit;
   Old := Host + '.' + GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.old';
@@ -392,12 +446,14 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  EndBrowserHost;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    EndBrowserHost;
 end;
-#endif
 
 // Whether the command line asks for the app to be opened after a silent
 // install (/RELAUNCH, an update's; see [Run]). Not silent, the finish

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../platform/data_dir.dart';
+import '../platform/app_edition.dart';
 import '../workspace/editor_launcher.dart' show openExternal;
 import 'browser_bridge.dart';
 
@@ -40,7 +41,30 @@ abstract final class ExtensionStore {
   static Future<Uri> fetch({
     @visibleForTesting Uri? from,
     @visibleForTesting String? cacheDir,
-  }) => _fetched ??= _fetch(from ?? manifest, cacheDir);
+  }) => AppEdition.isAbyss
+      ? Future.value(installationGuide)
+      : _fetched ??= _fetch(from ?? manifest, cacheDir);
+
+  static final installationGuide = Uri.https(
+    'github.com',
+    '/AlbertSkyer/Abyss/blob/edition/abyss/docs/abyss-browser-extension.md',
+  );
+  static String get unpackedPath => p.join(
+    p.dirname(Platform.resolvedExecutable),
+    'browser_extension',
+    'unpacked',
+  );
+  static bool get unpackedAvailable =>
+      File(p.join(unpackedPath, 'manifest.json')).existsSync();
+
+  static Future<void> openUnpacked() async {
+    if (!unpackedAvailable) {
+      throw const FileSystemException(
+        'Abyss extension is missing; install the complete Abyss bundle.',
+      );
+    }
+    await openExternal(unpackedPath);
+  }
 
   /// [fetch]'s page, waiting for it [patience] at most: a click opens the
   /// page then, the one known so far if the site is slow.
@@ -49,10 +73,13 @@ abstract final class ExtensionStore {
   }) => fetch().timeout(patience, onTimeout: () => page);
 
   /// Opens the store's page in the user's browser.
-  static Future<void> openPage() async => openExternal('${await resolve()}');
+  static Future<void> openPage() async => openExternal(
+    '${AppEdition.isAbyss ? installationGuide : await resolve()}',
+  );
 
   /// Opens [zip]: the browser downloads it.
-  static Future<void> openZip() => openExternal('$zip');
+  static Future<void> openZip() =>
+      AppEdition.isAbyss ? openUnpacked() : openExternal('$zip');
 
   @visibleForTesting
   static void reset() {

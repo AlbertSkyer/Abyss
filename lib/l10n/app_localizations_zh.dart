@@ -17,6 +17,23 @@ class AppLocalizationsZh extends AppLocalizations {
       '可选，以逗号分隔，例如快速、分析、实现、审查。标签供主代理选择参考，不是性能保证。';
 
   @override
+  String get abyssBrowserInstall => 'Abyss 浏览器扩展（Windows）';
+
+  @override
+  String get abyssBrowserInstallDescription =>
+      '打开 chrome://extensions 或 edge://extensions，开启开发者模式，加载下方已解压目录。请保留该目录。仅可访问共享给 Abyss 的标签页；离线扩展需手动更新。';
+
+  @override
+  String get abyssBrowserOpenFolder => '打开扩展目录';
+
+  @override
+  String get abyssBrowserMissing =>
+      '缺少扩展文件，请安装完整的 Abyss Windows 包，不要只复制 Abyss.exe。';
+
+  @override
+  String get abyssBrowserGuide => '安装说明';
+
+  @override
   String get dockMainChat => '会话工作区';
 
   @override

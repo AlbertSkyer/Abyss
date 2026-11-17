@@ -26,11 +26,19 @@ abstract final class AppEdition {
   static const nativeAgentFlag = isAbyss ? '--abyss-agent' : '--baocode-agent';
   static const nativeLinkFlag = isAbyss ? '--abyss-link' : '--baocode-link';
 
-  /// Abyss has neither a signed update feed nor an extension of its own yet.
-  /// Do not silently take BaoCode's, whose installer and browser host would
-  /// replace or connect a different product.
+  /// Abyss never consumes BaoCode's signed update feed.
   static const hasUpdateFeed = !isAbyss;
-  static const hasBrowserExtension = !isAbyss;
+  static bool get hasBrowserExtension => !isAbyss || Platform.isWindows;
+  static const browserHost = isAbyss
+      ? 'dev.abyss.browser'
+      : 'dev.baocode.browser';
+  static const browserExtensionId = isAbyss
+      ? 'kecjiojfloffimkeghgongilhienkdlh'
+      : 'jfjagocghaaheooicmdnhcholmgdkngk';
+  static const browserPrefix = isAbyss ? 'abyss-browser' : 'baocode-browser';
+  static const browserHostExecutable = isAbyss
+      ? 'abyss-browser-host'
+      : 'baocode-browser-host';
 
   static String defaultDataPath(Map<String, String> environment) {
     var home = environment['HOME'] ?? '';

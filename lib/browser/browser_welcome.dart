@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../base/step_clock.dart';
 import '../ide/ide_button.dart';
 import '../l10n/l10n.dart';
+import '../platform/app_edition.dart';
 import '../theme/app_theme.dart';
 import '../theme/codicons.dart';
 import '../theme/workbench_theme.dart' show themeColors;
@@ -171,18 +172,22 @@ class _BrowserWelcomeState extends State<BrowserWelcome>
                   runSpacing: 8,
                   children: bridge.enabled
                       ? [
+                          if (!AppEdition.isAbyss)
+                            IdeButton(
+                              label: l10n.browserSettingsStoreOpen,
+                              icon: Codicons.linkExternal,
+                              onPressed: () =>
+                                  unawaited(ExtensionStore.openPage()),
+                            ),
                           IdeButton(
-                            label: l10n.browserSettingsStoreOpen,
-                            icon: Codicons.linkExternal,
-                            onPressed: () =>
-                                unawaited(ExtensionStore.openPage()),
-                          ),
-                          IdeButton(
-                            label: l10n.browserWelcomeUnpacked,
+                            label: AppEdition.isAbyss
+                                ? l10n.abyssBrowserOpenFolder
+                                : l10n.browserWelcomeUnpacked,
                             icon: Codicons.cloudDownload,
                             secondary: true,
-                            onPressed: () =>
-                                unawaited(ExtensionStore.openZip()),
+                            onPressed: AppEdition.isAbyss
+                                ? settings
+                                : () => unawaited(ExtensionStore.openZip()),
                           ),
                         ]
                       : [

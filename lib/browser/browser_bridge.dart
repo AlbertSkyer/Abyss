@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../platform/app_edition.dart';
 import '../platform/data_dir.dart';
+import 'browser_endpoint.dart';
 
 /// The user's own browsers, reached through BaoCode's extension in them
 /// (browser_extension/): each runs the app's native messaging host
@@ -26,11 +27,11 @@ class BrowserBridge extends ChangeNotifier {
   static final instance = BrowserBridge._();
 
   /// The native messaging host's name, as the extension asks for it.
-  static const hostName = 'dev.baocode.browser';
+  static const hostName = AppEdition.browserHost;
 
   /// The extension's id: the Chrome Web Store's, and the zip's to load
   /// unpacked (its manifest's key), the same (docs/release.md, 11).
-  static const extensionIds = ['jfjagocghaaheooicmdnhcholmgdkngk'];
+  static const extensionIds = [AppEdition.browserExtensionId];
 
   /// What BaoCode and the extension say to each other: background.js's
   /// BRIDGE, one more with each change the other has to know of. A browser
@@ -50,15 +51,18 @@ class BrowserBridge extends ChangeNotifier {
 
   /// Where the host finds the app: the same folder for both, the user's
   /// temporary one ([socketFolder] in a test).
-  static String get socketPath => p.join(_folder, 'baocode-browser.sock');
+  static String get socketPath =>
+      p.join(_folder, '${AppEdition.browserPrefix}.sock');
 
   /// Over [loopback], what the host finds the app by instead: the port on
   /// 127.0.0.1 and the token it says first, `<port> <token>`.
-  static String get portPath => p.join(_folder, 'baocode-browser.port');
+  static String get portPath =>
+      p.join(_folder, '${AppEdition.browserPrefix}.port');
 
   /// Over [loopback], held while this BaoCode has the browsers: another
   /// that cannot have it leaves them to it.
-  static String get _lockPath => p.join(_folder, 'baocode-browser.lock');
+  static String get _lockPath =>
+      p.join(_folder, '${AppEdition.browserPrefix}.lock');
 
   /// The user's own temporary folder. On Linux, `$XDG_RUNTIME_DIR` (the
   /// user's alone) before `$TMPDIR` or /tmp (shared with every user): as
@@ -69,7 +73,9 @@ class BrowserBridge extends ChangeNotifier {
       final runtime = Platform.environment['XDG_RUNTIME_DIR'];
       if (runtime != null && runtime.isNotEmpty) return runtime;
     }
-    return Directory.systemTemp.path;
+    return AppEdition.isAbyss && Platform.isWindows
+        ? p.join(Directory.systemTemp.path, 'Abyss-browser-bridge')
+        : Directory.systemTemp.path;
   }
 
   /// A test's own folder for the socket: given as TMPDIR to a browser it
@@ -231,6 +237,9 @@ class BrowserBridge extends ChangeNotifier {
   Future<ServerSocket?> _bindLoopback() async {
     final RandomAccessFile lock;
     try {
+      if (AppEdition.isAbyss && Platform.isWindows) {
+        await BrowserEndpoint.secureDirectory(_folder);
+      }
       // Not truncated: another BaoCode may hold it.
       lock = await File(_lockPath).open(mode: FileMode.append);
     } on FileSystemException catch (error) {
@@ -400,8 +409,10 @@ class BrowserBridge extends ChangeNotifier {
       File(p.join(folder, 'NativeMessagingHosts', '$hostName.json'));
 
   /// The host's executable: beside the app's.
-  static String get hostExecutable =>
-      p.join(p.dirname(Platform.resolvedExecutable), 'baocode-browser-host');
+  static String get hostExecutable => p.join(
+    p.dirname(Platform.resolvedExecutable),
+    '${AppEdition.browserHostExecutable}${Platform.isWindows ? '.exe' : ''}',
+  );
 
   /// Writes the host's manifest for each browser installed: the browsers
   /// then start it for the extension.
@@ -414,7 +425,7 @@ class BrowserBridge extends ChangeNotifier {
     }
     final manifest = const JsonEncoder.withIndent('  ').convert({
       'name': hostName,
-      'description': 'BaoCode',
+      'description': AppEdition.name,
       'path': hostExecutable,
       'type': 'stdio',
       'allowed_origins': [
@@ -536,8 +547,8 @@ class BrowserConnection {
 
   /// What to tell when [fileAccess] is false: only the user can turn it on.
   static const fileAccessHelp =
-      'The browser does not let BaoCode\'s extension reach local files. Ask '
-      'the user to open chrome://extensions, click Details on BaoCode and '
+      'The browser does not let ${AppEdition.name}\'s extension reach local files. Ask '
+      'the user to open chrome://extensions, click Details on ${AppEdition.name} and '
       'turn on "Allow access to file URLs" (then try again; the extension '
       'reloads).';
 

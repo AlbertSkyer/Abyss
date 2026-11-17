@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:baocode/browser/browser_bridge.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/l10n/app_localizations_en.dart';
 import 'package:baocode/settings/pages/browser_page.dart';
 import 'package:flutter/foundation.dart';
@@ -287,13 +288,21 @@ void main() {
       File('windows/BrowserBridge/dev.baocode.browser.json').readAsStringSync(),
     ) as Map<String, Object?>;
     expect(manifest, {
-      'name': BrowserBridge.hostName,
+      'name': 'dev.baocode.browser',
       'description': 'BaoCode',
       'path': 'baocode-browser-host.exe',
       'type': 'stdio',
       'allowed_origins': [
-        for (final id in BrowserBridge.extensionIds) 'chrome-extension://$id/',
+        'chrome-extension://jfjagocghaaheooicmdnhcholmgdkngk/',
       ],
     });
+    if (AppEdition.isAbyss) {
+      final identity = jsonDecode(
+        File('browser_extension/abyss.json').readAsStringSync(),
+      ) as Map;
+      expect(BrowserBridge.hostName, identity['host']);
+      expect(BrowserBridge.extensionIds, [identity['extensionId']]);
+      expect(BrowserBridge.portPath, endsWith('abyss-browser.port'));
+    }
   });
 }

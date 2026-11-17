@@ -89,7 +89,9 @@ void main() {
     expect(CodeArgs.windowsLinkFlag, '--abyss-link');
     expect(CodeArgs.requestFileSuffix, '.abyss-cli');
     expect(AppEdition.hasUpdateFeed, isFalse);
-    expect(AppEdition.hasBrowserExtension, isFalse);
+    expect(AppEdition.hasBrowserExtension, Platform.isWindows);
+    expect(AppEdition.browserHost, 'dev.abyss.browser');
+    expect(AppEdition.browserExtensionId, 'kecjiojfloffimkeghgongilhienkdlh');
   });
 
   test('BaoCode environment and pointer cannot redirect Abyss', () {

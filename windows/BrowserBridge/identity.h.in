@@ -1,0 +1,18 @@
+#ifndef BROWSER_BRIDGE_GENERATED_IDENTITY_H_
+#define BROWSER_BRIDGE_GENERATED_IDENTITY_H_
+
+// Written into the build directory. No edition identity is passed through
+// compiler command-line quoting.
+namespace browser_bridge {
+
+constexpr bool kIsAbyss = @APP_PRODUCT_IS_ABYSS@;
+constexpr char kHostName[] = "@APP_BROWSER_HOST@";
+constexpr char kExecutable[] = "@APP_BROWSER_HOST_TARGET@.exe";
+constexpr char kExtensionId[] = "@APP_BROWSER_EXTENSION_ID@";
+constexpr char kOrigin[] = "@APP_BROWSER_ORIGIN@";
+constexpr wchar_t kPortDirectory[] = L"@APP_BROWSER_PORT_DIRECTORY@";
+constexpr wchar_t kPortFile[] = L"@APP_BROWSER_PORT_FILE@";
+
+}  // namespace browser_bridge
+
+#endif  // BROWSER_BRIDGE_GENERATED_IDENTITY_H_

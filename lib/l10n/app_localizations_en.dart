@@ -17,6 +17,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'Optional comma-separated preferences, such as fast, analysis, implementation or review. Tags guide the parent; they are not performance guarantees.';
 
   @override
+  String get abyssBrowserInstall => 'Abyss browser extension (Windows)';
+
+  @override
+  String get abyssBrowserInstallDescription =>
+      'Open chrome://extensions or edge://extensions, enable Developer mode, and load the unpacked folder below. Keep this folder installed. Only tabs shared with Abyss are accessible; offline extensions update manually.';
+
+  @override
+  String get abyssBrowserOpenFolder => 'Open extension folder';
+
+  @override
+  String get abyssBrowserMissing =>
+      'The extension files are missing. Install the complete Abyss Windows package, not just Abyss.exe.';
+
+  @override
+  String get abyssBrowserGuide => 'Installation guide';
+
+  @override
   String get dockMainChat => 'Conversations';
 
   @override

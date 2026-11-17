@@ -16,8 +16,17 @@
 // new method here is said in CAPABILITIES; BRIDGE goes up only for a change
 // an older BaoCode would get wrong.
 
-const HOST = 'dev.baocode.browser';
-const GROUP = 'BaoCode';
+// Only Abyss's generated package supplies this identity. Without it, this
+// remains BaoCode's extension, including when the ordinary packer runs.
+const IDENTITY = globalThis.ABYSS_BROWSER_IDENTITY ?? {
+  name: 'BaoCode',
+  host: 'dev.baocode.browser',
+  group: 'BaoCode',
+  help: 'https://baocode.dev/download#browser',
+};
+const HOST = IDENTITY.host;
+const GROUP = IDENTITY.group;
+const BRAND = IDENTITY.name;
 const PROTOCOL = '1.3';
 // What BaoCode and this extension say to each other: one more with each
 // change the other has to know of (lib/browser/browser_bridge.dart).
@@ -25,8 +34,8 @@ const BRIDGE = 1;
 // What BaoCode may ask of this version, beyond BRIDGE 1's first methods
 // (tabs.*, cdp, detach, watch): told in the hello.
 const CAPABILITIES = ['cdp.session', 'call', 'subscribe', 'configure'];
-// What the toolbar button opens while BaoCode is not there to connect to.
-const HELP = 'https://baocode.dev/download#browser';
+// What the toolbar button opens while the app is not there to connect to.
+const HELP = IDENTITY.help;
 
 let port = null;
 let connected = false; // To BaoCode, not just its host.
@@ -94,10 +103,10 @@ function showState() {
   chrome.action.setTitle({
     title:
       watching !== null
-        ? 'BaoCode is watching: click when you are done'
+        ? `${BRAND} is watching: click when you are done`
         : connected
-          ? 'BaoCode: connected'
-          : 'BaoCode: not running',
+          ? `${BRAND}: connected`
+          : `${BRAND}: not running`,
   });
 }
 
@@ -221,7 +230,7 @@ async function call(api, args) {
   const [space, name, ...rest] = String(api).split('.');
   const fn = chrome[space]?.[name];
   if (!APIS.includes(space) || rest.length || typeof fn !== 'function' || name.startsWith('on')) {
-    throw new Error(`Not a method BaoCode may call: ${api}`);
+    throw new Error(`Not a method ${BRAND} may call: ${api}`);
   }
   if (!Array.isArray(args)) throw new Error('args is a list');
   await guard(space, name, args);
@@ -291,13 +300,13 @@ async function within(value) {
 async function sharedWindow(windowId) {
   const tabs = await sharedTabs();
   if (!tabs.some((tab) => tab.windowId === windowId)) {
-    throw new Error(`Window ${windowId} has no tab shared with BaoCode.`);
+    throw new Error(`Window ${windowId} has no tab shared with ${BRAND}.`);
   }
 }
 
 async function ourGroup(groupId) {
   const group = await chrome.tabGroups.get(groupId);
-  if (group.title !== GROUP) throw new Error(`Group ${groupId} is not BaoCode's.`);
+  if (group.title !== GROUP) throw new Error(`Group ${groupId} is not ${BRAND}'s.`);
 }
 
 // The browser's events BaoCode may be told of (subscribe), as
@@ -397,7 +406,7 @@ async function isShared(tab) {
 async function sharedTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
   if (!(await isShared(tab))) {
-    throw new Error(`Tab ${tabId} is not shared with BaoCode.`);
+    throw new Error(`Tab ${tabId} is not shared with ${BRAND}.`);
   }
   return tab;
 }

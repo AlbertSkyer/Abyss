@@ -1,36 +1,39 @@
-// baocode-browser-host.exe: the native messaging host of BaoCode's browser
-// extension (browser_extension/) on Windows, as macos/BrowserBridge/host.c
-// is on macOS. The browser starts it for the extension, as
-// dev.baocode.browser.json beside it says (the installer's keys point the
-// browsers there, see tool/baocode.iss). It passes the extension's
-// messages to BaoCode and BaoCode's back: waiting for BaoCode while it is
-// not running, and again once it quits.
+// The Windows native messaging host of this product's browser extension
+// (browser_extension/). The browser starts it as the generated manifest beside
+// it says, and it passes messages between that extension and the app. It waits
+// for the app while it is not running, and again once it quits.
 //
-// Dart has no Unix sockets on Windows: BaoCode (lib/browser/
-// browser_bridge.dart) listens on 127.0.0.1, at the port its file in the
-// user's temporary folder says, baocode-browser.port: "<port> <token>".
-// Any program may connect there, so the host's hello says the token, which
-// only the user can read; BaoCode lets in no one who does not.
+// Dart has no Unix sockets on Windows: the app (lib/browser/browser_bridge.dart)
+// listens on 127.0.0.1, at the port in its port file: "<port> <token>".
+// BaoCode's established file is %TEMP%\baocode-browser.port. Abyss's is
+// %TEMP%\Abyss-browser-bridge\abyss-browser.port, inside the app's private
+// endpoint folder. Any program may connect to loopback, so the host's hello says
+// the token. Abyss validates its file's owner and DACL before reading that token;
+// BaoCode's established behavior is unchanged.
 //
 // Both ways a message is the browser's: its length (4 bytes, this
 // machine's order), then that much JSON. The host says what goes on with
-// BaoCode in messages of its own: {"type":"bridge","connected":…}. It
+// the app in messages of its own: {"type":"bridge","connected":…}. It
 // quits once the browser lets it go (its input ends).
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <aclapi.h>
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
+
+#include "generated_identity.h"
 
 #define MAX_MESSAGE (64 * 1024 * 1024)
 
 static SRWLOCK out_lock = SRWLOCK_INIT;
 static SRWLOCK socket_lock = SRWLOCK_INIT;
-static SOCKET bao = INVALID_SOCKET;  // The socket to BaoCode, while connected.
+static SOCKET bao = INVALID_SOCKET;  // The socket to the app, while connected.
 static const char* origin = "";
 static HANDLE input;
 static HANDLE output;
@@ -112,17 +115,154 @@ static void tell_browser(bool connected) {
   to_browser(text, static_cast<uint32_t>(strlen(text)));
 }
 
-// BaoCode's port and token, from its file: false while there is none
-// (BaoCode is not running) or it is not whole yet.
-static bool find_bao(unsigned* port, char* token, size_t size) {
-  wchar_t path[MAX_PATH + 32];
+static bool port_file_path(wchar_t* path, size_t size,
+                           size_t* directory_length = nullptr) {
+  if (size < MAX_PATH + 64) return false;
   const DWORD n = GetTempPathW(MAX_PATH + 1, path);
   if (n == 0 || n > MAX_PATH) return false;
-  if (wcscat_s(path, L"baocode-browser.port") != 0) return false;
+  size_t directory_size = 0;
+  if (browser_bridge::kIsAbyss) {
+    if (browser_bridge::kPortDirectory[0] == 0 ||
+        wcscat_s(path, size, browser_bridge::kPortDirectory) != 0 ||
+        wcscat_s(path, size, L"\\") != 0) {
+      return false;
+    }
+    directory_size = wcslen(path) - 1;
+  }
+  if (directory_length != nullptr) *directory_length = directory_size;
+  return wcscat_s(path, size, browser_bridge::kPortFile) == 0;
+}
+
+// Reject a directory symlink/junction as well as a file symlink. Never follow
+// the directory with FILE_FLAG_BACKUP_SEMANTICS before this attribute query.
+static bool ordinary_directory(const wchar_t* path, size_t length) {
+  wchar_t directory[MAX_PATH + 64];
+  if (length >= _countof(directory)) return false;
+  wmemcpy(directory, path, length);
+  directory[length] = 0;
+  const DWORD attributes = GetFileAttributesW(directory);
+  return attributes != INVALID_FILE_ATTRIBUTES &&
+         (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+         (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+}
+
+static bool same_sid(PSID first, PSID second) {
+  return IsValidSid(first) && IsValidSid(second) && EqualSid(first, second);
+}
+
+static bool well_known_sid(WELL_KNOWN_SID_TYPE type, void* storage) {
+  DWORD size = SECURITY_MAX_SID_SIZE;
+  return CreateWellKnownSid(type, nullptr, storage, &size) != 0;
+}
+
+// A file in a per-user temp directory can still be writable by everyone. Check
+// the opened object, not its path: a symlink or a replaced file must not expose
+// the token. Only this user, SYSTEM and the built-in administrators are trusted.
+// In particular, NULL DACLs and rights for Everyone / ordinary users are not.
+static bool abyss_endpoint_allowed(HANDLE file) {
+  BY_HANDLE_FILE_INFORMATION information = {};
+  if (GetFileType(file) != FILE_TYPE_DISK ||
+      !GetFileInformationByHandle(file, &information) ||
+      (information.dwFileAttributes &
+       (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+    return false;
+  }
+
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+  DWORD user_size = 0;
+  GetTokenInformation(token, TokenUser, nullptr, 0, &user_size);
+  TOKEN_USER* user = user_size > 0
+                         ? static_cast<TOKEN_USER*>(malloc(user_size))
+                         : nullptr;
+  bool allowed = user != nullptr &&
+                 GetTokenInformation(token, TokenUser, user, user_size,
+                                     &user_size) != 0;
+  CloseHandle(token);
+  if (!allowed || user->User.Sid == nullptr) {
+    free(user);
+    return false;
+  }
+
+  BYTE administrators[SECURITY_MAX_SID_SIZE] = {};
+  BYTE system[SECURITY_MAX_SID_SIZE] = {};
+  allowed = well_known_sid(WinBuiltinAdministratorsSid, administrators) &&
+            well_known_sid(WinLocalSystemSid, system);
+
+  PSID owner = nullptr;
+  PACL dacl = nullptr;
+  PSECURITY_DESCRIPTOR descriptor = nullptr;
+  if (allowed &&
+      GetSecurityInfo(file, SE_FILE_OBJECT,
+                      OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                      &owner, nullptr, &dacl, nullptr, &descriptor) !=
+          ERROR_SUCCESS) {
+    allowed = false;
+  }
+  // A missing or NULL DACL grants access, rather than meaning "no entries".
+  if (allowed && (owner == nullptr || dacl == nullptr ||
+                  !same_sid(owner, user->User.Sid))) {
+    allowed = false;
+  }
+
+  ACL_SIZE_INFORMATION acl = {};
+  if (allowed &&
+      (!GetAclInformation(dacl, &acl, sizeof acl, AclSizeInformation) ||
+       acl.AceCount > 1024)) {
+    allowed = false;
+  }
+  for (DWORD index = 0; allowed && index < acl.AceCount; ++index) {
+    void* entry = nullptr;
+    if (!GetAce(dacl, index, &entry) || entry == nullptr) {
+      allowed = false;
+      break;
+    }
+    const ACE_HEADER* header = static_cast<ACE_HEADER*>(entry);
+    // Deny ACEs grant nothing; unknown ACE kinds are not silently accepted.
+    if (header->AceType == ACCESS_DENIED_ACE_TYPE) continue;
+    if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) {
+      allowed = false;
+      break;
+    }
+    const ACCESS_ALLOWED_ACE* ace = static_cast<ACCESS_ALLOWED_ACE*>(entry);
+    PSID sid = const_cast<DWORD*>(&ace->SidStart);
+    if (same_sid(sid, user->User.Sid) || same_sid(sid, system) ||
+        same_sid(sid, administrators)) {
+      continue;
+    }
+    const ACCESS_MASK sensitive =
+        FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_READ_EA |
+        FILE_WRITE_EA | FILE_EXECUTE | FILE_READ_ATTRIBUTES | DELETE |
+        WRITE_DAC | WRITE_OWNER | READ_CONTROL | STANDARD_RIGHTS_READ |
+        STANDARD_RIGHTS_WRITE | GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE |
+        GENERIC_ALL;
+    if ((ace->Mask & sensitive) != 0 || !IsValidSid(sid)) allowed = false;
+  }
+  if (descriptor != nullptr) LocalFree(descriptor);
+  free(user);
+  return allowed;
+}
+
+// The app's port and token, from its file: false while there is none (the app
+// is not running) or it is not whole yet. Abyss does not read one byte of its
+// contents until the opened file's identity and ACL have passed.
+static bool find_bao(unsigned* port, char* token, size_t size) {
+  wchar_t path[MAX_PATH + 64];
+  size_t directory_length = 0;
+  if (!port_file_path(path, _countof(path), &directory_length)) return false;
+  if (browser_bridge::kIsAbyss &&
+      !ordinary_directory(path, directory_length)) {
+    return false;
+  }
   HANDLE file = CreateFileW(
-      path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+      path, GENERIC_READ | (browser_bridge::kIsAbyss ? READ_CONTROL : 0),
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | (browser_bridge::kIsAbyss ? FILE_FLAG_OPEN_REPARSE_POINT : 0), nullptr);
   if (file == INVALID_HANDLE_VALUE) return false;
+  if (browser_bridge::kIsAbyss && !abyss_endpoint_allowed(file)) {
+    CloseHandle(file);
+    return false;
+  }
   char text[256];
   DWORD got = 0;
   const BOOL ok = ReadFile(file, text, static_cast<DWORD>(sizeof text - 1),
@@ -158,8 +298,7 @@ static SOCKET connect_bao(unsigned port) {
   return fd;
 }
 
-// BaoCode's messages, to the browser; connecting again each time BaoCode
-// comes back.
+// The app's messages, to the browser; connecting again each time it comes back.
 static DWORD WINAPI from_bao(void*) {
   for (;;) {
     unsigned port = 0;
@@ -210,14 +349,23 @@ static DWORD WINAPI from_bao(void*) {
   }
 }
 
+static bool origin_allowed(const char* argument) {
+  if (browser_bridge::kIsAbyss) {
+    return strcmp(argument, browser_bridge::kOrigin) == 0;
+  }
+  // BaoCode's established filtering remains unchanged. Quotes and backslashes
+  // have no place in an origin: none is let in the JSON it goes into.
+  return strncmp(argument, "chrome-extension://", 19) == 0 &&
+         strpbrk(argument, "\"\\") == nullptr;
+}
+
+#ifndef ABYSS_BROWSER_HOST_TEST
 int main(int argc, char** argv) {
   // The browser's: the extension's origin first, then a window's handle
   // (--parent-window=…).
   for (int i = 1; i < argc; i++) {
     if (strncmp(argv[i], "chrome-extension://", 19) == 0) {
-      // Quotes and backslashes have no place in an origin: none is let in
-      // the JSON it goes into.
-      if (!strpbrk(argv[i], "\"\\")) origin = argv[i];
+      if (origin_allowed(argv[i])) origin = argv[i];
       break;
     }
   }
@@ -229,7 +377,7 @@ int main(int argc, char** argv) {
   HANDLE thread = CreateThread(nullptr, 0, from_bao, nullptr, 0, nullptr);
   if (!thread) return 1;
   CloseHandle(thread);
-  // The extension's messages, to BaoCode: dropped while it is not there
+  // The extension's messages, to the app: dropped while it is not there
   // (the extension knows, told above).
   for (;;) {
     uint32_t length;
@@ -244,3 +392,4 @@ int main(int argc, char** argv) {
     free(text);
   }
 }
+#endif  // ABYSS_BROWSER_HOST_TEST
