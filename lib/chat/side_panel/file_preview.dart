@@ -294,6 +294,14 @@ class _FilePreviewState extends State<FilePreview> {
     } else if (oldWidget.reveal != widget.reveal && !_image) {
       // Asked for again (the agent wrote it again, say): read anew, what
       // shows kept until then.
+      _refresh();
+    }
+  }
+
+  void _refresh() {
+    if (_image) {
+      setState(() => _load++);
+    } else {
       unawaited(_read(++_load));
     }
   }
@@ -605,6 +613,11 @@ class _FilePreviewState extends State<FilePreview> {
               checked: EditorWordWrap.on.value,
               onPressed: EditorWordWrap.toggle,
             ),
+          IdeActionButton(
+            icon: Codicons.refresh,
+            tooltip: l10n.commonRefresh,
+            onPressed: _refresh,
+          ),
           ...widget.actions,
         ],
       ),
@@ -634,7 +647,11 @@ class _FilePreviewState extends State<FilePreview> {
 
   Widget _body(BuildContext context) {
     if (_image) {
-      return IdeImagePreview(path: _request.path, read: widget.readBytes);
+      return IdeImagePreview(
+        key: ValueKey((_request.path, _load)),
+        path: _request.path,
+        read: widget.readBytes,
+      );
     }
     switch (_loaded) {
       case null:

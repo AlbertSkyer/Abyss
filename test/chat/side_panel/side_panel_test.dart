@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:baocode/chat/composer/composer_embeds.dart';
 import 'package:bao_markdown/bao_markdown.dart';
@@ -2745,6 +2746,122 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AgentSidePanelView), findsNothing);
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets(
+    'file refresh reads external markdown changes and keeps unsaved edits',
+    (tester) async {
+      _bigWindow(tester);
+      final files = _Files({'/p/notes.md': '# Old\n'});
+      SidePanelFileEdit? edit;
+      await tester.pumpWidget(
+        _app(
+          FilePreview(
+            request: const FileOpenRequest('/p/notes.md'),
+            files: files,
+            onEdit: (made) => edit = made,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final preview = find.byType(MarkdownEditor);
+      expect(tester.widget<MarkdownEditor>(preview).controller.text, '# Old\n');
+      files.texts['/p/notes.md'] = '# Changed by AI\n';
+      expect(tester.widget<MarkdownEditor>(preview).controller.text, '# Old\n');
+      await tester.tap(find.byIcon(Codicons.refresh));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MarkdownEditor>(preview).controller.text,
+        '# Changed by AI\n',
+      );
+      expect(edit!.dirty, isFalse);
+
+      edit!.controller.document.replaceText('# My unsaved edit\n');
+      edit!.controller.syncFromDocument();
+      await tester.pumpAndSettle();
+      expect(edit!.dirty, isTrue);
+      files.texts['/p/notes.md'] = '# Another external edit\n';
+      await tester.tap(find.byIcon(Codicons.refresh));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<MarkdownEditor>(preview).controller.text,
+        '# My unsaved edit\n',
+      );
+      expect(edit!.dirty, isTrue);
+      expect(files.texts['/p/notes.md'], '# Another external edit\n');
+      await tester.pumpWidget(const SizedBox());
+      edit!.dispose();
+    },
+  );
+
+  testWidgets('file refresh updates source and can retry a missing file', (
+    tester,
+  ) async {
+    _bigWindow(tester);
+    final files = _Files({'/p/notes.md': '# Old\n'});
+    await tester.pumpWidget(
+      _app(
+        FilePreview(
+          request: const FileOpenRequest('/p/notes.md'),
+          files: files,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Source'));
+    await tester.pumpAndSettle();
+    files.texts['/p/notes.md'] = '# New source\n';
+    await tester.tap(find.byIcon(Codicons.refresh));
+    await tester.pumpAndSettle();
+    expect(find.byType(IdeCodeEditor), findsOneWidget);
+    await tester.tap(find.text('Preview'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+          .controller
+          .text,
+      '# New source\n',
+    );
+    files.texts.remove('/p/notes.md');
+    await tester.tap(find.byIcon(Codicons.refresh));
+    await tester.pumpAndSettle();
+    files.texts['/p/notes.md'] = '# Restored\n';
+    await tester.tap(find.byIcon(Codicons.refresh));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+          .controller
+          .text,
+      '# Restored\n',
+    );
+  });
+
+  testWidgets('file refresh rereads image bytes', (tester) async {
+    _bigWindow(tester);
+    var reads = 0;
+    await tester.pumpWidget(
+      _app(
+        FilePreview(
+          request: const FileOpenRequest('/p/icon.svg'),
+          files: _Files({}),
+          readBytes: (_) async {
+            reads++;
+            return Uint8List.fromList(
+              utf8.encode(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>',
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(reads, 1);
+    await tester.tap(find.byIcon(Codicons.refresh));
+    await tester.pumpAndSettle();
+    expect(reads, 2);
+  });
 
   testWidgets('a markdown file is edited in its preview, as it shows, and '
       'saved with ⌘S; only shown, it is not', (tester) async {

@@ -366,3 +366,11 @@
 - 实际启动 `dist/Abyss-1.9.12-concurrency`，隔离 `ABYSS_DATA_DIR`：默认3，鼠标选择7，关闭自动派工，正常退出/重启后仍显示7及关闭状态；再鼠标恢复3，确认键移除。所有截图已查看，about显示1.9.12（38），最后正常退出测试进程；不修改原版BaoCode或用户正式配置。
 - 完整Release/ISCC及三项独立身份检查通过，构建日志 `build/abyss-1.9.12-concurrency-build.log`。安装包 `dist/Abyss-1.9.12-concurrency-delivery/Abyss-1.9.12-setup.exe`，26,398,077字节，SHA-256 `C163972EFFA1EF46DA1B76FC84539A6DBBF97E343C361CDAE9E099BD5C822BF3`。app.so SHA-256 `6FBD559AAEB3BD8666F13206A81A58F0364BE4D7FE238838D8F1B75BD5BEC674`。
 - 用户授权测试后提交推送至origin并发布v1.9.12，保留旧Release。安装器未签名；完整隔离安装/升级/卸载、第二台电脑及内置Administrator浏览器修复复验仍未完成，本次并发改动不扩大此前验收结论。
+
+## 文件预览刷新（2026-11-17）
+
+- 1.9.13+39：文件预览顶部右侧新增刷新按钮，复用当前文件读取路径及load generation保护，更新Markdown预览/源码；图片刷新重新读取字节。保留 `SidePanelFileEdit.reload` 的dirty保护，不覆盖未保存编辑，不自动写盘。
+- 定向测试刷新/Markdown回归6项及版本5项通过，相关静态分析无问题。覆盖外部改写后刷新、脏编辑保留、源码切换、文件消失后重试、图片重新读取及既有Markdown行为。未运行全套。首次较宽名称筛选额外命中旧拖放用例，在Windows出现 `/p/docs/shot.png` 与 `/p/docs\\shot.png` 路径分隔符断言失败；本次不修改无关拖放逻辑，最终限定相关测试通过。
+- 完整Release/ISCC及三项独立身份检查通过，日志 `build/abyss-1.9.13-refresh-build.log`。安装器 `dist/Abyss-1.9.13-file-refresh-delivery/Abyss-1.9.13-setup.exe`，26,397,998字节，SHA-256 `AE6807AF995A44E6983E6C0673D9363AC4C89888983C2C25BBDE33391616522D`；exe版本1.9.13+39。
+- 实际从新目录启动Release并查看截图，使用隔离数据及人工fixture；文件选择交互未完成，未完成真实GUI刷新按钮链路，不将启动或widget测试称为完整真机验收。测试进程正常退出，未触碰BaoCode或正式用户数据。
+- 用户授权提交推送及发布v1.9.13，保留旧Release。安装器未签名；完整隔离安装/升级/卸载及另一台机器未验收，本次不扩大浏览器修复等历史结论。
