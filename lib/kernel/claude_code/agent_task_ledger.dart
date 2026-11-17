@@ -180,13 +180,52 @@ final class AgentTaskRecord {
   }
 }
 
+final class _DeletedMemberTombstone {
+  const _DeletedMemberTombstone(
+    this.sessionId,
+    this.memberId,
+    this.cliAgentId,
+    this.calls,
+  );
+  final String sessionId;
+  final String memberId;
+  final String? cliAgentId;
+  final Set<String> calls;
+
+  Map<String, Object?> toJson() => {
+    'sessionId': sessionId,
+    'memberId': memberId,
+    if (cliAgentId != null) 'cliAgentId': cliAgentId,
+    'toolUseIds': calls.toList(),
+  };
+
+  factory _DeletedMemberTombstone.fromJson(Map<String, Object?> json) {
+    final calls = json['toolUseIds'];
+    if (calls is! List || calls.any((id) => id is! String || id.isEmpty)) {
+      throw const FormatException('Invalid deleted member calls');
+    }
+    return _DeletedMemberTombstone(
+      _requiredString(json, 'sessionId'),
+      _requiredString(json, 'memberId'),
+      _optionalString(json, 'cliAgentId'),
+      calls.cast<String>().toSet(),
+    );
+  }
+}
+
 /// A small, host-owned ledger. No method schedules or restarts a task.
 ///
 /// Mutations update the in-memory snapshot synchronously and enqueue their
 /// whole-file write. [flush] waits for all writes queued so far and reports
 /// their errors; a failed write does not poison later writes.
 final class AgentTaskLedger {
-  AgentTaskLedger._(this.path, this._tasks, this._members, this._unknownFields);
+  AgentTaskLedger._(
+    this.path,
+    this._tasks,
+    this._members,
+    this._unknownFields,
+    this._deletedMembers,
+  );
 
   static final Map<String, AgentTaskLedger> _instances = {};
   static final Map<String, Future<AgentTaskLedger>> _openings = {};
@@ -195,6 +234,7 @@ final class AgentTaskLedger {
   final Map<String, AgentTaskRecord> _tasks;
   final Map<String, AgentMemberRecord> _members;
   final Map<String, Object?> _unknownFields;
+  final Map<String, _DeletedMemberTombstone> _deletedMembers;
   final Map<String, Map<String, Object?>> _taskExtras = {};
   final Map<String, Map<String, Object?>> _memberExtras = {};
   Future<void> _writes = Future<void>.value();
@@ -238,7 +278,7 @@ final class AgentTaskLedger {
 
   static Future<AgentTaskLedger> _read(File file) async {
     if (!await file.exists()) {
-      return AgentTaskLedger._(file.path, {}, {}, {});
+      return AgentTaskLedger._(file.path, {}, {}, {}, {});
     }
     final Object? decoded;
     try {
@@ -281,13 +321,37 @@ final class AgentTaskLedger {
       }
       members[key] = member;
     }
+    final rawDeleted = json['deletedMembers'];
+    if (rawDeleted != null && rawDeleted is! List) {
+      throw const FormatException('Invalid deleted members');
+    }
+    final deleted = <String, _DeletedMemberTombstone>{};
+    for (final raw in rawDeleted as List? ?? const []) {
+      if (raw is! Map) throw const FormatException('Invalid deleted member');
+      final item = _DeletedMemberTombstone.fromJson(
+        raw.cast<String, Object?>(),
+      );
+      final key = _key(item.sessionId, item.memberId);
+      if (deleted.containsKey(key)) {
+        throw const FormatException('Duplicate deleted member');
+      }
+      deleted[key] = item;
+      members.remove(key);
+      tasks.removeWhere(
+        (_, task) =>
+            task.sessionId == item.sessionId &&
+            (task.memberId == item.memberId ||
+                item.calls.contains(task.toolUseId)),
+      );
+    }
     final ledger = AgentTaskLedger._(file.path, tasks, members, {
       for (final entry in json.entries)
         if (entry.key != 'version' &&
             entry.key != 'tasks' &&
-            entry.key != 'members')
+            entry.key != 'members' &&
+            entry.key != 'deletedMembers')
           entry.key: entry.value,
-    });
+    }, deleted);
     for (final raw in rawTasks ?? const []) {
       final values = (raw as Map).cast<String, Object?>();
       ledger._taskExtras[_key(
@@ -320,6 +384,63 @@ final class AgentTaskLedger {
 
   AgentMemberRecord? member(String sessionId, String memberId) =>
       _members[_key(sessionId, memberId)];
+
+  bool isMemberDeleted(String sessionId, String memberId) =>
+      _deletedMembers.containsKey(_key(sessionId, memberId));
+
+  bool isCliAgentDeleted(String sessionId, String cliAgentId) =>
+      _deletedMembers.values.any(
+        (item) => item.sessionId == sessionId && item.cliAgentId == cliAgentId,
+      );
+
+  Set<String> deletedTaskIdsFor(String sessionId) => Set.unmodifiable({
+    for (final item in _deletedMembers.values)
+      if (item.sessionId == sessionId) ...item.calls,
+  });
+
+  /// A late event may identify another call belonging to a deleted member.
+  void rememberDeletedCall(String sessionId, String cliAgentId, String call) {
+    final item = _deletedMembers.values
+        .where(
+          (item) =>
+              item.sessionId == sessionId && item.cliAgentId == cliAgentId,
+        )
+        .firstOrNull;
+    if (item != null && item.calls.add(call)) _persist();
+  }
+
+  Future<void> deleteMember(String sessionId, String memberId) async {
+    _requireId(sessionId, 'sessionId');
+    _requireId(memberId, 'memberId');
+    final key = _key(sessionId, memberId);
+    if (isMemberDeleted(sessionId, memberId)) {
+      _persist();
+      return flush();
+    }
+    final member = _members[key];
+    if (member == null) throw StateError('Unknown member $memberId');
+    final tasks = tasksFor(sessionId)
+        .where((task) => task.memberId == memberId)
+        .toList();
+    if (tasks.any((task) => task.status == AgentTaskStatus.running)) {
+      throw StateError('Stop the running member before deleting it.');
+    }
+    _deletedMembers[key] = _DeletedMemberTombstone(
+      sessionId,
+      memberId,
+      member.cliAgentId,
+      {for (final task in tasks) task.toolUseId},
+    );
+    _members.remove(key);
+    _memberExtras.remove(key);
+    for (final task in tasks) {
+      final taskKey = _key(sessionId, task.toolUseId);
+      _tasks.remove(taskKey);
+      _taskExtras.remove(taskKey);
+    }
+    _persist();
+    await flush();
+  }
 
   /// Changes only the editable member fields. A bound CLI id and model are
   /// deliberately not parameters, so an update cannot rebind its identity.
@@ -382,7 +503,7 @@ final class AgentTaskLedger {
 
   /// Records a newly started call. A completed or interrupted record is not
   /// restarted by a late start event.
-  AgentTaskRecord recordStart({
+  AgentTaskRecord? recordStart({
     required String sessionId,
     required String toolUseId,
     required String memberId,
@@ -395,6 +516,10 @@ final class AgentTaskLedger {
     _requireId(toolUseId, 'toolUseId');
     _requireId(memberId, 'memberId');
     _requireId(taskId, 'taskId');
+    if (isMemberDeleted(sessionId, memberId) ||
+        deletedTaskIdsFor(sessionId).contains(toolUseId)) {
+      return null;
+    }
     final key = _key(sessionId, toolUseId);
     final previous = _tasks[key];
     final member = _members[_key(sessionId, memberId)];
@@ -432,7 +557,7 @@ final class AgentTaskLedger {
 
   /// Associates a stable member with a CLI agent, without changing a task's
   /// terminal decision. Placeholder ids from [cancelStart] can be replaced.
-  AgentMemberRecord recordMember({
+  AgentMemberRecord? recordMember({
     required String sessionId,
     required String memberId,
     String? cliAgentId,
@@ -446,6 +571,10 @@ final class AgentTaskLedger {
     _requireId(sessionId, 'sessionId');
     _requireId(memberId, 'memberId');
     final key = _key(sessionId, memberId);
+    if (isMemberDeleted(sessionId, memberId) ||
+        (cliAgentId != null && isCliAgentDeleted(sessionId, cliAgentId))) {
+      return null;
+    }
     final previous = _members[key];
     var changed = previous == null;
     final next = AgentMemberRecord(
@@ -476,7 +605,7 @@ final class AgentTaskLedger {
   }
 
   /// Marks a host-denied start, even if its start was never recorded.
-  AgentTaskRecord cancelStart(
+  AgentTaskRecord? cancelStart(
     String sessionId,
     String toolUseId, {
     String? result,
@@ -485,6 +614,7 @@ final class AgentTaskLedger {
     _requireId(toolUseId, 'toolUseId');
     final key = _key(sessionId, toolUseId);
     final previous = _tasks[key];
+    if (deletedTaskIdsFor(sessionId).contains(toolUseId)) return null;
     final next = (previous ?? _placeholder(sessionId, toolUseId))._copyWith(
       status: AgentTaskStatus.cancelled,
       hostCancelled: true,
@@ -582,6 +712,10 @@ final class AgentTaskLedger {
     final snapshot = {
       ..._unknownFields,
       'version': 1,
+      if (_deletedMembers.isNotEmpty)
+        'deletedMembers': [
+          for (final item in _deletedMembers.values) item.toJson(),
+        ],
       'members': [
         for (final member in _members.values)
           {

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:baocode/chat/side_panel/agent_team_page.dart';
+import 'package:baocode/ide/ide_button.dart';
 import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -17,8 +20,13 @@ void main() {
     KernelAgentMember(
       id: 'two',
       name: 'Worker',
-      status: AgentMemberStatus.running,
+      status: AgentMemberStatus.stopped,
       enabled: false,
+    ),
+    KernelAgentMember(
+      id: 'running',
+      name: 'Busy',
+      status: AgentMemberStatus.running,
     ),
   ];
 
@@ -33,6 +41,7 @@ void main() {
       bool? archived,
     })?
     onUpdate,
+    Future<void> Function(String id)? onDelete,
     ValueChanged<String>? onShowTasks,
   }) => tester.pumpWidget(
     MaterialApp(
@@ -42,6 +51,7 @@ void main() {
         body: AgentTeamPage(
           members: members,
           onUpdate: onUpdate ?? (_, {name, role, enabled, archived}) {},
+          onDelete: onDelete ?? (_) async {},
           onShowTasks: onShowTasks ?? (_) {},
           statusLabel: (status) => 'status:${status.name}',
           description: 'Availability does not stop active tasks.',
@@ -52,8 +62,6 @@ void main() {
           roleLabel: 'Responsibility',
           disableLabel: 'Disable',
           enableLabel: 'Enable',
-          archiveLabel: 'Archive',
-          unarchiveLabel: 'Restore',
           showTasksLabel: 'Tasks',
           tasksLabel: (count) => '$count total',
         ),
@@ -109,7 +117,7 @@ void main() {
     expect(updatedName, 'New name');
   });
 
-  testWidgets('toggles availability and archive, without archiving running', (
+  testWidgets('toggles availability without changing archive state', (
     tester,
   ) async {
     final calls = <String>[];
@@ -119,11 +127,136 @@ void main() {
         calls.add('$id:$enabled:$archived');
       },
     );
-    await tester.tap(find.widgetWithText(GestureDetector, 'Disable'));
+    await tester.tap(find.widgetWithText(GestureDetector, 'Disable').first);
     await tester.tap(find.widgetWithText(GestureDetector, 'Enable'));
-    await tester.tap(find.widgetWithText(GestureDetector, 'Archive'));
-    expect(calls, ['one:false:null', 'two:true:null', 'one:null:true']);
-    expect(find.widgetWithText(GestureDetector, 'Archive'), findsOneWidget);
+    expect(calls, ['one:false:null', 'two:true:null']);
+    expect(find.text('Archive'), findsNothing);
+    expect(find.text('Restore'), findsNothing);
+  });
+
+  testWidgets('delete cancel does not call onDelete', (tester) async {
+    var calls = 0;
+    await pump(tester, onDelete: (_) async => calls++);
+    await tester.tap(find.byKey(const ValueKey(('team-member-delete', 'one'))));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete Researcher?'), findsOneWidget);
+    expect(
+      find.textContaining('permanently delete this member'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('main conversation'), findsOneWidget);
+    expect(find.textContaining('project files'), findsOneWidget);
+    expect(find.textContaining('shared CLI history'), findsOneWidget);
+    expect(find.textContaining('cannot be undone'), findsOneWidget);
+    await tester.tap(find.widgetWithText(GestureDetector, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(calls, 0);
+    expect(find.text('Delete Researcher?'), findsNothing);
+  });
+
+  testWidgets('confirmed delete awaits completion and guards duplicates', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    final deleted = <String>[];
+    await pump(
+      tester,
+      onDelete: (id) {
+        deleted.add(id);
+        return pending.future;
+      },
+    );
+    final button = find.byKey(const ValueKey(('team-member-delete', 'one')));
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(GestureDetector, 'Delete'));
+    await tester.pump();
+    expect(deleted, ['one']);
+    expect(tester.widget<IdeButton>(button).onPressed, isNull);
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pump();
+    expect(deleted, ['one']);
+    expect(
+      tester
+          .widget<IdeButton>(
+            find.byKey(const ValueKey(('team-member-delete', 'two'))),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(tester.widget<IdeButton>(button).onPressed, isNotNull);
+  });
+
+  testWidgets('running members cannot delete but archived members can', (
+    tester,
+  ) async {
+    final deleted = <String>[];
+    await pump(
+      tester,
+      members: const [
+        KernelAgentMember(
+          id: 'running',
+          name: 'Busy',
+          status: AgentMemberStatus.running,
+        ),
+        KernelAgentMember(
+          id: 'archived',
+          name: 'Archived',
+          status: AgentMemberStatus.stopped,
+          archived: true,
+        ),
+      ],
+      onDelete: (id) async => deleted.add(id),
+    );
+    expect(
+      find.byKey(const ValueKey(('team-member-delete', 'running'))),
+      findsNothing,
+    );
+    final button = find.byKey(
+      const ValueKey(('team-member-delete', 'archived')),
+    );
+    expect(button, findsOneWidget);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(GestureDetector, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(deleted, ['archived']);
+  });
+
+  testWidgets('failed delete shows error and can be retried', (tester) async {
+    var calls = 0;
+    await pump(
+      tester,
+      onDelete: (_) async {
+        calls++;
+        if (calls == 1) throw StateError('storage is locked');
+      },
+    );
+    final button = find.byKey(const ValueKey(('team-member-delete', 'one')));
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(GestureDetector, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Could not delete the team member: Bad state: storage is locked',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.widget<IdeButton>(button).onPressed, isNull);
+    await tester.tap(find.widgetWithText(GestureDetector, 'OK'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<IdeButton>(button).onPressed, isNotNull);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(GestureDetector, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(calls, 2);
+    expect(find.textContaining('Could not delete'), findsNothing);
   });
 
   testWidgets('opens tasks by stable member id and supplies an empty state', (

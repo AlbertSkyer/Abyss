@@ -28,6 +28,26 @@
   "teamDisable": "Disable",
   "teamRestore": "Restore member",
   "teamShowTasks": "Show tasks",
+  "teamDeleteMember": "Delete member",
+  "teamDeleteTitle": "Delete {name}?",
+  "@teamDeleteTitle": {
+    "description": "Confirmation title for permanently deleting a team member.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "teamDeleteDescription": "This will permanently delete this member and its team task and result records. The main conversation, project files, and shared CLI history will be left untouched. This cannot be undone.",
+  "teamDeleteFailure": "Could not delete the team member: {error}",
+  "@teamDeleteFailure": {
+    "description": "Error shown when permanently deleting a team member fails.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "agentTasksAll": "All tasks",
   "agentTasksLoading": "Reading saved tasks…",
   "agentTasksLoadEarlier": "Read earlier history",

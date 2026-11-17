@@ -97,6 +97,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get teamShowTasks => '查看任务';
 
   @override
+  String get teamDeleteMember => '删除成员';
+
+  @override
+  String teamDeleteTitle(String name) {
+    return '删除 $name？';
+  }
+
+  @override
+  String get teamDeleteDescription =>
+      '此操作将永久删除此成员及其团队任务和结果记录。主会话、项目文件和共享 CLI 历史均不受影响。删除后无法恢复。';
+
+  @override
+  String teamDeleteFailure(String error) {
+    return '删除团队成员失败：$error';
+  }
+
+  @override
   String get agentTasksAll => '全部任务';
 
   @override

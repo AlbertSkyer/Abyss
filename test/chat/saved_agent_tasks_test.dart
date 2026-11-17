@@ -49,6 +49,8 @@ class TaskKernel implements AgentKernel, ReportsAgentTasks, LoadsHistory {
     ),
   ];
   @override
+  Set<String> deletedAgentTaskIds = {};
+  @override
   bool loadingAgentTasks = false;
   @override
   String? agentTasksError;
@@ -143,6 +145,41 @@ Future<void> board(
 }
 
 void main() {
+  testWidgets(
+    'deleted member hides legacy task tree without deleting main transcript',
+    (tester) async {
+      final (:session, :kernel) = fixture();
+      final panel = AgentSidePanel();
+      addTearDown(panel.dispose);
+      kernel.agentTasks = [];
+      kernel.stream.add(
+        ItemUpserted(
+          1,
+          'first',
+          const AgentItem(
+            id: 'first',
+            description: 'Deleted member history',
+            status: CommandStatus.succeeded,
+            children: [
+              AgentItem(
+                id: 'nested',
+                description: 'Nested history',
+                status: CommandStatus.succeeded,
+              ),
+            ],
+          ),
+        ),
+      );
+      await board(tester, session, panel);
+      expect(session.agentTree, hasLength(2));
+      kernel.deletedAgentTaskIds = {'first', 'second'};
+      kernel.stream.add(const KernelInfoChanged(2));
+      await tester.pump();
+      expect(session.agentTree, isEmpty);
+      expect(find.text('Deleted member history'), findsNothing);
+      expect(session.itemAt(0), isA<AgentItem>());
+    },
+  );
   testWidgets(
     'durable runs appear without transcript, filter by member and remain read-only',
     (tester) async {

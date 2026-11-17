@@ -877,6 +877,7 @@ class ClaudeCodeKernel
 
   void _teardown({bool answering = true}) {
     _dispatchReservations.clear();
+    _pendingMemberStarts.clear();
     _translator.hostAgentApprovals = false;
     _usage?.close();
     _usage = null;
@@ -1854,7 +1855,18 @@ class ClaudeCodeKernel
             alias == null ||
             alias.isEmpty ||
             const {'sonnet', 'opus', 'haiku', 'fable'}.contains(alias);
-        final hookAllowed = allowed && validModel;
+        final recipient =
+            '${permission.input['to'] ?? permission.input['recipient'] ?? ''}';
+        final deleted =
+            permission.continuation &&
+            _sessionId != null &&
+            (_taskLedger?.isCliAgentDeleted(_sessionId!, recipient) ?? false);
+        final hookAllowed = allowed && validModel && !deleted;
+        if (hookAllowed &&
+            permission.continuation &&
+            permission.toolUseId != null) {
+          _pendingMemberStarts[recipient] = permission.toolUseId!;
+        }
         // A PreToolUse callback is not the private bao_agent can_use_agent
         // protocol. Its allow/rewrite belongs in hookSpecificOutput; deny
         // without updatedInput leaves no child to start.
@@ -1862,7 +1874,9 @@ class ClaudeCodeKernel
           'hookSpecificOutput': {
             'hookEventName': 'PreToolUse',
             'permissionDecision': hookAllowed ? 'allow' : 'deny',
-            'permissionDecisionReason': !validModel
+            'permissionDecisionReason': deleted
+                ? 'This team member was deleted; no continuation was started.'
+                : !validModel
                 ? 'This Claude Code CLI accepts only model aliases for Agent. '
                       'The subagent was not started.'
                 : allowed
@@ -2018,6 +2032,15 @@ class ClaudeCodeKernel
       return;
     }
     final recipient = '${input['to'] ?? input['recipient'] ?? ''}';
+    if (continuation &&
+        _sessionId != null &&
+        _taskLedger!.isCliAgentDeleted(_sessionId!, recipient)) {
+      _denyDispatch(
+        requestId,
+        'This team member was deleted; it cannot be resumed.',
+      );
+      return;
+    }
     final member = continuation && _sessionId != null
         ? _taskLedger
               ?.membersFor(_sessionId!)
@@ -2157,6 +2180,7 @@ class ClaudeCodeKernel
         return;
       }
       _dispatchReservations.add(call);
+      if (continuation) _pendingMemberStarts[recipient] = call;
       final alias = _cliAgentModels[ref]!;
       control.respond(requestId, {
         'hookSpecificOutput': {
@@ -2465,6 +2489,58 @@ class ClaudeCodeKernel
   }
 
   @override
+  Future<void> deleteAgentMember(String id) async {
+    final session = _sessionId;
+    await _ledgerReady;
+    final ledger = _taskLedger;
+    if (_disposed ||
+        _context.chatOnly ||
+        session == null ||
+        session != _sessionId ||
+        ledger == null) {
+      throw StateError('Team state is unavailable.');
+    }
+    final member = ledger.member(session, id);
+    final cliId = member?.cliAgentId;
+    if (cliId != null &&
+        (_pendingMemberStarts.containsKey(cliId) ||
+            _permissions.values.any(
+              (permission) =>
+                  permission.continuation &&
+                  (permission.input['to'] ?? permission.input['recipient']) ==
+                      cliId,
+            ))) {
+      throw StateError(
+        'This member has pending work; wait or cancel it before deleting.',
+      );
+    }
+    try {
+      await ledger.deleteMember(session, id);
+    } finally {
+      // Even a write failure keeps the in-memory deletion decision authoritative.
+      if (ledger.isMemberDeleted(session, id)) {
+        if (cliId != null) {
+          _memberCalls.remove(cliId);
+          _memberCards.remove(cliId);
+          _pendingMemberStarts.remove(cliId);
+        }
+        final deleted = ledger.deletedTaskIdsFor(session);
+        _activeCardCalls.removeWhere(
+          (key, value) => deleted.contains(key) || deleted.contains(value),
+        );
+        _dispatchReservations.removeAll(deleted);
+        _loadAgentTasks();
+        emitInfoChanged();
+      }
+    }
+  }
+
+  @override
+  Set<String> get deletedAgentTaskIds => _sessionId == null
+      ? const {}
+      : _taskLedger?.deletedTaskIdsFor(_sessionId!) ?? const {};
+
+  @override
   List<KernelAgentTask> get agentTasks => List.unmodifiable(_agentTasks);
 
   @override
@@ -2521,6 +2597,7 @@ class ClaudeCodeKernel
   final Map<String, String> _memberCards = {};
   final Map<String, String> _activeCardCalls = {};
   final Set<String> _dispatchReservations = {};
+  final Map<String, String> _pendingMemberStarts = {};
 
   Future<void> _loadTaskLedger(Future<AgentTaskLedger>? injected) async {
     if (!AppEdition.isAbyss ||
@@ -2639,6 +2716,14 @@ class ClaudeCodeKernel
       final call = message['tool_use_id'] as String?;
       if (agentId == null || call == null) return;
       _dispatchReservations.remove(call);
+      _pendingMemberStarts.remove(agentId);
+      if (ledger.isCliAgentDeleted(session, agentId) ||
+          ledger.deletedTaskIdsFor(session).contains(call)) {
+        ledger.rememberDeletedCall(session, agentId, call);
+        _loadAgentTasks();
+        emitInfoChanged();
+        return;
+      }
       _memberCalls[agentId] = call;
       final card = _memberCards.putIfAbsent(agentId, () => call);
       _activeCardCalls[card] = call;
@@ -2703,6 +2788,8 @@ class ClaudeCodeKernel
         for (final block in content.whereType<Map>()) {
           if (block['type'] == 'tool_result' && block['is_error'] == true) {
             _dispatchReservations.remove(block['tool_use_id']);
+            // An approved continuation may still start despite a failed send.
+            // Keep its deletion guard until task_started or teardown.
           }
         }
       }

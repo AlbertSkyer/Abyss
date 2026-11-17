@@ -3,17 +3,19 @@ import 'package:flutter/material.dart';
 import '../../ide/ide_button.dart';
 import '../../ide/ide_dialog.dart';
 import '../../kernel/kernel_types.dart';
+import '../../l10n/l10n.dart';
 import '../../models/model_providers.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/agent_step.dart';
 
 /// Host-managed members. Editing their identity or availability does not
 /// send a message, dispatch work, or stop a running task.
-class AgentTeamPage extends StatelessWidget {
+class AgentTeamPage extends StatefulWidget {
   const AgentTeamPage({
     super.key,
     required this.members,
     required this.onUpdate,
+    required this.onDelete,
     required this.onShowTasks,
     required this.statusLabel,
     required this.description,
@@ -24,8 +26,6 @@ class AgentTeamPage extends StatelessWidget {
     required this.roleLabel,
     required this.disableLabel,
     required this.enableLabel,
-    required this.archiveLabel,
-    required this.unarchiveLabel,
     required this.showTasksLabel,
     required this.tasksLabel,
   });
@@ -39,6 +39,7 @@ class AgentTeamPage extends StatelessWidget {
     bool? archived,
   })
   onUpdate;
+  final Future<void> Function(String id) onDelete;
   final ValueChanged<String> onShowTasks;
   final String Function(AgentMemberStatus status) statusLabel;
   final String description;
@@ -49,19 +50,24 @@ class AgentTeamPage extends StatelessWidget {
   final String roleLabel;
   final String disableLabel;
   final String enableLabel;
-  final String archiveLabel;
-  final String unarchiveLabel;
   final String showTasksLabel;
   final String Function(int count) tasksLabel;
+
+  @override
+  State<AgentTeamPage> createState() => _AgentTeamPageState();
+}
+
+class _AgentTeamPageState extends State<AgentTeamPage> {
+  final _deleting = <String>{};
 
   Future<void> _edit(BuildContext context, KernelAgentMember member) async {
     final result = await showIdeInputDialog(
       context,
       message: member.name,
-      buttons: [saveLabel],
+      buttons: [widget.saveLabel],
       inputs: [
-        IdeDialogInput(placeholder: nameLabel, value: member.name),
-        IdeDialogInput(placeholder: roleLabel, value: member.role),
+        IdeDialogInput(placeholder: widget.nameLabel, value: member.name),
+        IdeDialogInput(placeholder: widget.roleLabel, value: member.role),
       ],
       type: IdeDialogType.question,
     );
@@ -69,7 +75,35 @@ class AgentTeamPage extends StatelessWidget {
     final name = result.values[0].trim();
     final role = result.values[1].trim();
     if (name.isEmpty || (name == member.name && role == member.role)) return;
-    onUpdate(member.id, name: name, role: role);
+    widget.onUpdate(member.id, name: name, role: role);
+  }
+
+  Future<void> _delete(KernelAgentMember member) async {
+    if (_deleting.contains(member.id)) return;
+    final l10n = context.l10n;
+    final onDelete = widget.onDelete;
+    final choice = await showIdeDialog(
+      context,
+      message: l10n.teamDeleteTitle(member.name),
+      detail: l10n.teamDeleteDescription,
+      buttons: [l10n.commonDelete],
+    );
+    if (choice != 0 || !mounted || _deleting.contains(member.id)) return;
+    setState(() => _deleting.add(member.id));
+    try {
+      await onDelete(member.id);
+    } on Object catch (error) {
+      if (!mounted) return;
+      await showIdeDialog(
+        context,
+        message: l10n.teamDeleteFailure('$error'),
+        buttons: [l10n.commonOk],
+        cancel: null,
+        type: IdeDialogType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _deleting.remove(member.id));
+    }
   }
 
   @override
@@ -80,7 +114,7 @@ class AgentTeamPage extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
           child: Text(
-            description,
+            widget.description,
             style: TextStyle(
               color: AppColors.textFaint,
               fontSize: 11,
@@ -90,10 +124,10 @@ class AgentTeamPage extends StatelessWidget {
         ),
         const Divider(height: 1),
         Expanded(
-          child: members.isEmpty
+          child: widget.members.isEmpty
               ? Center(
                   child: Text(
-                    emptyLabel,
+                    widget.emptyLabel,
                     style: TextStyle(
                       color: AppColors.textFaint,
                       fontSize: 12.5,
@@ -102,14 +136,16 @@ class AgentTeamPage extends StatelessWidget {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: members.length,
+                  itemCount: widget.members.length,
                   itemBuilder: (context, index) {
-                    final member = members[index];
+                    final member = widget.members[index];
                     return _MemberRow(
                       key: ValueKey(('team-member', member.id)),
                       member: member,
-                      page: this,
+                      page: widget,
+                      deleting: _deleting.contains(member.id),
                       onEdit: () => _edit(context, member),
+                      onDelete: () => _delete(member),
                     );
                   },
                 ),
@@ -124,12 +160,16 @@ class _MemberRow extends StatelessWidget {
     super.key,
     required this.member,
     required this.page,
+    required this.deleting,
     required this.onEdit,
+    required this.onDelete,
   });
 
   final KernelAgentMember member;
   final AgentTeamPage page;
+  final bool deleting;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -206,11 +246,9 @@ class _MemberRow extends StatelessWidget {
                 ),
                 if (member.status != AgentMemberStatus.running)
                   IdeButton(
-                    label: member.archived
-                        ? page.unarchiveLabel
-                        : page.archiveLabel,
-                    onPressed: () =>
-                        page.onUpdate(member.id, archived: !member.archived),
+                    key: ValueKey(('team-member-delete', member.id)),
+                    label: context.l10n.teamDeleteMember,
+                    onPressed: deleting ? null : onDelete,
                     secondary: true,
                   ),
                 TextButton(

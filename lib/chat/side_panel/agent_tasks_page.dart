@@ -34,6 +34,7 @@ class AgentTasksPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     if (session.agentTasks.isNotEmpty ||
+        session.deletedAgentTaskIds.isNotEmpty ||
         session.loadingAgentTasks ||
         session.agentTasksError != null ||
         panel.tabsOf(session).agentMemberId != null) {

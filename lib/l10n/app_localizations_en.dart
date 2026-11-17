@@ -99,6 +99,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get teamShowTasks => 'Show tasks';
 
   @override
+  String get teamDeleteMember => 'Delete member';
+
+  @override
+  String teamDeleteTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get teamDeleteDescription =>
+      'This will permanently delete this member and its team task and result records. The main conversation, project files, and shared CLI history will be left untouched. This cannot be undone.';
+
+  @override
+  String teamDeleteFailure(String error) {
+    return 'Could not delete the team member: $error';
+  }
+
+  @override
   String get agentTasksAll => 'All tasks';
 
   @override

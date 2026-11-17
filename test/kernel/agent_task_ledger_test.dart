@@ -30,7 +30,7 @@ void main() {
 
   test('a cancelled start survives reload and a late failure', () async {
     final ledger = await AgentTaskLedger.open(path: path);
-    final cancelled = ledger.cancelStart('main', 'tool-1');
+    final cancelled = ledger.cancelStart('main', 'tool-1')!;
     expect(cancelled.memberId, 'pending:tool-1');
     expect(cancelled.taskId, 'task:tool-1');
     expect(cancelled.status, AgentTaskStatus.cancelled);
@@ -61,7 +61,7 @@ void main() {
       taskId: 'task-1',
       description: 'Inspector',
     );
-    expect(started.memberId, 'member-1');
+    expect(started!.memberId, 'member-1');
     expect(started.status, AgentTaskStatus.cancelled);
     final completed = restored.recordEnd(
       'main',
@@ -79,6 +79,107 @@ void main() {
     expect(saved['hostCancelled'], isTrue);
     expect(saved['result'], isNot('late completion'));
   });
+
+  test(
+    'delete removes member runs and reports durably without resurrection',
+    () async {
+      final ledger = await AgentTaskLedger.open(path: path);
+      for (final session in ['main', 'other']) {
+        ledger.recordMember(
+          sessionId: session,
+          memberId: 'm',
+          cliAgentId: 'cli-m',
+          archived: true,
+        );
+        for (final call in ['first', 'second']) {
+          ledger.recordStart(
+            sessionId: session,
+            memberId: 'm',
+            toolUseId: call,
+            taskId: 'task:$call',
+          );
+          ledger.recordEnd(
+            session,
+            call,
+            status: AgentTaskStatus.completed,
+            result: 'private report',
+          );
+        }
+      }
+      await ledger.deleteMember('main', 'm');
+      expect(ledger.membersFor('main'), isEmpty);
+      expect(ledger.tasksFor('main'), isEmpty);
+      expect(ledger.tasksFor('other'), hasLength(2));
+      expect(ledger.deletedTaskIdsFor('main'), {'first', 'second'});
+      final reopened = await reload();
+      expect(reopened.isMemberDeleted('main', 'm'), isTrue);
+      expect(reopened.isCliAgentDeleted('main', 'cli-m'), isTrue);
+      expect(
+        reopened.recordMember(
+          sessionId: 'main',
+          memberId: 'new-id',
+          cliAgentId: 'cli-m',
+        ),
+        isNull,
+      );
+      expect(
+        reopened.recordStart(
+          sessionId: 'main',
+          memberId: 'm',
+          toolUseId: 'late',
+          taskId: 'late',
+        ),
+        isNull,
+      );
+      expect(reopened.cancelStart('main', 'first'), isNull);
+      expect(
+        reopened.recordEnd('main', 'first', status: AgentTaskStatus.completed),
+        isNull,
+      );
+      expect(reopened.reconcileInterrupted('main'), isEmpty);
+      await reopened.deleteMember('main', 'm');
+      expect(reopened.membersFor('main'), isEmpty);
+      expect(reopened.tasksFor('main'), isEmpty);
+      final raw = jsonDecode(await File(reopened.path).readAsString()) as Map;
+      expect(
+        raw['deletedMembers'].toString(),
+        isNot(contains('private report')),
+      );
+    },
+  );
+
+  test(
+    'delete refuses running and unknown members and surfaces write failures',
+    () async {
+      final ledger = await AgentTaskLedger.open(path: path);
+      ledger.recordMember(
+        sessionId: 'main',
+        memberId: 'm',
+        cliAgentId: 'cli-m',
+      );
+      ledger.recordStart(
+        sessionId: 'main',
+        memberId: 'm',
+        toolUseId: 'call',
+        taskId: 'task',
+      );
+      await expectLater(ledger.deleteMember('main', 'm'), throwsStateError);
+      expect(ledger.membersFor('main'), hasLength(1));
+      await expectLater(ledger.deleteMember('other', 'm'), throwsStateError);
+      ledger.recordEnd('main', 'call', status: AgentTaskStatus.completed);
+      await ledger.flush();
+      await File(path).delete();
+      await Directory(path).create();
+      await expectLater(
+        ledger.deleteMember('main', 'm'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(ledger.isMemberDeleted('main', 'm'), isTrue);
+      await Directory(path).delete();
+      await ledger.deleteMember('main', 'm');
+      expect((await reload()).membersFor('main'), isEmpty);
+    },
+  );
 
   test('host stop is cancelled but keeps its distinct decision', () async {
     final ledger = await AgentTaskLedger.open(path: path);
@@ -179,7 +280,7 @@ void main() {
       memberId: 'member-1',
       taskId: 'task-0',
     );
-    expect(duplicate.runId, 'run-0');
+    expect(duplicate!.runId, 'run-0');
     expect(duplicate.model, 'model-name');
     expect(duplicate.description, 'Research');
     expect(restored.tasksFor('other'), isEmpty);
@@ -227,7 +328,7 @@ void main() {
         memberId: 'member-1',
         taskId: 'task-1',
       );
-      expect(lateStart.status, AgentTaskStatus.interrupted);
+      expect(lateStart!.status, AgentTaskStatus.interrupted);
       await ledger.flush();
       expect(
         (await reload()).findTask('main', 'running')!.status,
@@ -256,7 +357,7 @@ void main() {
       taskId: 'task-a',
       description: 'A',
     );
-    expect(associated.memberId, 'member-a');
+    expect(associated!.memberId, 'member-a');
     expect(associated.taskId, 'task-a');
     expect(associated.status, AgentTaskStatus.cancelled);
     expect(ledger.findTask('main', 'tool-b')!.memberId, 'pending:tool-b');

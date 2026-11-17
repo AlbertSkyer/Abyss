@@ -188,6 +188,11 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
     _ => const [],
   };
 
+  Set<String> get deletedAgentTaskIds => switch (_kernel) {
+    final ReportsAgentTasks kernel => kernel.deletedAgentTaskIds,
+    _ => const {},
+  };
+
   bool get loadingAgentTasks => switch (_kernel) {
     final ReportsAgentTasks kernel => kernel.loadingAgentTasks,
     _ => false,
@@ -264,6 +269,14 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
         break;
       }
     }
+  }
+
+  Future<void> deleteAgentMember(String id) async {
+    if (_kernel case final ManagesAgentMembers kernel) {
+      await kernel.deleteAgentMember(id);
+      return;
+    }
+    throw StateError('Team member deletion is unavailable.');
   }
 
   void updateAgentMember(
@@ -346,7 +359,7 @@ class ChatSession extends ChangeNotifier implements ChatFeed {
         final tree = <({AgentItem agent, List<String> path, int depth})>[];
         void walk(AgentItem agent, List<String> path, int depth) {
           final id = agent.id;
-          if (id == null) return;
+          if (id == null || deletedAgentTaskIds.contains(id)) return;
           final here = [...path, id];
           tree.add((agent: agent, path: here, depth: depth));
           for (final child in agent.children) {

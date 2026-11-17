@@ -409,6 +409,9 @@ abstract interface class ManagesMcpServers {
 abstract interface class ManagesAgentMembers {
   List<KernelAgentMember> get agentMembers;
 
+  /// Deletes this member's team records, never its main conversation.
+  Future<void> deleteAgentMember(String id);
+
   void updateAgentMember(
     String id, {
     String? name,
@@ -421,6 +424,7 @@ abstract interface class ManagesAgentMembers {
 /// Reports durable host-agent runs without reading or replaying a transcript.
 abstract interface class ReportsAgentTasks {
   List<KernelAgentTask> get agentTasks;
+  Set<String> get deletedAgentTaskIds;
   bool get loadingAgentTasks;
   String? get agentTasksError;
 }

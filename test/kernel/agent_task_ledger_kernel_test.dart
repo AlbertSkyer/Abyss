@@ -479,6 +479,145 @@ void main() {
       },
     );
 
+    test('member deletion refuses pending work and survives late events and resume', () async {
+      ledger.recordMember(
+        sessionId: 'delete-team',
+        memberId: 'member:cli-m',
+        cliAgentId: 'cli-m',
+        model: '@p/model',
+      );
+      ledger.recordStart(
+        sessionId: 'delete-team',
+        toolUseId: 'old-call',
+        memberId: 'member:cli-m',
+        taskId: 'old-task',
+      );
+      ledger.recordEnd(
+        'delete-team',
+        'old-call',
+        status: AgentTaskStatus.completed,
+        result: 'old report',
+      );
+      final cli = FakeCli();
+      final kernel = ClaudeCodeKernel(
+        MockKernels.claudeCode,
+        const KernelContext(cwd: '/p'),
+        start: (_) async => cli,
+        taskLedger: Future.value(ledger),
+      );
+      addTearDown(kernel.dispose);
+      kernel.prepare();
+      await pumpEventQueue(times: 20);
+      cli.push({
+        'type': 'system',
+        'subtype': 'init',
+        'session_id': 'delete-team',
+      });
+      await pumpEventQueue();
+      void continuation(String id) => cli.push({
+        'type': 'control_request',
+        'request_id': id,
+        'request': {
+          'subtype': 'hook_callback',
+          'callback_id': 'baocode-approve-agent',
+          'input': {
+            'tool_name': 'SendMessage',
+            'tool_use_id': id,
+            'tool_input': {
+              'to': 'cli-m',
+              'message': 'More work',
+              'summary': 'More work',
+            },
+          },
+        },
+      });
+      continuation('pending');
+      await pumpEventQueue();
+      await expectLater(
+        kernel.deleteAgentMember('member:cli-m'),
+        throwsStateError,
+      );
+      kernel.answer(
+        'pending',
+        const ApprovalAnswer(ApprovalDecision.allowOnce),
+      );
+      await expectLater(
+        kernel.deleteAgentMember('member:cli-m'),
+        throwsStateError,
+      );
+      cli.push(result('pending'));
+      await pumpEventQueue();
+      await expectLater(
+        kernel.deleteAgentMember('member:cli-m'),
+        throwsStateError,
+      );
+      cli.push({
+        'type': 'system',
+        'subtype': 'task_started',
+        'task_type': 'local_agent',
+        'task_id': 'cli-m',
+        'tool_use_id': 'pending',
+      });
+      await pumpEventQueue();
+      await expectLater(
+        kernel.deleteAgentMember('member:cli-m'),
+        throwsStateError,
+      );
+      cli.push({
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'cli-m',
+        'tool_use_id': 'pending',
+        'status': 'completed',
+      });
+      await pumpEventQueue();
+      await kernel.deleteAgentMember('member:cli-m');
+      expect(kernel.agentMembers, isEmpty);
+      expect(kernel.agentTasks, isEmpty);
+      expect(kernel.deletedAgentTaskIds, contains('old-call'));
+      cli.push({
+        'type': 'system',
+        'subtype': 'task_started',
+        'task_type': 'local_agent',
+        'task_id': 'cli-m',
+        'tool_use_id': 'unknown-late-call',
+      });
+      await pumpEventQueue();
+      expect(kernel.deletedAgentTaskIds, contains('unknown-late-call'));
+      expect(kernel.agentMembers, isEmpty);
+      continuation('deleted-resume');
+      await pumpEventQueue();
+      final output = cli.responses.last['hookSpecificOutput'] as Map;
+      expect(output['permissionDecision'], 'deny');
+      expect(output['permissionDecisionReason'], contains('deleted'));
+      kernel.dispose();
+      await kernel.stopped;
+      final restored = ClaudeCodeKernel(
+        MockKernels.claudeCode,
+        KernelContext(
+          cwd: '/p',
+          resume: SessionRecord(
+            id: 'delete-team',
+            title: 'Restored',
+            updatedAt: DateTime(2026),
+            cwd: '/p',
+          ),
+        ),
+        start: (_) async => FakeCli(),
+        taskLedger: Future.value(ledger),
+        readHistoryPage: (_, {required turns, before}) async =>
+            ClaudeHistoryPage([
+              call('old-call'),
+              result('old-call', error: false),
+            ]),
+      );
+      addTearDown(restored.dispose);
+      await pumpEventQueue();
+      expect(restored.agentMembers, isEmpty);
+      expect(restored.agentTasks, isEmpty);
+      expect(restored.deletedAgentTaskIds, contains('old-call'));
+    });
+
     test('task stop keeps its decision when CLI reports failed', () async {
       final cli = FakeCli();
       final kernel = ClaudeCodeKernel(

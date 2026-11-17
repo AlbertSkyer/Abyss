@@ -4453,6 +4453,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       return AgentTeamPage(
         members: thread.session.agentMembers,
         onUpdate: thread.session.updateAgentMember,
+        onDelete: thread.session.deleteAgentMember,
         onShowTasks: (memberId) {
           _workspace.select(thread);
           _sidePanel.showAgentTasks(thread.session, memberId: memberId);
@@ -4473,8 +4474,6 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         roleLabel: l10n.teamRole,
         disableLabel: l10n.teamDisable,
         enableLabel: l10n.teamEnable,
-        archiveLabel: l10n.sidebarArchive,
-        unarchiveLabel: l10n.teamRestore,
         showTasksLabel: l10n.teamShowTasks,
         tasksLabel: (count) => '$count',
       );

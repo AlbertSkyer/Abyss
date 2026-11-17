@@ -266,6 +266,30 @@ abstract class AppLocalizations {
   /// **'Show tasks'**
   String get teamShowTasks;
 
+  /// No description provided for @teamDeleteMember.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete member'**
+  String get teamDeleteMember;
+
+  /// Confirmation title for permanently deleting a team member.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}?'**
+  String teamDeleteTitle(String name);
+
+  /// No description provided for @teamDeleteDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete this member and its team task and result records. The main conversation, project files, and shared CLI history will be left untouched. This cannot be undone.'**
+  String get teamDeleteDescription;
+
+  /// Error shown when permanently deleting a team member fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the team member: {error}'**
+  String teamDeleteFailure(String error);
+
   /// No description provided for @agentTasksAll.
   ///
   /// In en, this message translates to:
