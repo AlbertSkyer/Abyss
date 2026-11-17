@@ -345,3 +345,14 @@
 - 未执行完整隔离安装/升级/卸载，未在另一台电脑实测；安装器未签名。最初仅本地交付；2026-11-17用户明确要求提交推送并发布GitHub Release，使用已核验的1.9.10安装器和0.1.0扩展ZIP，保留1.9.9及旧附件。不商店上架，发版不扩大上述验收结论。
 - 自动化页面操作、SDK调用与共享拒绝覆盖已述场景；真实toolbar共享/取消、所有console/network诊断操作及长时间重连未逐项穷举手工验收。macOS/Linux的Abyss扩展本次不启用、不宣称支持。
 - 安装步骤及权限限制见 `docs/abyss-browser-extension.md`。
+
+## 提升令牌端点所有权修复（2026-11-17）
+
+- 用户从另一台内置Administrator电脑反馈只读诊断：注册、宿主、端口监听均正常，但port/lock文件owner为Administrators组；宿主按TokenUser核验owner，因此不连接。源码检查确认目录owner不会传递给提升令牌创建的文件，这是1.9.10兼容缺陷，不是扩展/manifest安装问题。
+- 应用在原子发布端口前显式设置port staging和lock文件owner为当前TokenUser，施加受保护、仅当前用户/SYSTEM/Administrators的DACL，并回读校验；失败不发布文件，清理staging并关闭server/lock。宿主严格owner/DACL/reparse/token/origin校验不放松，BaoCode路径不变。
+- 本机非提升令牌下：endpoint/bridge定向5通过、Windows不适用旧Unix用例5跳过；修改模块analyze无问题。独立owner probe验证原子rename后port与lock owner均是当前用户。
+- 修复后的Dart桥经原1.9.10真实宿主+独立扩展+临时Edge完成页面输入/点击/截图及SDK协议路径回归（`build/browser-owner-fix-edge-live.log`），截图已查看。不代表本轮启动真实付费模型。
+- 提升令牌验收脚本 `windows/BrowserBridge/tests/endpoint_owner_probe.ps1` 可在全新隔离目录验证修复前默认owner与修复后owner；本机未提升，未申请UAC或伪称内置Administrator环境实测通过，仍待报告问题的电脑复验。
+- 配套修复版本1.9.11+37，扩展0.1.0/ID及原生宿主保持不变，不要求重装扩展、修改registry或关闭UAC。最初仅本地修复交付；用户随后明确要求提交推送并发布1.9.11 GitHub Release，复用已核验安装器，保留1.9.10及旧附件。发版不扩大提升令牌环境的验收结论。
+- 安装器 `dist/Abyss-1.9.11-owner-fix-delivery/Abyss-1.9.11-setup.exe`，26,400,978字节，SHA-256 `5B5DD92833147A8FE14A2ED67F849149EB41327EE7E4BE5C774EA4CE5CD0A31A`；完整Release/ISCC成功，日志 `build/abyss-1.9.11-owner-fix-build.log`。
+- 实际启动新目录 `dist/Abyss-1.9.11-owner-fix`，about显示1.9.11（37），实际port/lock owner均匹配当前用户且DACL受保护，未输出令牌。app.so SHA-256 `3054DE3F5A1C3E30D21C9A1EF990AC2A419315AC5C456D75A103A3E2499D99B7`。BaoCode loopback定向2项、版本5项另通过；未运行全套。

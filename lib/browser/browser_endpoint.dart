@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 /// Establishes the private directory before a Windows bridge token is written.
@@ -16,6 +17,52 @@ abstract final class BrowserEndpoint {
       );
     }
   }
+
+  /// Fix the files themselves: a directory's owner is not inherited by files
+  /// created with an elevated token (whose default owner can be Administrators).
+  /// Called before the temporary port file is published to the native host.
+  static Future<void> secureFiles(List<String> paths) async {
+    final result = await Process.run(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', secureFilesScript],
+      environment: {'ABYSS_BROWSER_ENDPOINT_FILES': jsonEncode(paths)},
+      includeParentEnvironment: true,
+    );
+    if (result.exitCode != 0) {
+      throw const FileSystemException(
+        'Could not secure browser endpoint files',
+      );
+    }
+  }
+
+  static const secureFilesScript = r'''
+$ErrorActionPreference = 'Stop'
+$user = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$allowed = @($user.Value, 'S-1-5-18', 'S-1-5-32-544')
+$paths = ConvertFrom-Json -InputObject $env:ABYSS_BROWSER_ENDPOINT_FILES
+foreach ($path in $paths) {
+  $file = Get-Item -LiteralPath $path -Force
+  if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe endpoint file' }
+  $parent = $file.Directory
+  while ($null -ne $parent) {
+    if ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse endpoint ancestor' }
+    $parent = $parent.Parent
+  }
+  $security = New-Object Security.AccessControl.FileSecurity
+  $security.SetOwner($user)
+  $security.SetAccessRuleProtection($true, $false)
+  foreach ($sid in $allowed) {
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+      [Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'Allow'))
+  }
+  $file.SetAccessControl($security)
+  $actual = $file.GetAccessControl([Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Access)
+  if (-not $actual.GetOwner([Security.Principal.SecurityIdentifier]).Equals($user) -or -not $actual.AreAccessRulesProtected) { throw 'Endpoint security verification failed' }
+  foreach ($rule in $actual.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+    if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin $allowed) { throw 'Unexpected endpoint access' }
+  }
+}
+''';
 
   static const secureScript = r'''
 $ErrorActionPreference = 'Stop'

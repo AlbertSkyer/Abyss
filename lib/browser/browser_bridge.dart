@@ -254,6 +254,7 @@ class BrowserBridge extends ChangeNotifier {
       return null;
     }
     ServerSocket? server;
+    File? written;
     try {
       server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       final random = Random.secure();
@@ -261,9 +262,13 @@ class BrowserBridge extends ChangeNotifier {
         for (var i = 0; i < 32; i++)
           random.nextInt(256).toRadixString(16).padLeft(2, '0'),
       ].join();
-      final written = File('$portPath.${server.port}');
+      written = File('$portPath.${server.port}');
       await written.writeAsString('${server.port} $token', flush: true);
+      if (AppEdition.isAbyss && Platform.isWindows) {
+        await BrowserEndpoint.secureFiles([written.path, _lockPath]);
+      }
       await written.rename(portPath);
+      written = null;
       _lock = lock;
       _token = token;
       return server;
@@ -271,6 +276,11 @@ class BrowserBridge extends ChangeNotifier {
       debugPrint('browser bridge: $error');
       await server?.close();
       await lock.close();
+      try {
+        if (written != null && await written.exists()) await written.delete();
+      } on FileSystemException {
+        // A private staging file may already have been removed.
+      }
       return null;
     }
   }
