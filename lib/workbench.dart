@@ -4562,10 +4562,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       _scratchThread = null;
       _scratchChoosing = true;
     }
-    final candidate =
-        _scratchChoosing && _workspace.threads.contains(_scratchSource)
-        ? _scratchSource
-        : current;
+    final candidate = current ?? _scratchSource;
     final source = candidate == null
         ? null
         : _workspace.isScratch(candidate)
@@ -4598,6 +4595,12 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(l10n.scratchDescription),
+            if (source != null)
+              Text(
+                '${l10n.scratchSnapshot}: ${source.localizedTitle(l10n)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             if (history.isNotEmpty)
               DropdownButton<AgentThread>(
                 isExpanded: true,
@@ -4694,7 +4697,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                 secondary: true,
                 onPressed: _scratchOpening
                     ? null
-                    : () => _chooseScratch(origin ?? source),
+                    : () => _chooseScratch(source ?? origin),
               ),
               IdeActionButton(
                 icon: Codicons.trash,

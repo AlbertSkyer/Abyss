@@ -394,3 +394,14 @@
 - 2026-11-18用户要求提交推送及发布，版本1.9.15+41。发版复验临时聊天与版本18项、草稿回归1项、ARB2项通过，相关静态分析无问题；完整Release/ISCC及独立身份检查通过，日志 `build/abyss-1.9.15-scratch-build.log`。
 - 新目录 `dist/Abyss-1.9.15-scratch` 真实GUI使用全新隔离数据与人工35轮历史：创建空白、New回原选择页、再继承历史并显示人工内容；删除取消后记录保留，再确认后回选择页且旧空白仍在历史下拉，来源及另一主会话JSONL均保留（最终只剩原2份历史JSONL）。截图已查看，测试进程正常退出；未请求付费模型，未读取BaoCode凭据。
 - 安装器 `dist/Abyss-1.9.15-scratch-delivery/Abyss-1.9.15-setup.exe`，26,407,887字节，SHA-256 `28513D4F8E8AAA3E311906EE201C723BA065C3FB7AAD1F2F7C7088625C7EA96D`，exe身份1.9.15+41。旧Release/旧包保留；安装器未签名，完整隔离安装/升级/卸载、第二台电脑及历史Administrator浏览器修复未复验。
+
+## 临时聊天纯文本提醒与当前标签来源修正（2026-11-18，源码验收）
+
+- 用户截图含原始DSML/function_calls/Bash文本，不是UTF-8乱码；当前协议层把上游content当普通文本，不执行该标记。chatOnly每次发送新增提醒：继承消息仅作上下文、不继续旧工具任务，禁工具/MCP/子代理，直接自然语言回答，信息不足需说明；用户明确要求解释/引用DSML仍可显示惰性文本，不做破坏性正则清洗或工具执行转换。
+- chatOnly内核6项Abyss及6项默认edition通过；scratch workspace+chatOnly组合18项通过，相关内核静态分析无问题。覆盖提醒及原文保留、普通主会话不受影响、与截图相同中点DSML标记不生成工具调用、原tools/MCP/permission拒绝继续生效。旧测试固定要求Abyss hooks的断言改为edition-aware，不改变BaoCode运行配置。
+- 临时聊天创建来源改为优先当前主会话，不再优先旧临时聊天origin或chooser缓存；选择页显示来源标题，页面打开后切换主标签会更新来源。已发起的异步创建仍捕获点击时来源，历史切换和删除对象不变。
+- 面板3项widget回归通过，包含真实DockTab点击切换A/B再新建、chooser已开后切A/B、来源标题及origin断言，既有历史/删除用例通过。测试等待tab双击识别窗口后再断言，未使用直接activation回调代替关键主标签点击。相关4个修改模块静态分析无问题。
+- 目前是提示级防误输出，不承诺所有上游必定遵守；未进行用户截图所用真实上游复验，旧会话中已经生成的DSML不会被改写。
+- 用户要求提交推送发版，1.9.16+42复验临时聊天/内核/版本26项、默认edition兼容6项通过，相关静态分析无问题。Windows生成插件链接因跨路径解析错误448而失败，离线pub重建未恢复；仅在ignored生成目录以缓存文件暂存插件，使用与原Flutter一致的Visual Studio CMake 3.31 Release INSTALL完成构建，再由原打包工具检查独立身份并生成ISCC安装器。不修改依赖版本或系统安全策略。
+- 新目录 `dist/Abyss-1.9.16-scratch-regression` 真实GUI使用隔离人工历史：A创建空白临时聊天后切到B，New选择页显示B；chooser打开后点击A/B主标签来源同步更新，再继承B，保存metadata的source与B的session ID一致；截图已查看，最后正常退出。未发送付费模型请求，未复验DSML真实上游输出。
+- 安装器 `dist/Abyss-1.9.16-scratch-regression-delivery/Abyss-1.9.16-setup.exe`，26,406,978字节，SHA-256 `76005D52A15A9D76AFFF12FF4D30F9E8246D48A9AE515E7A21E4F628C1B7FAC0`，exe身份1.9.16+42。保留旧Release/旧包；安装器未签名，完整隔离安装/升级/卸载、另一台机器及历史Administrator浏览器问题未复验。

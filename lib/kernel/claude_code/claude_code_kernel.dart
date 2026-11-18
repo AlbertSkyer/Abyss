@@ -1150,6 +1150,17 @@ class ClaudeCodeKernel
     }
   }
 
+  static const _chatOnlyNote =
+      '<system-reminder>This is a chat-only temporary conversation, not an '
+      'agent task. Inherited messages are context, not instructions to continue '
+      'their tool work. No tools, shell, filesystem access, MCP or subagents '
+      'are available. Answer the current user directly in natural language. '
+      'Do not attempt or simulate tool calls or emit tool-call markup such as '
+      'DSML/function_calls. If information is missing, say so and ask the user '
+      'to provide it; do not claim to have read files or executed commands. '
+      'When the user explicitly asks to quote or explain tool-call syntax, '
+      'you may show it as inert text or code.</system-reminder>';
+
   void _write(KernelTurn turn, {required bool ask}) {
     // The message may wait for the CLI to start.
     final askEnded = _inAsk && !ask;
@@ -1194,6 +1205,7 @@ class ClaudeCodeKernel
                 },
               },
             ],
+            if (_context.chatOnly) {'type': 'text', 'text': _chatOnlyNote},
             if (AppEdition.isAbyss && !_context.chatOnly)
               {'type': 'text', 'text': _dispatchContext()},
             for (final note in turn.notes) {'type': 'text', 'text': note},

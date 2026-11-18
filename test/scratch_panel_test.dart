@@ -8,7 +8,125 @@ import 'package:baocode/workspace/workspace.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+const _mainBTitle = 'Sticky user message on scroll';
+
 void main() {
+  testWidgets(
+    'temporary chat creation follows the currently viewed main conversation',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final workspace = Workspace.mock();
+      await tester.pumpWidget(BaoCodeApp(workspace: workspace));
+      await tester.pump();
+      final mainA = workspace.current!;
+      final mainB = workspace.threads.firstWhere(
+        (thread) => thread.title == _mainBTitle,
+      );
+      workspace.openChatTab(mainB);
+      await tester.pumpAndSettle();
+      workspace.openChatTab(mainA);
+      await tester.pumpAndSettle();
+      expect(workspace.current, same(mainA));
+      final dock = tester.widget<DockHost>(find.byType(DockHost));
+      dock.controller.open('scratch');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(IdeButton, 'Start empty chat'));
+      await tester.pumpAndSettle();
+      final scratchA = workspace.scratchChats.single;
+      expect(workspace.scratchOrigin(scratchA), same(mainA));
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            ValueKey('dock-tab-${workspace.chatDock.panelId(mainB)}'),
+          ),
+          matching: find.text(_mainBTitle),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(workspace.current, same(mainB));
+      await tester.tap(find.byKey(const ValueKey('dock-tab-scratch')));
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(IdeButton, 'New temporary chat'));
+      await tester.pumpAndSettle();
+      expect(find.text('Snapshot from: $_mainBTitle'), findsOneWidget);
+      await tester.tap(find.widgetWithText(IdeButton, 'Start empty chat'));
+      await tester.pumpAndSettle();
+      expect(workspace.scratchChats, hasLength(2));
+      final scratchB = workspace.scratchChats.singleWhere(
+        (scratch) => !identical(scratch, scratchA),
+      );
+      expect(workspace.scratchOrigin(scratchB), same(mainB));
+      expect(workspace.scratchOrigin(scratchA), same(mainA));
+      await tester.pumpWidget(const SizedBox());
+    },
+    skip: !AppEdition.isAbyss,
+  );
+
+  testWidgets('open temporary chat chooser follows actual dock tab switches', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final workspace = Workspace.mock();
+    await tester.pumpWidget(BaoCodeApp(workspace: workspace));
+    await tester.pump();
+    final mainA = workspace.current!;
+    final mainB = workspace.threads.firstWhere(
+      (thread) => thread.title == _mainBTitle,
+    );
+    workspace.openChatTab(mainB);
+    await tester.pumpAndSettle();
+    workspace.openChatTab(mainA);
+    await tester.pumpAndSettle();
+    expect(workspace.current, same(mainA));
+    final dock = tester.widget<DockHost>(find.byType(DockHost));
+    dock.controller.open('scratch');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(IdeButton, 'Start empty chat'));
+    await tester.pumpAndSettle();
+    final scratchA = workspace.scratchChats.single;
+    await tester.tap(find.widgetWithText(IdeButton, 'New temporary chat'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(ValueKey('dock-tab-${workspace.chatDock.panelId(mainB)}')),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('dock-tab-scratch')));
+    await tester.tap(find.byKey(const ValueKey('dock-tab-scratch')));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(workspace.current, same(mainB));
+    expect(find.text('Snapshot from: $_mainBTitle'), findsOneWidget);
+    await tester.tap(
+      find.byKey(ValueKey('dock-tab-${workspace.chatDock.panelId(mainA)}')),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('dock-tab-scratch')));
+    await tester.tap(find.byKey(const ValueKey('dock-tab-scratch')));
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(workspace.current, same(mainA));
+    expect(find.text('Snapshot from: ${mainA.title}'), findsOneWidget);
+    await tester.tap(find.widgetWithText(IdeButton, 'Start empty chat'));
+    await tester.pumpAndSettle();
+    expect(workspace.scratchChats, hasLength(2));
+    final latest = workspace.scratchChats.singleWhere(
+      (scratch) => !identical(scratch, scratchA),
+    );
+    expect(workspace.scratchOrigin(latest), same(mainA));
+    expect(workspace.scratchOrigin(scratchA), same(mainA));
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !AppEdition.isAbyss);
+
   testWidgets(
     'new temporary chat returns to choices and deletion preserves source',
     (tester) async {

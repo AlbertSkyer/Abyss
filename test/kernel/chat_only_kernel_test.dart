@@ -1,8 +1,11 @@
+import 'package:baocode/chat/chat_models.dart';
+import 'package:baocode/kernel/transcript.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_transport.dart';
 import 'package:baocode/kernel/kernel_types.dart';
 import 'package:baocode/kernel/mock/mock_kernels.dart';
+import 'package:baocode/platform/app_edition.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kernel_test.dart' show FakeCli;
@@ -39,7 +42,7 @@ void main() {
       expect(launch!.arguments, isNot(contains('--mcp-config')));
       final initialize = cli.requests('initialize').single;
       expect(initialize, isNot(contains('sdkMcpServers')));
-      expect(initialize, contains('hooks'));
+      expect(initialize.containsKey('hooks'), AppEdition.isAbyss);
     });
 
     test('text still sends without dispatch context', () async {
@@ -55,9 +58,84 @@ void main() {
       await pumpEventQueue(times: 30);
       expect(cli.users, hasLength(1));
       final content = (cli.users.single['message']! as Map)['content']! as List;
-      expect(content, [
-        const {'type': 'text', 'text': 'Only talk'},
-      ]);
+      expect(content, hasLength(2));
+      final reminder = (content.first as Map)['text'] as String;
+      expect(reminder, contains('chat-only temporary conversation'));
+      expect(reminder, contains('Inherited messages are context'));
+      expect(reminder, contains('natural language'));
+      expect(reminder, contains('DSML/function_calls'));
+      expect(reminder, contains('quote or explain tool-call syntax'));
+      expect(content.last, const {'type': 'text', 'text': 'Only talk'});
+      expect(content.toString(), isNot(contains('Abyss dispatch mode')));
+    });
+
+    test(
+      'ordinary agent turns do not receive the temporary chat note',
+      () async {
+        final cli = FakeCli();
+        final kernel = ClaudeCodeKernel(
+          MockKernels.claudeCode,
+          const KernelContext(cwd: '/p'),
+          start: (_) async => cli,
+          providerEnvironment: (_, _) async => const {},
+        );
+        addTearDown(kernel.dispose);
+        kernel.send(const KernelTurn(id: 'main', text: 'Agent task'));
+        await pumpEventQueue(times: 30);
+        final content = (cli.users.single['message'] as Map)['content'] as List;
+        expect(
+          content.toString(),
+          isNot(contains('chat-only temporary conversation')),
+        );
+        expect(content.last, {'type': 'text', 'text': 'Agent task'});
+      },
+    );
+
+    test('quoted DSML stays inert text and user text is preserved', () async {
+      const dsml =
+          '<·DSML·><·DSML·function_calls><·DSML·invoke name="Bash">'
+          '<·DSML·parameter name="command">do-not-run</·DSML·parameter>'
+          '</·DSML·invoke></·DSML·function_calls>';
+      final cli = FakeCli();
+      final kernel = ClaudeCodeKernel(
+        MockKernels.claudeCode,
+        const KernelContext(cwd: '/p', chatOnly: true),
+        start: (_) async => cli,
+        providerEnvironment: (_, _) async => const {},
+      );
+      addTearDown(kernel.dispose);
+      final transcript = Transcript();
+      kernel.events.listen(transcript.apply);
+      kernel.send(
+        const KernelTurn(id: 'quote', text: 'Explain this syntax: $dsml'),
+      );
+      await pumpEventQueue(times: 30);
+      expect(((cli.users.single['message'] as Map)['content'] as List).last, {
+        'type': 'text',
+        'text': 'Explain this syntax: $dsml',
+      });
+      final before = cli.written.length;
+      cli.push({
+        'type': 'assistant',
+        'message': {
+          'id': 'quoted-dsml',
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': dsml},
+          ],
+        },
+      });
+      await pumpEventQueue();
+      final texts = [
+        for (final (_, item) in transcript.liveItems)
+          if (item is AssistantTextItem) item.text,
+      ];
+      expect(texts, contains(dsml));
+      expect([
+        for (final (_, item) in transcript.liveItems)
+          if (item is ToolCallItem) item,
+      ], isEmpty);
+      expect(cli.written.length, before);
     });
 
     test('permission and hook requests deny every tool directly', () async {
@@ -78,7 +156,7 @@ void main() {
           'input': const {
             'hook_event_name': 'PreToolUse',
             'tool_name': 'SendMessage',
-            'tool_input': const {'recipient': 'member'},
+            'tool_input': {'recipient': 'member'},
           },
         },
       ]) {
