@@ -49,6 +49,9 @@
   "scratchDescription": "创建时复制已完成的上下文，之后独立交流。工具与子代理派工已禁用。",
   "scratchUnavailable": "当前会话尚无可复制的已保存上下文，可先开始空白临时聊天。",
   "scratchSnapshot": "快照来源",
+  "scratchDeleteTitle": "删除这个临时聊天？",
+  "scratchDeleteDescription": "该临时聊天的对话将被删除，无法恢复。它的来源会话和项目文件不会删除。",
+  "scratchFailed": "无法创建临时聊天：{error}",
 
   "commonCancel": "取消",
   "commonClose": "关闭",

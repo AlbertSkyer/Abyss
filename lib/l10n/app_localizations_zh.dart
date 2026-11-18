@@ -165,6 +165,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scratchSnapshot => '快照来源';
 
   @override
+  String get scratchDeleteTitle => '删除这个临时聊天？';
+
+  @override
+  String get scratchDeleteDescription => '该临时聊天的对话将被删除，无法恢复。它的来源会话和项目文件不会删除。';
+
+  @override
+  String scratchFailed(String error) {
+    return '无法创建临时聊天：$error';
+  }
+
+  @override
   String get commonCancel => '取消';
 
   @override

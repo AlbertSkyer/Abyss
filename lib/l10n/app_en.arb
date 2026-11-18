@@ -65,6 +65,10 @@
   "scratchDescription": "Copies completed context at creation, then chats independently. Tools and agent dispatch are disabled.",
   "scratchUnavailable": "This conversation has no saved context to copy yet. You can start an empty temporary chat.",
   "scratchSnapshot": "Snapshot from",
+  "scratchDeleteTitle": "Delete this temporary chat?",
+  "scratchDeleteDescription": "Its conversation is deleted and cannot be restored. The conversation it was copied from and the project's files are not deleted.",
+  "scratchFailed": "The temporary chat could not be created: {error}",
+  "@scratchFailed": {"placeholders": {"error": {"type": "String"}}},
 
   "commonCancel": "Cancel",
   "commonClose": "Close",

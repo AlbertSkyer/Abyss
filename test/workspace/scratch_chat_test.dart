@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:baocode/chat/chat_session.dart';
+import 'package:baocode/main.dart';
+import 'package:baocode/ide/ide_button.dart';
+import 'package:baocode/platform/app_edition.dart';
+import 'package:baocode/workspace/dock_host.dart';
 import 'package:baocode/kernel/agent_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_kernel.dart';
 import 'package:baocode/kernel/claude_code/claude_code_transport.dart';
@@ -126,6 +130,53 @@ Future<AgentThread> _source(Workspace workspace) async {
 }
 
 void main() {
+  testWidgets('scratch chooser creates inherited or blank chats after New', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late Workspace workspace;
+    await tester.runAsync(() async {
+      workspace = await _load();
+      await _source(workspace);
+    });
+    await tester.pumpWidget(BaoCodeApp(workspace: workspace));
+    await tester.pumpAndSettle();
+    tester.widget<DockHost>(find.byType(DockHost)).controller.open('scratch');
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(IdeButton, 'Inherit current conversation'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    final first = workspace.scratchChats.single;
+    expect(first.id, isNotNull);
+    await tester.tap(find.widgetWithText(IdeButton, 'New temporary chat'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inherit current conversation'), findsOneWidget);
+    expect(find.text('Start empty chat'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(IdeButton, 'Inherit current conversation'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    expect(workspace.scratchChats, hasLength(2));
+    expect(workspace.scratchChats.last.id, isNot(first.id));
+    await tester.tap(find.widgetWithText(IdeButton, 'New temporary chat'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(IdeButton, 'Start empty chat'));
+    await tester.pumpAndSettle();
+    expect(workspace.scratchChats, hasLength(3));
+    expect(workspace.scratchChats.last.id, isNull);
+    expect(workspace.scratchChats.last.session.itemCount, 0);
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !AppEdition.isAbyss);
+
   tearDown(() {
     _Catalog.forks.clear();
     _Catalog.deleted.clear();
@@ -222,6 +273,150 @@ void main() {
     workspace.dispose();
   });
 
+  test(
+    'forceNew forks another history scratch and preserves every old scratch',
+    () async {
+      final workspace = await _load();
+      final source = await _source(workspace);
+      final first = (await workspace.openScratchChat(source))!;
+      final second = (await workspace.openScratchChat(source, forceNew: true))!;
+      final third = (await workspace.openScratchChat(source, forceNew: true))!;
+
+      expect(second.id, isNot(first.id));
+      expect(third.id, isNot(anyOf(first.id, second.id)));
+      for (var i = 0; i < 30 && third.session.loadingHistory; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(third.session.itemCount, greaterThan(0));
+      expect(workspace.scratchChats, containsAll([first, second, third]));
+      expect(workspace.isScratch(first), isTrue);
+      expect(workspace.isScratch(second), isTrue);
+      expect(workspace.scratchOrigin(first), same(source));
+      expect(workspace.scratchOrigin(second), same(source));
+      expect(workspace.scratchOrigin(third), same(source));
+      expect(workspace.scratchBoundary(first), isNotNull);
+      expect(workspace.scratchBoundary(second), isNotNull);
+      expect(_Catalog.deleted, isEmpty);
+      workspace.dispose();
+    },
+  );
+
+  test(
+    'forced empty scratch is distinct, blank, and keeps old origin links',
+    () async {
+      final workspace = await _load();
+      final source = workspace.create();
+      final first = await workspace.createEmptyScratch(source);
+      first.session.draft.save(
+        'First draft',
+        const TextSelection.collapsed(offset: 11),
+        const [],
+      );
+      expect(
+        await workspace.createEmptyScratch(source, forceNew: true),
+        isNot(same(first)),
+      );
+      expect(await workspace.createEmptyScratch(source), same(first));
+      final second = await workspace.createEmptyScratch(source, forceNew: true);
+
+      expect(second, isNot(same(first)));
+      expect(second.session.itemCount, 0);
+      expect(second.session.draft.content, isNot('First draft'));
+      expect(first.session.draft.content, 'First draft');
+      expect(workspace.scratchChats, containsAll([first, second]));
+      expect(workspace.scratchOrigin(first), same(source));
+      expect(workspace.scratchOrigin(second), same(source));
+      expect(_Catalog.deleted, isEmpty);
+      workspace.dispose();
+    },
+  );
+
+  test('deleting a saved scratch removes only its own metadata', () async {
+    final workspace = await _load();
+    final source = await _source(workspace);
+    final first = (await workspace.openScratchChat(source))!;
+    final other = (await workspace.openScratchChat(source, forceNew: true))!;
+    final otherId = other.id!;
+
+    workspace.delete(first);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(workspace.threads, containsAll([source, other]));
+    expect(workspace.isScratch(first), isFalse);
+    expect(workspace.isScratch(other), isTrue);
+    expect(workspace.scratchOrigin(other), same(source));
+    expect(_Catalog.deleted, [first.id]);
+    expect(_Catalog.deleted, isNot(contains(otherId)));
+    expect(_Catalog.deleted, isNot(contains(source.id)));
+    workspace.dispose();
+  });
+
+  test(
+    'deleting a null-ID scratch leaves source and sibling scratch intact',
+    () async {
+      final workspace = await _load();
+      final source = workspace.create();
+      final first = await workspace.createEmptyScratch(source);
+      final second = await workspace.createEmptyScratch(source, forceNew: true);
+
+      workspace.delete(first);
+
+      expect(first.id, isNull);
+      expect(workspace.threads, containsAll([source, second]));
+      expect(workspace.threads, isNot(contains(first)));
+      expect(workspace.isScratch(second), isTrue);
+      expect(workspace.scratchOrigin(second), same(source));
+      expect(_Catalog.deleted, isEmpty);
+      workspace.dispose();
+    },
+  );
+
+  test('deleting origin main removes only its scratch links', () async {
+    final workspace = await _load();
+    final source = await _source(workspace);
+    final scratch = (await workspace.openScratchChat(source))!;
+
+    workspace.delete(source);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(workspace.threads, contains(scratch));
+    expect(workspace.isScratch(scratch), isTrue);
+    expect(workspace.scratchOrigin(scratch), isNull);
+    expect(_Catalog.deleted, [source.id]);
+    workspace.dispose();
+  });
+
+  test('two unsent scratch drafts keep separate stable storage keys', () async {
+    final store = MemoryPreferenceStore();
+    final workspace = await _load(preferences: store);
+    final source = workspace.create();
+    final first = await workspace.createEmptyScratch(source);
+    final second = await workspace.createEmptyScratch(source, forceNew: true);
+    first.session.draft.save(
+      'First only',
+      const TextSelection.collapsed(offset: 10),
+      const [],
+    );
+    second.session.draft.save(
+      'Second only',
+      const TextSelection.collapsed(offset: 11),
+      const [],
+    );
+    first.session.draft.save(
+      'First updated',
+      const TextSelection.collapsed(offset: 13),
+      const [],
+    );
+    expect(first.session.draft.content, 'First updated');
+    expect(second.session.draft.content, 'Second only');
+    workspace.delete(first);
+    expect(workspace.isScratch(first), isFalse);
+    expect(workspace.scratchFor(source), same(second));
+    expect(second.session.draft.content, 'Second only');
+    await Future<void>.delayed(Duration.zero);
+    workspace.dispose();
+  });
+
   test('new scratch retains old history and creates a replacement', () async {
     final workspace = await _load();
     final source = await _source(workspace);
@@ -230,9 +425,26 @@ void main() {
     expect(replacement, isNotNull);
     expect(replacement!.id, isNot(first.id));
     expect(workspace.scratchOrigin(replacement), same(source));
-    expect(workspace.threads, contains(source));
+    expect(workspace.scratchOrigin(first), same(source));
+    expect(workspace.threads, containsAll([source, first]));
     expect(_Catalog.deleted, isEmpty);
-    expect(_Catalog.deleted, isNot(contains(source.id)));
+    workspace.dispose();
+  });
+
+  test('resetScratchChat can explicitly choose a new empty scratch', () async {
+    final workspace = await _load();
+    final source = await _source(workspace);
+    final first = (await workspace.openScratchChat(source))!;
+
+    final replacement = await workspace.resetScratchChat(first, empty: true);
+
+    expect(replacement, isNotNull);
+    expect(replacement!.id, isNull);
+    expect(replacement.session.itemCount, 0);
+    expect(replacement.session.kernelContext.chatOnly, isTrue);
+    expect(workspace.scratchOrigin(replacement), same(source));
+    expect(workspace.scratchOrigin(first), same(source));
+    expect(_Catalog.deleted, isEmpty);
     workspace.dispose();
   });
 }

@@ -392,6 +392,24 @@ abstract class AppLocalizations {
   /// **'Snapshot from'**
   String get scratchSnapshot;
 
+  /// No description provided for @scratchDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this temporary chat?'**
+  String get scratchDeleteTitle;
+
+  /// No description provided for @scratchDeleteDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Its conversation is deleted and cannot be restored. The conversation it was copied from and the project\'s files are not deleted.'**
+  String get scratchDeleteDescription;
+
+  /// No description provided for @scratchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The temporary chat could not be created: {error}'**
+  String scratchFailed(String error);
+
   /// No description provided for @commonCancel.
   ///
   /// In en, this message translates to:

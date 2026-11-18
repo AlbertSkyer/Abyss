@@ -481,6 +481,13 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   bool _scratchOpening = false;
   bool _scratchFocused = false;
 
+  /// While the new-chat choices show. It keeps reopening an existing
+  /// temporary chat from replacing the choice with it.
+  bool _scratchChoosing = false;
+
+  /// The main conversation new temporary chats are made beside.
+  AgentThread? _scratchSource;
+
   Timer? _dockSaveTimer;
   void _dockChanged() {
     _dockSaveTimer?.cancel();
@@ -4482,25 +4489,102 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   Future<void> _openScratch(AgentThread source, {bool empty = false}) async {
     if (_scratchOpening) return;
+    final forceNew = _scratchChoosing;
     setState(() => _scratchOpening = true);
-    final scratch = empty
-        ? await _workspace.createEmptyScratch(source)
-        : await _workspace.openScratchChat(source);
-    if (!mounted) return;
+    try {
+      final scratch = empty
+          ? await _workspace.createEmptyScratch(source, forceNew: forceNew)
+          : await _workspace.openScratchChat(source, forceNew: forceNew);
+      if (!mounted) return;
+      if (scratch == null) throw StateError(context.l10n.scratchUnavailable);
+      if (!_workspace.scratchChats.contains(scratch)) return;
+      setState(() {
+        _scratchThread = scratch;
+        _scratchSource = source;
+        _scratchChoosing = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        await showIdeDialog(
+          context,
+          message: context.l10n.scratchFailed('$error'),
+          buttons: [context.l10n.commonOk],
+          cancel: null,
+          type: IdeDialogType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _scratchOpening = false);
+    }
+  }
+
+  void _chooseScratch(AgentThread? source) {
+    if (_scratchOpening) return;
     setState(() {
-      _scratchThread = scratch;
-      _scratchOpening = false;
+      _scratchSource = source;
+      _scratchThread = null;
+      _scratchChoosing = true;
+      _scratchFocused = false;
     });
   }
 
-  Widget _buildScratchPanel(AgentThread? source) {
+  Future<void> _deleteScratch(AgentThread scratch) async {
+    if (_scratchOpening) return;
+    final source = _workspace.scratchOrigin(scratch) ?? _scratchSource;
+    setState(() => _scratchOpening = true);
+    try {
+      final l10n = context.l10n;
+      final choice = await showIdeDialog(
+        context,
+        message: l10n.scratchDeleteTitle,
+        detail: l10n.scratchDeleteDescription,
+        buttons: [l10n.commonDelete],
+      );
+      if (choice != 0 || !mounted) return;
+      _workspace.delete(scratch);
+      if (identical(_scratchThread, scratch)) {
+        setState(() {
+          _scratchThread = null;
+          _scratchSource = source;
+          _scratchChoosing = true;
+          _scratchFocused = false;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _scratchOpening = false);
+    }
+  }
+
+  Widget _buildScratchPanel(AgentThread? current) {
     final l10n = context.l10n;
-    _scratchThread ??= source == null ? null : _workspace.scratchFor(source);
-    if (_scratchThread == null &&
+    if (_scratchThread != null &&
+        !_workspace.threads.contains(_scratchThread)) {
+      _scratchThread = null;
+      _scratchChoosing = true;
+    }
+    final candidate =
+        _scratchChoosing && _workspace.threads.contains(_scratchSource)
+        ? _scratchSource
+        : current;
+    final source = candidate == null
+        ? null
+        : _workspace.isScratch(candidate)
+        ? _workspace.scratchOrigin(candidate)
+        : _workspace.threads.contains(candidate)
+        ? candidate
+        : null;
+    if (!_scratchChoosing) {
+      _scratchThread ??= source == null ? null : _workspace.scratchFor(source);
+    }
+    if (!_scratchChoosing &&
+        _scratchThread == null &&
         source != null &&
         _workspace.hasEmptyScratchDraft(source)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_scratchOpening && _scratchThread == null) {
+        if (mounted &&
+            !_scratchOpening &&
+            !_scratchChoosing &&
+            _scratchThread == null) {
           unawaited(_openScratch(source, empty: true));
         }
       });
@@ -4528,7 +4612,15 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                       ),
                     ),
                 ],
-                onChanged: (item) => setState(() => _scratchThread = item),
+                onChanged: _scratchOpening
+                    ? null
+                    : (item) => setState(() {
+                        _scratchThread = item;
+                        _scratchSource = item == null
+                            ? null
+                            : _workspace.scratchOrigin(item);
+                        _scratchChoosing = false;
+                      }),
               ),
             const SizedBox(height: 12),
             if (_scratchOpening)
@@ -4548,7 +4640,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                 secondary: true,
                 onPressed: () => unawaited(_openScratch(source, empty: true)),
               ),
-            ],
+            ] else
+              Text(l10n.scratchUnavailable),
           ],
         ),
       );
@@ -4575,8 +4668,15 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                               ),
                             ),
                         ],
-                        onChanged: (item) =>
-                            setState(() => _scratchThread = item),
+                        onChanged: _scratchOpening
+                            ? null
+                            : (item) => setState(() {
+                                _scratchThread = item;
+                                _scratchSource = item == null
+                                    ? null
+                                    : _workspace.scratchOrigin(item);
+                                _scratchChoosing = false;
+                              }),
                       )
                     : Text(
                         '${l10n.scratchSnapshot}: ${origin?.localizedTitle(l10n) ?? l10n.scratchEmpty}',
@@ -4592,17 +4692,16 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
               IdeButton(
                 label: l10n.scratchNew,
                 secondary: true,
-                onPressed: () async {
-                  final result = await showIdeDialog(
-                    context,
-                    message: l10n.scratchNew,
-                    detail: l10n.scratchDescription,
-                    buttons: [l10n.commonOk],
-                  );
-                  if (result != 0 || !mounted) return;
-                  final next = await _workspace.resetScratchChat(scratch);
-                  if (mounted) setState(() => _scratchThread = next);
-                },
+                onPressed: _scratchOpening
+                    ? null
+                    : () => _chooseScratch(origin ?? source),
+              ),
+              IdeActionButton(
+                icon: Codicons.trash,
+                tooltip: l10n.commonDelete,
+                onPressed: _scratchOpening
+                    ? null
+                    : () => unawaited(_deleteScratch(scratch)),
               ),
             ],
           ),

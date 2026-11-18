@@ -172,6 +172,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scratchSnapshot => 'Snapshot from';
 
   @override
+  String get scratchDeleteTitle => 'Delete this temporary chat?';
+
+  @override
+  String get scratchDeleteDescription =>
+      'Its conversation is deleted and cannot be restored. The conversation it was copied from and the project\'s files are not deleted.';
+
+  @override
+  String scratchFailed(String error) {
+    return 'The temporary chat could not be created: $error';
+  }
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override
