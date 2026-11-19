@@ -13,7 +13,7 @@ abstract final class AbyssWorkbenchSettings {
   static const autoDispatchKey = 'abyss.agents.autoDispatch';
   static const autoDispatchConcurrencyKey =
       'abyss.agents.autoDispatchConcurrency';
-  static const defaultAutoDispatchConcurrency = 3;
+  static const defaultAutoDispatchConcurrency = AppEdition.isAbyss ? 16 : 3;
   static const minAutoDispatchConcurrency = 1;
   static const maxAutoDispatchConcurrency = 16;
 

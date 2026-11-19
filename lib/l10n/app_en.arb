@@ -9063,7 +9063,7 @@
   "generalSettingsSidebarAgentTasks": "Show subagent tasks in the sidebar",
   "generalSettingsSidebarAgentTasksDescription": "Shows each conversation's subagent tasks below it. Hiding them does not stop tasks or clear their history, unread state, folding or approvals.",
   "generalSettingsSessionTools": "Agents can coordinate other conversations",
-  "generalSettingsSessionToolsDescription": "An agent can list your other conversations, read where they stand without waking them, hand them work (resumed if stopped, queued if busy) and wait for them. For one conversation that coordinates the others; agents started after the change have it.",
+  "generalSettingsSessionToolsDescription": "When you ask it to coordinate, an agent can create independent background conversations in existing projects, send their first tasks, list and read other conversations, hand them work and wait for results. New conversations use their project's normal model and permissions, not subagent slots. Agents started after the change have it.",
   "generalSettingsCommandLine": "Command Line",
   "baoBashRecommended": "BaoCode Bash (recommended)",
   "baoBashDescription": "A complete bash for agents on Windows: rg, grep, sed, awk, find, jq, tar and some 80 other common commands built in, no Git for Windows needed, and C:\\ and /c/ paths alike. The built-in core runs its agents' commands with it.",

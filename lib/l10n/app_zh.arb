@@ -3904,7 +3904,7 @@
   "generalSettingsSidebarAgentTasks": "在侧边栏显示子代理任务",
   "generalSettingsSidebarAgentTasksDescription": "在会话下方显示其子代理任务。隐藏不会停止任务，也不会清除历史、未读、折叠状态或审批。",
   "generalSettingsSessionTools": "Agent 可以统筹其他对话",
-  "generalSettingsSessionToolsDescription": "Agent 能列出你的其他对话、在不唤醒的情况下查看进展、给它们派活（没在运行的会恢复，正忙的会排队）并等待结果。适合用一个对话统筹其他对话；改动后新启动的 Agent 才有。",
+  "generalSettingsSessionToolsDescription": "在你要求统筹时，Agent 可在已有项目中后台新建独立会话并发送首个任务，也可列出、查看其他对话、派活和等待结果。新会话沿用目标项目的正常模型与权限，不占子代理名额；改动后新启动的 Agent 才有。",
   "generalSettingsCommandLine": "命令行",
   "baoBashRecommended": "BaoCode Bash（推荐）",
   "baoBashDescription": "让智能体在 Windows 上用上完整的 bash：自带 rg、grep、sed、awk、find、jq、tar 等八十多个常用命令，不需要装 Git for Windows；C:\\ 和 /c/ 两种路径都认。内置内核会用它运行命令。",

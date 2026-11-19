@@ -14441,7 +14441,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get generalSettingsSessionToolsDescription =>
-      'An agent can list your other conversations, read where they stand without waking them, hand them work (resumed if stopped, queued if busy) and wait for them. For one conversation that coordinates the others; agents started after the change have it.';
+      'When you ask it to coordinate, an agent can create independent background conversations in existing projects, send their first tasks, list and read other conversations, hand them work and wait for results. New conversations use their project\'s normal model and permissions, not subagent slots. Agents started after the change have it.';
 
   @override
   String get generalSettingsCommandLine => 'Command Line';

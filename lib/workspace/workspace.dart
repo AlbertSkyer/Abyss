@@ -4214,12 +4214,14 @@ class Workspace extends ChangeNotifier implements ColorThemeStorage {
   /// A new agent in [project] for something other than the window to send
   /// to (a paired phone): listed, not shown, the window left as it is. An
   /// untouched new agent there that does not show is reused.
-  AgentThread startAgent(Project project) {
-    for (final thread in _threads) {
-      if (thread.project == project &&
-          _isUntouched(thread) &&
-          !_hasPane(thread)) {
-        return thread;
+  AgentThread startAgent(Project project, {bool forceNew = false}) {
+    if (!forceNew) {
+      for (final thread in _threads) {
+        if (thread.project == project &&
+            _isUntouched(thread) &&
+            !_hasPane(thread)) {
+          return thread;
+        }
       }
     }
     final thread = _newThread(project);

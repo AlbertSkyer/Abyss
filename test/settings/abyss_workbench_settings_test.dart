@@ -9,6 +9,7 @@ import 'package:baocode/platform/data_dir.dart';
 import 'package:baocode/platform/app_edition.dart';
 import 'package:baocode/ide/ide_menu.dart';
 import 'package:baocode/settings/abyss_workbench_settings.dart';
+import 'package:baocode/workspace/session_tools.dart';
 import 'package:baocode/settings/pages/general_page.dart';
 import 'package:baocode/settings/pages/settings_dropdown.dart';
 import 'package:baocode/settings/pages/settings_widgets.dart';
@@ -128,6 +129,75 @@ void main() {
     expect(AbyssWorkbenchSettings.parse(false), !AppEdition.isAbyss);
   });
 
+  test(
+    'session coordination defaults follow edition and respect explicit choices',
+    () async {
+      expect(SessionToolsSetting.enabled(null), AppEdition.isAbyss);
+      expect(SessionToolsSetting.enabled(true), isTrue);
+      expect(SessionToolsSetting.enabled(false), isFalse);
+      expect(SessionToolsSetting.setting(AppEdition.isAbyss), isNull);
+      await files.settings.update(
+        SessionToolsSetting.settingKey,
+        SessionToolsSetting.setting(false),
+      );
+      final reloaded = UserSettings(files.settings.path);
+      addTearDown(reloaded.dispose);
+      await reloaded.load();
+      expect(
+        SessionToolsSetting.enabled(reloaded[SessionToolsSetting.settingKey]),
+        isFalse,
+      );
+      await files.settings.update(
+        AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
+        3,
+      );
+      expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 3);
+    },
+  );
+
+  testWidgets('coordination switch persists off and restores its default on', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GeneralSettingsPage(settings: files.settings)),
+      ),
+    );
+    await tester.pump();
+    final label = find.text('Agents can coordinate other conversations');
+    await tester.ensureVisible(label);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(label);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+    expect(files.settings[SessionToolsSetting.settingKey], isFalse);
+    final reloaded = UserSettings(files.settings.path);
+    addTearDown(reloaded.dispose);
+    await tester.runAsync(reloaded.load);
+    expect(
+      SessionToolsSetting.enabled(reloaded[SessionToolsSetting.settingKey]),
+      isFalse,
+    );
+    await tester.runAsync(() async {
+      await tester.tap(label);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+    expect(files.settings[SessionToolsSetting.settingKey], isNull);
+    expect(
+      SessionToolsSetting.enabled(
+        files.settings[SessionToolsSetting.settingKey],
+      ),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox());
+  }, skip: !AppEdition.isAbyss);
+
   test('automatic dispatch defaults on and only false disables it', () {
     expect(AbyssWorkbenchSettings.autoDispatchKey, 'abyss.agents.autoDispatch');
     expect(AbyssWorkbenchSettings.parseAuto(null), AppEdition.isAbyss);
@@ -149,7 +219,10 @@ void main() {
       AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
       'abyss.agents.autoDispatchConcurrency',
     );
-    expect(AbyssWorkbenchSettings.defaultAutoDispatchConcurrency, 3);
+    expect(
+      AbyssWorkbenchSettings.defaultAutoDispatchConcurrency,
+      AppEdition.isAbyss ? 16 : 3,
+    );
     expect(AbyssWorkbenchSettings.minAutoDispatchConcurrency, 1);
     expect(AbyssWorkbenchSettings.maxAutoDispatchConcurrency, 16);
     for (var value = 1; value <= 16; value++) {
@@ -172,7 +245,7 @@ void main() {
     ]) {
       expect(
         AbyssWorkbenchSettings.parseAutoDispatchConcurrency(value),
-        3,
+        AppEdition.isAbyss ? 16 : 3,
         reason: '$value must use the default',
       );
     }
@@ -181,7 +254,10 @@ void main() {
   test(
     'automatic dispatch concurrency reads current settings and has a seam',
     () async {
-      expect(AbyssWorkbenchSettings.autoDispatchConcurrency(), 3);
+      expect(
+        AbyssWorkbenchSettings.autoDispatchConcurrency(),
+        AppEdition.isAbyss ? 16 : 3,
+      );
       await files.settings.update(
         AbyssWorkbenchSettings.autoDispatchConcurrencyKey,
         7,
@@ -225,7 +301,7 @@ void main() {
       of: row,
       matching: find.byType(SettingsDropdown),
     );
-    expect(tester.widget<SettingsDropdown>(dropdown).current, '3');
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '16');
     expect(
       find.textContaining('Standby members do not count.'),
       findsOneWidget,
@@ -245,7 +321,7 @@ void main() {
     expect(actions.map((action) => action.label), [
       for (var value = 1; value <= 16; value++) '$value',
     ]);
-    expect(actions.where((action) => action.checked).single.label, '3');
+    expect(actions.where((action) => action.checked).single.label, '16');
     expect(find.text('7'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
@@ -273,7 +349,7 @@ void main() {
         .widget<SettingsDropdown>(dropdown)
         .entries()
         .cast<IdeMenuAction>()
-        .singleWhere((action) => action.label == '3');
+        .singleWhere((action) => action.label == '16');
     await tester.runAsync(() async {
       reset.onSelected!();
       final deadline = DateTime.now().add(const Duration(seconds: 3));
@@ -285,10 +361,26 @@ void main() {
     await tester.pump();
     expect(files.settings.values.containsKey(key), isFalse);
     expect(files.settings[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
-    expect(tester.widget<SettingsDropdown>(dropdown).current, '3');
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '16');
     await tester.runAsync(reloaded.load);
     expect(reloaded.values.containsKey(key), isFalse);
     expect(reloaded[AbyssWorkbenchSettings.autoDispatchKey], isFalse);
+    final lower = tester
+        .widget<SettingsDropdown>(dropdown)
+        .entries()
+        .cast<IdeMenuAction>()
+        .singleWhere((action) => action.label == '3');
+    await tester.runAsync(() async {
+      lower.onSelected!();
+      final until = DateTime.now().add(const Duration(seconds: 3));
+      while (files.settings[key] != 3 && DateTime.now().isBefore(until)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await reloaded.load();
+    });
+    await tester.pump();
+    expect(reloaded[key], 3);
+    expect(tester.widget<SettingsDropdown>(dropdown).current, '3');
     await tester.pumpWidget(const SizedBox());
   }, skip: !AppEdition.isAbyss);
 

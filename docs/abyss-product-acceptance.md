@@ -405,3 +405,14 @@
 - 用户要求提交推送发版，1.9.16+42复验临时聊天/内核/版本26项、默认edition兼容6项通过，相关静态分析无问题。Windows生成插件链接因跨路径解析错误448而失败，离线pub重建未恢复；仅在ignored生成目录以缓存文件暂存插件，使用与原Flutter一致的Visual Studio CMake 3.31 Release INSTALL完成构建，再由原打包工具检查独立身份并生成ISCC安装器。不修改依赖版本或系统安全策略。
 - 新目录 `dist/Abyss-1.9.16-scratch-regression` 真实GUI使用隔离人工历史：A创建空白临时聊天后切到B，New选择页显示B；chooser打开后点击A/B主标签来源同步更新，再继承B，保存metadata的source与B的session ID一致；截图已查看，最后正常退出。未发送付费模型请求，未复验DSML真实上游输出。
 - 安装器 `dist/Abyss-1.9.16-scratch-regression-delivery/Abyss-1.9.16-setup.exe`，26,406,978字节，SHA-256 `76005D52A15A9D76AFFF12FF4D30F9E8246D48A9AE515E7A21E4F628C1B7FAC0`，exe身份1.9.16+42。保留旧Release/旧包；安装器未签名，完整隔离安装/升级/卸载、另一台机器及历史Administrator浏览器问题未复验。
+
+## 会话统筹新建与出厂默认值（2026-11-19，源码验收）
+
+- 新增 `session_new(text, project?)`，通过现有SDK MCP/开关接线在已有可见项目中后台新建独立主会话并发送首个任务。未指定项目取调用方会话项目（找不到时仅匹配cwd），不取UI焦点；项目路径优先、名称必须唯一，拒绝未知/歧义项目及非法输入。返回现有稳定ID可继续read/send/wait，不新增自动通知或worktree/模型配置系统。
+- `Workspace.startAgent(forceNew:true)` 明确强制新建，不复用临时聊天/已有草稿，不抢当前标签；其他调用默认复用行为保持。新会话沿用目标项目正常kernel/model/权限，不复制调用方临时授权，首任务注明统筹来源。短期同调用方/项目/首任务去重，并发相同调用只创建一次；取消检查在副作用前，已删除目标不复用。发送异常会告知已创建会话ID但未送达，不伪报完成。
+- Abyss无配置时自动派工开启、并发默认16（仍可1–16）、会话统筹开启；显式false和已有并发3等不覆盖。统筹关闭写false，重新开启移除默认键。BaoCode默认仍统筹关闭/并发3，侧边栏子代理显示开关不改。无用户配置或凭据被复制/写入安装包。
+- 24项Abyss定向测试（统筹新建/设置/chatOnly）、默认edition兼容14项通过/4项Abyss专用跳过、ARB资源2项通过，修改模块静态分析无问题。覆盖后台不抢焦点/不复用scratch草稿、caller项目优先、显式项目、歧义/非法参数、取消前零副作用、并发去重、删除目标后新建、ID后续read/send/wait、默认及显式关闭重载、16恢复默认与3显式保存。仅mock CLI执行，不跑全套或付费模型调用。
+- 2026-11-19用户授权提交推送发版，并要求以后每次Release附浏览器扩展ZIP，已写入CLAUDE.md。版本1.9.17+43发版复验Abyss功能/设置/chatOnly/版本29项、默认edition兼容14项通过/4项跳过、ARB2项及扩展打包4项通过，相关静态分析无问题。
+- 复用已验证Visual Studio CMake Release INSTALL及原打包工具，独立身份检查/ISCC成功，日志 `build/abyss-1.9.17-build.log`。新目录 `dist/Abyss-1.9.17-session-new`、新隔离数据没有这三个设置的显式配置，真实界面分别确认自动派工开/并发16及统筹开；截图已查看（桌面另有非本应用悬浮内容遮挡部分区域，不将被遮挡内容当本应用结果），验证进程最后正常退出。不声称已做真实付费CLI统筹新会话验收。
+- 附件目录 `dist/Abyss-1.9.17-session-new-delivery`：安装器26,413,530字节，SHA-256 `A5C11855C6AFF42E4348DE982857F90E2A6B9756912A61A5CB183E798B4CF14F`；本次生成扩展 `Abyss-browser-0.1.0.zip` 59,962字节，SHA-256 `9C42991ABF2F004CB73626FADE57EC7A15354285536BB811FB2E6DF608F79F11`。ZIP完整、MV3版本/公钥存在、不含私钥，扩展ID及版本不变，旧扩展不强制重装。
+- 安装器未签名；完整隔离安装/升级/卸载、另一台电脑及历史Administrator浏览器问题未复验。保留旧Release和包，不扩大定向测试结论。

@@ -4,18 +4,22 @@ import '../bots/bot_tools.dart';
 import '../chat/chat_models.dart';
 import '../chat/chat_session.dart';
 import '../kernel/claude_code/claude_sdk_tools.dart';
+import '../platform/app_edition.dart';
 import 'workspace.dart';
 
 /// Whether a project's agents may see the user's other conversations and
-/// write to them (#934): the `chat.sessionTools` setting, off unless set.
+/// write to them (#934): `chat.sessionTools`, on by default in Abyss.
 /// Read as an agent starts: one started before has the tools as it had.
 abstract final class SessionToolsSetting {
   static const settingKey = 'chat.sessionTools';
 
-  static bool enabled(Object? setting) => setting == true;
+  static bool enabled(Object? setting) =>
+      setting is bool ? setting : AppEdition.isAbyss;
+
+  static Object? setting(bool on) => on == AppEdition.isAbyss ? null : on;
 
   /// The setting as it is now; main() points it at settings.json.
-  static bool Function() current = () => false;
+  static bool Function() current = () => enabled(null);
 }
 
 /// The tools an agent coordinating others has (`mcp__baocode__session_*`),
@@ -26,6 +30,7 @@ abstract final class SessionToolsSetting {
 abstract final class SessionTools {
   static const names = [
     'session_list',
+    'session_new',
     'session_read',
     'session_send',
     'session_wait',
@@ -33,6 +38,8 @@ abstract final class SessionTools {
 
   /// What was sent lately, by whom to whom: the same task not sent twice.
   static final Map<(String?, String), (String, DateTime)> _sent = {};
+  static final Map<(String, String, String), (AgentThread, DateTime)> _created =
+      {};
 
   static const _resendAfter = Duration(minutes: 10);
 
@@ -47,6 +54,7 @@ abstract final class SessionTools {
       ClaudeSdkTools.unregister(name);
     }
     _sent.clear();
+    _created.clear();
   }
 
   static List<ClaudeSdkTool> _tools(Workspace workspace) {
@@ -107,6 +115,106 @@ abstract final class SessionTools {
     };
 
     return [
+      tool(
+        'session_new',
+        'Creates a new independent agent conversation in an existing project '
+            'and sends text as its first task, without changing the current tab. '
+            'Uses the target project\'s normal kernel, model and permissions. '
+            'Only when the user asks you to coordinate new conversations; do not '
+            'fan out unasked or bypass a user stop. This is not a subagent. '
+            'Returns an id for session_read, session_send and session_wait; '
+            'completion is not automatic notification.',
+        {
+          'text': {
+            'type': 'string',
+            'description': 'The first task authorized by the user.',
+          },
+          'project': {
+            'type': 'string',
+            'description': 'An existing project path or unique name. Defaults to the calling conversation\'s project, not the focused tab.',
+          },
+        },
+        (input, call) async {
+          final rawText = input['text'];
+          if (rawText is! String || rawText.trim().isEmpty) {
+            throw ArgumentError('text must be a nonempty string');
+          }
+          final text = rawText.trim();
+          final rawProject = input['project'];
+          if (rawProject != null &&
+              (rawProject is! String || rawProject.trim().isEmpty)) {
+            throw ArgumentError('project must be a nonempty string');
+          }
+          final available = workspace.sidebarProjects
+              .where(
+                (p) => !workspace.isHidden(p) && !workspace.isAppFolder(p.path),
+              )
+              .toList();
+          final caller = _callerOf(workspace, call);
+          final name = (rawProject as String?)?.trim();
+          final path = name ?? caller?.project.path ?? call.cwd;
+          var candidates = available.where((p) => p.path == path).toList();
+          if (candidates.isEmpty && name != null) {
+            candidates = available.where((p) => p.name == name).toList();
+          }
+          if (candidates.length != 1) {
+            throw ArgumentError(
+              'Choose one existing, visible project by its full path; the project is unknown or ambiguous.',
+            );
+          }
+          final project = candidates.single;
+          var cancelled = false;
+          unawaited(call.cancelled?.then((_) => cancelled = true));
+          // Let an already-cancelled call settle before any creation side effect.
+          await Future<void>.delayed(Duration.zero);
+          if (cancelled) {
+            throw StateError('Cancelled before creating a conversation.');
+          }
+          if (!offeredIn(call.cwd)) {
+            throw StateError('Session coordination is disabled.');
+          }
+          final key = (call.sessionId ?? 'cwd:${call.cwd}', project.path, text);
+          final now = DateTime.now();
+          _created.removeWhere(
+            (_, value) =>
+                now.difference(value.$2) >= _resendAfter ||
+                !workspace.threads.contains(value.$1),
+          );
+          if (_created[key] case (final previous, _)) {
+            return 'Already started: ${BotTools.idOf(previous)} | ${project.path}. '
+                'The same first task was not sent again. Use session_read or session_wait.';
+          }
+          // No awaits between the dedupe check, creation and first send: identical
+          // concurrent calls cannot create or claim the same untouched thread.
+          final thread = workspace.startAgent(project, forceNew: true);
+          final id = BotTools.idOf(thread);
+          try {
+            if (!thread.session.canSend) {
+              throw StateError(
+                'The new conversation cannot accept its first task.',
+              );
+            }
+            thread.session.send(
+              ComposerMessage(text: text),
+              notes: [
+                'This first task comes from another agent conversation'
+                    '${caller == null ? '' : ' ("${caller.title}" in ${caller.project.name})'}, '
+                    'which the user has coordinating their conversations. '
+                    'Do only this assigned task; do not create more conversations unless the user requests it.',
+              ],
+            );
+          } catch (error) {
+            throw StateError(
+              'Created $id in ${project.path}, but the first task was not delivered: $error',
+            );
+          }
+          _created[key] = (thread, now);
+          return 'Started: $id | ${project.path}. The first task was sent; '
+              'use session_read or session_wait to check progress. Questions and permissions still require the user.';
+        },
+        required: ['text'],
+        summary: (input, _) => '${input['project'] ?? 'current project'}',
+      ),
       tool(
         'session_list',
         "Lists the user's other agent conversations in BaoCode, latest "

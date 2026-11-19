@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:baocode/bots/bot_tools.dart';
@@ -71,13 +72,15 @@ void main() {
     String tool,
     Map<String, Object?> arguments, {
     String? from,
+    String? cwd,
+    Future<void>? cancelled,
   }) async {
     final answer = await ClaudeSdkTools.handle({
       'jsonrpc': '2.0',
       'id': 2,
       'method': 'tools/call',
       'params': {'name': tool, 'arguments': arguments},
-    }, ClaudeSdkCall(cwd: app, sessionId: from));
+    }, ClaudeSdkCall(cwd: cwd ?? app, sessionId: from, cancelled: cancelled));
     final result = answer['result'] as Map;
     return ((result['content'] as List).single as Map)['text'] as String;
   }
@@ -107,6 +110,176 @@ void main() {
       expect(await offered(app), isNot(contains('session_list')));
     },
   );
+
+  test(
+    'new sessions run in the caller project without focus or draft reuse',
+    () async {
+      final caller = workspace.create(project: workspace.projectAt(app));
+      caller.session.send(const ComposerMessage(text: 'coordinate'));
+      await settle(caller);
+      final scratch = await workspace.createEmptyScratch(caller);
+      scratch.session.draft.save(
+        'Keep this draft',
+        const TextSelection.collapsed(offset: 15),
+        const [],
+      );
+      final before = workspace.threads.toSet();
+      final current = workspace.current;
+      final answer = await call('session_new', {
+        'text': 'Analyze independently',
+      }, from: caller.id);
+      expect(answer, startsWith('Started: '));
+      final created = workspace.threads.singleWhere(
+        (thread) => !before.contains(thread),
+      );
+      final id = BotTools.idOf(created);
+      expect(answer, contains(id));
+      expect(created.project.path, app);
+      expect(workspace.current, same(current));
+      expect(workspace.isScratch(created), isFalse);
+      expect(created.session.kernelContext.chatOnly, isFalse);
+      expect(scratch.session.draft.content, 'Keep this draft');
+      await settle(created);
+      final read = await call('session_read', {'session': id}, from: caller.id);
+      expect(read, contains('Analyze independently'));
+      expect(
+        read,
+        contains('This first task comes from another agent conversation'),
+      );
+      expect(
+        await call('session_send', {
+          'session': id,
+          'text': 'Continue this task',
+        }, from: caller.id),
+        startsWith('Sent:'),
+      );
+      await settle(created);
+      expect(
+        await call('session_wait', {'session': id}, from: caller.id),
+        startsWith('It is idle now.'),
+      );
+    },
+  );
+
+  test('session_new validates inputs and gate before any creation', () async {
+    final before = workspace.threads.length;
+    for (final args in <Map<String, Object?>>[
+      {},
+      {'text': ''},
+      {'text': 42},
+      {'text': 'Task', 'project': 7},
+      {'text': 'Task', 'project': 'not-a-project'},
+    ]) {
+      expect(await call('session_new', args), contains('Invalid argument'));
+      expect(workspace.threads, hasLength(before));
+    }
+    on = false;
+    expect(await call('session_new', {'text': 'Task'}), 'No tool session_new.');
+    expect(workspace.threads, hasLength(before));
+  });
+
+  test('session_new deduplicates concurrent calls and permits replacement after deletion', () async {
+    final before = workspace.threads.length;
+    final answers = await Future.wait([
+      call('session_new', {'text': 'Identical task'}),
+      call('session_new', {'text': 'Identical task'}),
+    ]);
+    expect(workspace.threads, hasLength(before + 1));
+    final created = workspace.threads.last;
+    final id = BotTools.idOf(created);
+    expect(answers.every((answer) => answer.contains(id)), isTrue);
+    expect(
+      await call('session_new', {'text': 'Identical task'}),
+      startsWith('Already started:'),
+    );
+    await settle(created);
+    workspace.delete(created);
+    expect(
+      await call('session_new', {'text': 'Identical task'}),
+      startsWith('Started:'),
+    );
+    final replacement = workspace.threads.last;
+    expect(BotTools.idOf(replacement), isNot(id));
+    await settle(replacement);
+  });
+
+  test(
+    'session_new resolves the caller project instead of the selected project',
+    () async {
+      final projectB = Project('other', p.join(app, 'other'));
+      workspace.dispose();
+      workspace = Workspace(
+        kernels: [kernel],
+        projects: [Project('app', app), projectB],
+      );
+      SessionTools.register(workspace);
+      final caller = workspace.create(project: workspace.projectAt(app));
+      caller.session.send(const ComposerMessage(text: 'coordinate'));
+      await settle(caller);
+      final focused = workspace.create(project: projectB);
+      final answer = await call('session_new', {
+        'text': 'Default project task',
+      }, from: caller.id);
+      expect(answer, contains(app));
+      final created = workspace.threads.last;
+      expect(created.project.path, app);
+      expect(workspace.current, same(focused));
+      await settle(created);
+      final explicit = await call('session_new', {
+        'text': 'Other project task',
+        'project': 'other',
+      }, from: caller.id);
+      expect(explicit, contains(projectB.path));
+      expect(workspace.threads.last.project, projectB);
+      await settle(workspace.threads.last);
+    },
+  );
+
+  test('session_new refuses ambiguous projects and cancelled calls without side effects', () async {
+    workspace.dispose();
+    workspace = Workspace(
+      kernels: [kernel],
+      projects: [Project('same', app), Project('same', p.join(app, 'another'))],
+    );
+    SessionTools.register(workspace);
+    final before = workspace.threads.length;
+    expect(
+      await call('session_new', {'text': 'Task', 'project': 'same'}),
+      contains('ambiguous'),
+    );
+    expect(workspace.threads, hasLength(before));
+    final cancellation = Completer<void>()..complete();
+    expect(
+      await call('session_new', {
+        'text': 'Cancelled task',
+      }, cancelled: cancellation.future),
+      contains('Cancelled'),
+    );
+    expect(workspace.threads, hasLength(before));
+    workspace.appFolderRoot = p.join(app, 'bots');
+    expect(
+      await call('session_new', {
+        'text': 'Blocked',
+      }, cwd: p.join(app, 'bots', 'one')),
+      'No tool session_new.',
+    );
+    expect(workspace.threads, hasLength(before));
+  });
+
+  test('new coordination tool unregisters and forceNew leaves old reuse behavior intact', () async {
+    final project = workspace.projectAt(app);
+    final empty = workspace.startAgent(project);
+    expect(workspace.startAgent(project), same(empty));
+    final fresh = workspace.startAgent(project, forceNew: true);
+    expect(fresh, isNot(same(empty)));
+    expect(workspace.startAgent(project), same(empty));
+    SessionTools.unregister();
+    expect(await offered(app), isNot(contains('session_new')));
+    expect(
+      await call('session_new', {'text': 'No tool'}),
+      'No tool session_new.',
+    );
+  });
 
   test('an agent lists and reads the others, not itself; hands one work '
       'once, said so', () async {
