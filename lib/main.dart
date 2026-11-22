@@ -1035,6 +1035,7 @@ class _BaoCodeAppState extends State<BaoCodeApp>
                         _windows.chat,
                         ..._windows.ideWindows,
                         ..._windows.agentWindows,
+                        ..._windows.panelWindows,
                         ?_windows.stash,
                       ])
                         if (_windows.host.viewOf(window.viewId)

@@ -11,6 +11,8 @@ import '../remote/remote_location.dart';
 import '../remote/remote_services.dart';
 import '../chat/composer/composer_files.dart';
 import '../chat/composer/file_drop.dart';
+import '../chat/side_panel/file_link.dart' show FileLineRange;
+import '../chat/side_panel/file_open.dart' show FileOpenRequest;
 import '../ide/ide_dialog.dart';
 import '../ide/ide_quick_input.dart';
 import '../ide/ide_workspace.dart';
@@ -33,9 +35,318 @@ import 'window_settings.dart';
 /// The kinds of window: the chat's, the app's main one (there is one);
 /// the IDE's, one per folder (or none: its welcome); an agent's, its
 /// conversation alone (Explorer's Open with BaoCode, a new one each time);
-/// and the stash's panel (see lib/stash/), none of the app's windows to the
-/// system: not listed, never in front of the others as they are.
-enum AppWindowKind { chat, ide, agent, stash }
+/// a file panel's, the files of a project its owner picked; and the stash's
+/// panel (see lib/stash/), none of the app's windows to the system: not
+/// listed, never in front of the others as they are.
+enum AppWindowKind { chat, ide, agent, panel, stash }
+
+/// What a panel shows: one of the main window's dock tabs, moved out into
+/// a window of its own, or the files of a project (a legacy independent
+/// file panel, which has no [PanelSpec.tabId]).
+enum PanelKind {
+  files,
+  changes,
+  terminal,
+  usage,
+  plan,
+  agents,
+  ports,
+  team,
+  scratch,
+  chat,
+}
+
+/// A panel: a window of its own, opened by [ownerId] (an agent's session,
+/// whose id keeps it across runs) on [projectPath]'s [kind]. Its [id] is
+/// stable: opening a panel with an id that is already open shows that one.
+///
+/// A panel moved out of the dock keeps its [tabId] (the dock panel's id),
+/// and where it was ([dockGroup], [dockIndex]), so it can return there.
+/// Its [ownerReference] is kept only in memory (or in the JSON when it is
+/// JSON-safe): a draft conversation whose session has no id yet, which the
+/// main workbench resolves when the panel is opened again (see
+/// [AppWindows.prepareDockPanelRestore]).
+class PanelSpec {
+  const PanelSpec({
+    required this.id,
+    required this.ownerId,
+    required this.projectPath,
+    this.kind = PanelKind.files,
+    this.tabId,
+    this.ownerReference,
+    this.dockGroup,
+    this.dockIndex,
+    this.state = const {},
+    this.frame,
+    this.tabs = const [],
+    this.activeFile,
+    this.readOnly = false,
+    this.pinned = false,
+  });
+
+  final String id;
+
+  /// The owner's session id; empty for an unsent draft, which
+  /// [ownerReference] names instead.
+  final String ownerId;
+  final String projectPath;
+  final PanelKind kind;
+
+  /// The dock tab it was moved from; null for a legacy independent file
+  /// panel (one opened as a copy, with no tab to return to).
+  final String? tabId;
+
+  /// The owner while its session has no id (an unsent draft): the live
+  /// object this run, or a JSON-safe token another run can resolve. Not
+  /// kept when it is not JSON-safe.
+  final Object? ownerReference;
+
+  /// Where it was in the dock: the group it was moved from and its place
+  /// there (kept to return it).
+  final String? dockGroup;
+  final int? dockIndex;
+
+  /// The tab's own state (a scratch's text, a page's place): JSON values
+  /// only, kept for the next launch.
+  final Map<String, Object?> state;
+
+  /// Legacy file windows keep their original project until explicitly unlocked.
+  bool get filesLocked => state['filesLocked'] != false;
+
+  /// Where it was, as it last reported (kept for the next launch).
+  final WindowFrame? frame;
+
+  /// The files its side panel shows (a request may hold what only its
+  /// session has, as a diff: those are not kept).
+  final List<FileOpenRequest> tabs;
+
+  /// The file in front among [tabs], by its path.
+  final String? activeFile;
+
+  /// Whether it shows its files not to edit: a panel duplicated from
+  /// another, so that the same file has one editor.
+  final bool readOnly;
+
+  /// Whether the system keeps this window above other windows.
+  final bool pinned;
+
+  static const Object _unset = Object();
+
+  PanelSpec copyWith({
+    String? ownerId,
+    String? projectPath,
+    WindowFrame? frame,
+    List<FileOpenRequest>? tabs,
+    Object? activeFile = _unset,
+    bool? readOnly,
+    bool? pinned,
+    String? tabId,
+    Object? ownerReference = _unset,
+    String? dockGroup,
+    int? dockIndex,
+    Map<String, Object?>? state,
+  }) => PanelSpec(
+    id: id,
+    ownerId: ownerId ?? this.ownerId,
+    projectPath: projectPath ?? this.projectPath,
+    kind: kind,
+    tabId: tabId ?? this.tabId,
+    ownerReference: identical(ownerReference, _unset)
+        ? this.ownerReference
+        : ownerReference,
+    dockGroup: dockGroup ?? this.dockGroup,
+    dockIndex: dockIndex ?? this.dockIndex,
+    state: state ?? this.state,
+    frame: frame ?? this.frame,
+    tabs: tabs ?? this.tabs,
+    activeFile: identical(activeFile, _unset)
+        ? this.activeFile
+        : activeFile as String?,
+    readOnly: readOnly ?? this.readOnly,
+    pinned: pinned ?? this.pinned,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'ownerId': ownerId,
+    'projectPath': projectPath,
+    'kind': kind.name,
+    'tabId': ?tabId,
+    if (ownerReference != null && _jsonSafe(ownerReference))
+      'ownerReference': ownerReference,
+    'dockGroup': ?dockGroup,
+    'dockIndex': ?dockIndex,
+    if (state.isNotEmpty) 'state': state,
+    'tabs': [for (final request in tabs) ?_requestToJson(request)],
+    'activeFile': activeFile,
+    'readOnly': readOnly,
+    'pinned': pinned,
+    'frame': ?frame?.toJson(),
+  };
+
+  /// Whether [value] can be written as JSON as it is (a moved panel's
+  /// owner reference is dropped when it cannot).
+  static bool _jsonSafe(Object? value) => switch (value) {
+    null || bool() || num() || String() => true,
+    final List list => list.every(_jsonSafe),
+    final Map map => map.entries.every(
+      (entry) => entry.key is String && _jsonSafe(entry.value),
+    ),
+    _ => false,
+  };
+
+  /// Null for an entry that is not a panel (an owner or id gone, or a
+  /// file of another version's). An entry with no owner id is one of an
+  /// unsent draft, whose [ownerReference] names its owner instead.
+  static PanelSpec? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final id = json['id'];
+    final projectPath = json['projectPath'];
+    if (id is! String || id.isEmpty) return null;
+    if (projectPath is! String) return null;
+    final owner = json['ownerId'];
+    final ownerReference = json['ownerReference'];
+    final ownerId = owner is String ? owner : '';
+    final activeFile = json['activeFile'];
+    final tabId = json['tabId'];
+    final dockGroup = json['dockGroup'];
+    final dockIndex = json['dockIndex'];
+    final tab = tabId is String && tabId.isNotEmpty ? tabId : null;
+    // No owner id and no reference names no owner at all, unless it is a
+    // moved tab (whose owner the workbench resolves at restore).
+    if (ownerId.isEmpty && ownerReference == null && tab == null) {
+      return null;
+    }
+    final kind = PanelKind.values.asNameMap()[json['kind'] ?? 'files'];
+    if (kind == null ||
+        (tab != null &&
+            (kind == PanelKind.chat
+                ? !tab.startsWith('chat:')
+                : tab != kind.name))) {
+      return null;
+    }
+    return PanelSpec(
+      id: id,
+      ownerId: ownerId,
+      projectPath: projectPath,
+      kind: kind,
+      tabId: tab,
+      ownerReference: ownerReference,
+      dockGroup: dockGroup is String && dockGroup.isNotEmpty ? dockGroup : null,
+      dockIndex: dockIndex is int ? dockIndex : null,
+      state: _stateFromJson(json['state']),
+      frame: WindowFrame.fromJson(json['frame']),
+      tabs: [
+        if (json['tabs'] case final List<Object?> tabs)
+          for (final request in tabs) ?_requestFromJson(request),
+      ],
+      activeFile: activeFile is String ? activeFile : null,
+      readOnly: json['readOnly'] == true,
+      pinned: json['pinned'] == true,
+    );
+  }
+
+  static Map<String, Object?> _stateFromJson(Object? json) {
+    if (json is! Map) return const {};
+    return {
+      for (final entry in json.entries)
+        if (entry.key is String) entry.key as String: entry.value,
+    };
+  }
+
+  /// [request] as the plain file it shows (its path, lines and flags); null
+  /// for one carrying what only its session has (a diff, the text before or
+  /// after a change, the agent's change pending), which is not kept.
+  static Map<String, Object?>? _requestToJson(FileOpenRequest request) {
+    if (request.diff ||
+        request.plan ||
+        request.agentChange ||
+        request.change != null ||
+        request.original != null ||
+        request.modified != null) {
+      return null;
+    }
+    return {
+      'path': request.path,
+      if (request.range case final range?)
+        'range': {
+          'start': range.start,
+          'end': range.end,
+          'column': ?range.column,
+        },
+      if (request.local) 'local': true,
+      if (request.readOnly) 'readOnly': true,
+    };
+  }
+
+  static FileOpenRequest? _requestFromJson(Object? json) {
+    if (json is! Map) return null;
+    final path = json['path'];
+    if (path is! String || path.isEmpty) return null;
+    return FileOpenRequest(
+      path,
+      range: _rangeFromJson(json['range']),
+      local: json['local'] == true,
+      readOnly: json['readOnly'] == true,
+    );
+  }
+
+  static FileLineRange? _rangeFromJson(Object? json) {
+    if (json is! Map) return null;
+    final start = json['start'];
+    if (start is! int || start < 1) return null;
+    final end = json['end'];
+    final column = json['column'];
+    return FileLineRange(
+      start,
+      end is int ? end : null,
+      column is int ? column : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PanelSpec &&
+      other.id == id &&
+      other.ownerId == ownerId &&
+      other.projectPath == projectPath &&
+      other.kind == kind &&
+      other.tabId == tabId &&
+      other.ownerReference == ownerReference &&
+      other.dockGroup == dockGroup &&
+      other.dockIndex == dockIndex &&
+      mapEquals(other.state, state) &&
+      other.frame == frame &&
+      listEquals(other.tabs, tabs) &&
+      other.activeFile == activeFile &&
+      other.readOnly == readOnly &&
+      other.pinned == pinned;
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    ownerId,
+    projectPath,
+    kind,
+    tabId,
+    ownerReference,
+    dockGroup,
+    dockIndex,
+    Object.hashAllUnordered(
+      state.entries.map((entry) => Object.hash(entry.key, entry.value)),
+    ),
+    frame,
+    Object.hashAll(tabs),
+    activeFile,
+    readOnly,
+    pinned,
+  );
+
+  @override
+  String toString() =>
+      'PanelSpec($id, $kind${tabId == null ? '' : ' $tabId'}, $ownerId, '
+      '$projectPath)';
+}
 
 /// What a window's workbench does for [AppWindows]: it is the one to open
 /// files in it, show an agent there, and answer for what it has unsaved.
@@ -74,9 +385,29 @@ abstract interface class WindowDelegate {
   void runCommand(String command);
 }
 
+/// What a file panel's workbench does for [AppWindows], beside what every
+/// window's does ([WindowDelegate]): answer for the files it would lose as
+/// the panel closes, and take what the panel showed when it docks.
+abstract interface class FilePanelDelegate {
+  /// Whether the panel may close, its unsaved files saved or let go;
+  /// false keeps it open. Asks once (the close is not asked about twice).
+  Future<bool> confirmFilePanelClose();
+
+  /// Takes back [panel]'s tabs and the file in front, as the panel's
+  /// window closes to dock in its owner's.
+  void acceptDockedFiles(PanelSpec panel);
+}
+
 /// One of the app's windows.
 class AppWindow {
-  AppWindow._(this.kind, this.viewId, this._folder, {this.frame, this._thread});
+  AppWindow._(
+    this.kind,
+    this.viewId,
+    this._folder, {
+    this.frame,
+    this._thread,
+    PanelSpec? panel,
+  }) : _panel = panel; // ignore: prefer_initializing_formals
 
   final AppWindowKind kind;
 
@@ -86,7 +417,13 @@ class AppWindow {
   bool get isChat => kind == AppWindowKind.chat;
   bool get isIde => kind == AppWindowKind.ide;
   bool get isAgent => kind == AppWindowKind.agent;
+  bool get isPanel => kind == AppWindowKind.panel;
   bool get isStash => kind == AppWindowKind.stash;
+
+  /// What a panel shows; null for the other windows. Kept up to date as
+  /// the panel's workbench shows other files (see [AppWindows.keepFilePanel]).
+  PanelSpec? get panel => _panel;
+  PanelSpec? _panel;
 
   /// The agent an agent's window shows (another picked in its sidebar
   /// takes its place: see [AppWindows.showInWindow]).
@@ -147,10 +484,34 @@ class AppWindow {
   String label(AppLocalizations l10n) => switch ((kind, _folder)) {
     (AppWindowKind.chat, _) => l10n.windowChatTitle,
     (AppWindowKind.agent, _) => thread!.localizedTitle(l10n),
+    (AppWindowKind.panel, _) =>
+      panel == null ? l10n.windowWelcomeTitle : _panelName(panel!, l10n),
     (AppWindowKind.stash, _) => 'Stash',
     (_, final folder?) => _folderName(folder),
     (_, null) => l10n.windowWelcomeTitle,
   };
+
+  /// A panel's name: what it shows, and its project's, told from the IDE's
+  /// window of it.
+  static String _panelName(PanelSpec panel, AppLocalizations l10n) {
+    final folder = panel.projectPath;
+    final name = switch (panel.kind) {
+      PanelKind.files => l10n.sidePanelFiles,
+      PanelKind.changes => l10n.sidePanelChanges,
+      PanelKind.terminal => l10n.sidePanelTerminal,
+      PanelKind.usage => l10n.sidePanelUsage,
+      PanelKind.plan => l10n.sidePanelPlan,
+      PanelKind.agents => l10n.sidePanelAgents,
+      PanelKind.ports => l10n.sidePanelPorts,
+      PanelKind.team => l10n.dockTeam,
+      PanelKind.scratch => l10n.dockScratch,
+      PanelKind.chat => switch (panel.state['title']) {
+        final String title when title.isNotEmpty => title,
+        _ => l10n.windowChatTitle,
+      },
+    };
+    return folder.isEmpty ? name : '$name — ${_folderName(folder)}';
+  }
 
   /// The title the system shows: `folder — BaoCode`.
   String title(AppLocalizations l10n) => '${label(l10n)} — ${AppEdition.name}';
@@ -168,7 +529,9 @@ class AppWindow {
 
   @override
   String toString() =>
-      'AppWindow(${kind.name} $viewId${_folder == null ? '' : ' $_folder'})';
+      'AppWindow(${kind.name} $viewId'
+      '${_folder == null ? '' : ' $_folder'}'
+      '${panel == null ? '' : ' ${panel!.id}'})';
 }
 
 /// One window kept between runs: an IDE's folder (null: its welcome) and
@@ -219,12 +582,16 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
     Future<AppExitResponse> Function()? quit,
     Future<void> Function()? nextFrame,
     bool? quitsWithLastWindow,
+    bool Function(String ownerId)? panelOwnerExists,
+    this.prepareDockPanelRestore,
+    this.undoDockPanelRestore,
   }) : _settings = settings ?? (() => const WindowSettings()),
        _mainWindow = mainWindow ?? (() => MainWindow.fallback),
        _isDirectory = isDirectory ?? _folderThere,
        _takeFile = takeFile ?? local.takeFile,
        _exists = exists ?? local.exists,
        _hasTray = hasTray ?? (() => false),
+       _panelOwnerOverride = panelOwnerExists,
        _quitOverride = quit,
        _nextFrame = nextFrame ?? (() => WidgetsBinding.instance.endOfFrame),
        _quitsWithLastWindow =
@@ -235,8 +602,24 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   }
 
   /// `windows.json` in the data folder's state/, beside state.json.
+  /// Version 2 keeps the file panels as well; a version 1 file (none kept
+  /// then) reads the same, with no panel. Version 3 keeps a moved dock
+  /// tab's [PanelSpec.tabId], its dock place and its state, and an unsent
+  /// draft's owner reference where JSON can hold it.
   static const fileName = 'windows.json';
-  static const _version = 1;
+  static const _version = 3;
+
+  /// Resolves a moved dock tab being opened again, before its window is
+  /// made: the main workbench establishes the owner (an unsent draft among
+  /// them) and takes the tab out of the main view; false leaves the panel
+  /// closed. When none is given, a panel is restored only if its owner is
+  /// (as before).
+  bool Function(PanelSpec)? prepareDockPanelRestore;
+
+  /// Puts a moved dock tab whose window could not be made back where it
+  /// came from. When none is given, the main workbench's
+  /// [FilePanelDelegate.acceptDockedFiles] takes it back.
+  void Function(PanelSpec)? undoDockPanelRestore;
 
   final WindowHost host;
   final Workspace workspace;
@@ -266,6 +649,17 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   final Future<bool> Function(String path) _exists;
   final bool Function() _hasTray;
   final Future<AppExitResponse> Function()? _quitOverride;
+
+  /// Whether a file panel's owner is still there (a test's answer, else the
+  /// workspace's threads).
+  final bool Function(String ownerId)? _panelOwnerOverride;
+
+  bool _panelOwnerExists(String ownerId) =>
+      (_panelOwnerOverride ?? _threadExists)(ownerId);
+
+  /// Whether an agent of the workspace keeps [ownerId]'s session.
+  bool _threadExists(String ownerId) =>
+      workspace.threads.any((thread) => thread.id == ownerId);
 
   Future<AppExitResponse> _quit() => (_quitOverride ?? _exit)();
 
@@ -310,11 +704,12 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// were.
   @visibleForTesting
   Future<void> closeForQuit() async {
-    if (_ide.isEmpty && _agents.isEmpty) return;
+    if (_ide.isEmpty && _agents.isEmpty && _panels.isEmpty) return;
     _quitting = true;
-    final closing = [..._ide, ..._agents];
+    final closing = [..._ide, ..._agents, ..._panels];
     _ide.clear();
     _agents.clear();
+    _panels.clear();
     notifyListeners();
     await _nextFrame();
     for (final window in closing) {
@@ -354,6 +749,18 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// The agents', in the order they opened.
   List<AppWindow> get agentWindows => List.unmodifiable(_agents);
   final List<AppWindow> _agents = [];
+
+  /// The file panels, in the order they opened.
+  List<AppWindow> get panelWindows => List.unmodifiable(_panels);
+  final List<AppWindow> _panels = [];
+
+  /// The panel with [id] (its stable one), if it is open.
+  AppWindow? panelFor(String id) =>
+      _panels.where((window) => window.panel?.id == id).firstOrNull;
+
+  /// The panel a dock tab moved out, [tabId], if it is open.
+  AppWindow? windowForTab(String tabId) =>
+      _panels.where((window) => window.panel?.tabId == tabId).firstOrNull;
 
   AppWindow? windowOf(int viewId) =>
       _mru.where((window) => window.viewId == viewId).firstOrNull;
@@ -403,6 +810,11 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
 
   ({List<_KeptWindow> windows, bool chatShown})? _launch;
 
+  /// The file panels to open again, read with the windows ([restore] opens
+  /// them once the workspace has its threads: a panel whose owner is gone
+  /// is left out).
+  List<PanelSpec>? _panelLaunch;
+
   /// Whether the chat's window shows at launch, decided before the app
   /// shows (see [prepareLaunch]).
   bool get chatShownAtLaunch => _launch?.chatShown ?? true;
@@ -434,6 +846,7 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
     if (request == LaunchRequest.agent ||
         (_separate && request == LaunchRequest.ide)) {
       _wasInIde = request == LaunchRequest.ide;
+      _panelLaunch = null;
       _launch = (windows: const [_KeptWindow(chat: true)], chatShown: false);
       chat._shown = false;
       _syncWorkspace();
@@ -443,6 +856,12 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
       return;
     }
     final kept = await _store?.read() ?? const <String, Object?>{};
+    // File panels use the native host independently of the IDE-window setting.
+    final panels = [
+      if (kept['panels'] case final List<Object?> entries)
+        for (final json in entries) ?PanelSpec.fromJson(json),
+    ];
+    _panelLaunch = panels;
     if (!_separate) return _prepareMainOnly(kept);
     final old = workspace.takeSingleWindowIde();
     final versioned = kept['version'] != null;
@@ -496,6 +915,7 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   }
 
   Future<void> _prepareMainOnly(Map<String, Object?> kept) async {
+    // The IDE is in the main window, but file panels still open separately.
     final front = [
       for (final json in kept['windows'] as List<Object?>? ?? const [])
         ?_KeptWindow.fromJson(json),
@@ -529,7 +949,93 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
       final front = _mru.where((w) => w.shown).firstOrNull;
       if (front != null) _focus(front);
     });
+    await _restorePanels();
     _save();
+  }
+
+  /// Opens again the file panels [prepareLaunch] read, once the workspace
+  /// has what it keeps (their owners among it): a panel whose owner is
+  /// gone, or whose id is open already, is left out. Back to front, so the
+  /// first of them is in front; where it was, moved back onto a screen if
+  /// that one is gone.
+  Future<void> _restorePanels() async {
+    final kept = _panelLaunch;
+    if (kept == null || !_started) return;
+    if (kept.isEmpty) {
+      _panelLaunch = null;
+      return;
+    }
+    // A session kept in the workspace's projects: not before it has read
+    // them (a first run, the files read while the windows open).
+    if (workspace.loading) {
+      await workspace.loaded.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {},
+      );
+    }
+    try {
+      await _serial(() async {
+        final screens = await host.screens();
+        final restored = <AppWindow>[];
+        for (final spec in kept.reversed) {
+          if (panelFor(spec.id) != null) continue;
+          if (spec.tabId case final tabId? when windowForTab(tabId) != null) {
+            continue;
+          }
+          // One window failing is not the rest's: it is left out, and the
+          // ones after it still open.
+          var prepared = false;
+          try {
+            // A tab moved out of the dock (files among them), or a draft
+            // whose owner only its reference names, is the main
+            // workbench's to resolve: it vacates the main view before the
+            // window opens.
+            final prepare = prepareDockPanelRestore;
+            final moved = spec.tabId != null || spec.ownerReference != null;
+            prepared = moved && prepare != null;
+            if (prepared) {
+              if (!prepare(spec)) {
+                prepared = false;
+                continue;
+              }
+            } else if (!_panelOwnerExists(spec.ownerId)) {
+              continue;
+            }
+            final frame = spec.frame?.fit(screens);
+            final window = await _createPanel(
+              frame == null ? spec : spec.copyWith(frame: frame),
+              show: false,
+            );
+            if (window != null) {
+              restored.add(window);
+            } else if (prepared) {
+              // The window could not be made: the tab goes back where it
+              // came from, rather than being lost.
+              await _undoDockRestore(spec);
+            }
+          } catch (error, stack) {
+            debugPrint('restore panel ${spec.id}: $error\n$stack');
+            // Prepared and not made: the tab goes back rather than away.
+            if (prepared && panelFor(spec.id) == null) {
+              try {
+                await _undoDockRestore(spec);
+              } catch (undoError) {
+                debugPrint('restore panel ${spec.id} undo: $undoError');
+              }
+            }
+          }
+        }
+        // Native secondary windows are hidden until focused. Show every
+        // restored view back to front, not only the last one we created.
+        for (final window in restored) {
+          _toFront(window);
+          await host.focus(window.viewId);
+        }
+      });
+    } finally {
+      // Even one window failing: the rest is written as it is from then on.
+      _panelLaunch = null;
+    }
   }
 
   // --- Opening ---------------------------------------------------------------
@@ -747,7 +1253,11 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
         continue;
       }
       await _serial(() async {
-        if (window.folder == null && !_ide.contains(window)) return;
+        if (window.folder == null &&
+            !_ide.contains(window) &&
+            !_panels.contains(window)) {
+          return;
+        }
         _focus(window);
         for (final target in targets) {
           workspace.addRecentFile(target.path);
@@ -1071,6 +1581,14 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
       await _remove(window);
       return true;
     }
+    if (window.isPanel) {
+      // A moved conversation's window closed returns it to the dock; the
+      // others close as before (see [dockPanel] to dock one back).
+      return _closePanel(
+        window,
+        dockBack: window.panel?.kind == PanelKind.chat,
+      );
+    }
     if (!_ide.contains(window) || !_closing.add(window)) return false;
     try {
       final settings = _settings();
@@ -1119,6 +1637,7 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
     final wasFullScreen = await host.leaveFullScreen(window.viewId);
     _ide.remove(window);
     _agents.remove(window);
+    _panels.remove(window);
     _mru.remove(window);
     _changed();
     // Its view's widgets go first, then the view.
@@ -1214,8 +1733,22 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// in front, shown for it (the app may be in the tray). With nothing at
   /// work, the Quit (the tray's, the last window's close button) is enough.
   Future<bool> confirmQuit() async {
-    final windows = [..._ide, chat];
+    // A panel's own workbench answers for its files, and is not asked about
+    // them again here.
+    final guarded = [
+      for (final panel in _panels)
+        if (panel.delegate case final FilePanelDelegate guard) (panel, guard),
+    ];
+    final windows = [
+      ..._ide,
+      chat,
+      for (final panel in _panels)
+        if (panel.delegate is! FilePanelDelegate) panel,
+    ];
     if (!await _confirmUnsaved(windows)) return false;
+    for (final (_, guard) in guarded) {
+      if (!await guard.confirmFilePanelClose()) return false;
+    }
     final working =
         workspace.threads.any(
           (thread) =>
@@ -1415,6 +1948,17 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
       focus(own);
       return;
     }
+    // A conversation moved out to a window of its own comes in front there,
+    // rather than a second copy opened in the main window.
+    if (_panels.firstWhereOrNull(
+          (w) =>
+              w.panel?.kind == PanelKind.chat &&
+              _panelShowsThread(w.panel!, thread),
+        )
+        case final detached?) {
+      focus(detached);
+      return;
+    }
     if (!multi) {
       if (_started) _focus(chat);
       chat.delegate?.showAgent(thread);
@@ -1435,6 +1979,16 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// [window], an agent's, shows [thread] in place of its own: one picked
   /// (or made) in its sidebar, as the chat's window would. The agent it had
   /// goes if nothing was sent to it, as with its window closed.
+  /// Whether [spec], a chat panel's, shows [thread]: by its tab id, its
+  /// owner's id, or the id it kept in its state.
+  static bool _panelShowsThread(PanelSpec spec, AgentThread thread) {
+    final id = thread.id;
+    if (id == null || id.isEmpty) return false;
+    return spec.tabId == id ||
+        spec.ownerId == id ||
+        spec.state['threadId'] == id;
+  }
+
   void showInWindow(AppWindow window, AgentThread thread) {
     final old = window.thread;
     if (!window.isAgent || identical(old, thread)) return;
@@ -1442,6 +1996,293 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
     _agentsChanged();
     _changed();
     if (old != null) workspace.closeWindowAgent(old);
+  }
+
+  // --- The file panels ---------------------------------------------------------
+
+  /// A panel's stable id: of its owner and what it shows, unless the caller
+  /// gives one.
+  static String panelId(
+    String ownerId,
+    String projectPath, {
+    PanelKind kind = PanelKind.files,
+  }) => '${kind.name}:$ownerId:$projectPath';
+
+  /// Opens [ownerId]'s panel of [kind] on [projectPath] (with [files] in
+  /// editors and [tabs] in its side panel, [activeFile] in front): its
+  /// window, shown in front; the panel with [id], or the one moved from
+  /// [tabId], if it is open already (its files opened, where it was). A
+  /// panel duplicated from another is [readOnly], its files shown not to
+  /// edit. A moved dock tab keeps [dockGroup], [dockIndex] and [state];
+  /// [ownerReference] names an owner whose session has no id yet. [commit],
+  /// after the window's view is there and before its workbench mounts, may
+  /// still refuse it (false closes the window, nothing moved into it). Null
+  /// where the system opens no window of its own, or the window could not
+  /// be made.
+  Future<AppWindow?> openFilePanel(
+    String ownerId, {
+    required String projectPath,
+    String? id,
+    PanelKind kind = PanelKind.files,
+    String? tabId,
+    Object? ownerReference,
+    String? dockGroup,
+    int? dockIndex,
+    Map<String, Object?> state = const {},
+    WindowFrame? frame,
+    List<CodeTarget> files = const [],
+    List<FileOpenRequest> tabs = const [],
+    String? activeFile,
+    bool readOnly = false,
+    bool Function()? commit,
+  }) {
+    if (!_started) return Future.value(null);
+    final spec = PanelSpec(
+      id: id ?? panelId(ownerId, projectPath, kind: kind),
+      ownerId: ownerId,
+      projectPath: projectPath,
+      kind: kind,
+      tabId: tabId,
+      ownerReference: ownerReference,
+      dockGroup: dockGroup,
+      dockIndex: dockIndex,
+      state: state,
+      frame: frame,
+      tabs: tabs,
+      activeFile: activeFile,
+      readOnly: readOnly,
+    );
+    return _serial(() async {
+      if (panelFor(spec.id) case final open?) {
+        _focus(open);
+        if (files.isNotEmpty) {
+          final delegate = await open.ready;
+          await delegate?.openFiles(files);
+        }
+        _save();
+        return open;
+      }
+      if (spec.tabId case final tabId? when windowForTab(tabId) != null) {
+        final open = windowForTab(tabId)!;
+        _focus(open);
+        if (files.isNotEmpty) {
+          final delegate = await open.ready;
+          await delegate?.openFiles(files);
+        }
+        _save();
+        return open;
+      }
+      final created = await _createPanel(spec, files: files, commit: commit);
+      if (created != null) _save();
+      return created;
+    });
+  }
+
+  /// The files [window], a panel's, shows, the file in front and whether
+  /// they stay open: kept for the next launch, without rebuilding it.
+  void keepFilePanel(
+    AppWindow window, {
+    required List<FileOpenRequest> files,
+    required String? activeFile,
+    required bool pinned,
+  }) {
+    final spec = window.panel;
+    if (spec == null) return;
+    window._panel = spec.copyWith(
+      tabs: files,
+      activeFile: activeFile,
+      pinned: pinned,
+    );
+    _save();
+  }
+
+  /// The state [window], a panel's, keeps for the next launch (a
+  /// scratch's text, a page's place): JSON values only.
+  void keepPanelState(
+    AppWindow window,
+    Map<String, Object?> state, {
+    bool? pinned,
+    String? ownerId,
+    String? projectPath,
+    Object? ownerReference = PanelSpec._unset,
+  }) {
+    final spec = window.panel;
+    if (spec == null) return;
+    window._panel = spec.copyWith(
+      state: state,
+      pinned: pinned,
+      ownerId: ownerId,
+      projectPath: projectPath,
+      ownerReference: ownerReference,
+    );
+    if (projectPath != null && projectPath != spec.projectPath) {
+      unawaited(
+        host.setTitle(
+          window.viewId,
+          window.title(_l10n()),
+          path: _localOnly(projectPath),
+        ),
+      );
+      _syncMenus();
+    }
+    _save();
+  }
+
+  Future<AppWindow?> _createPanel(
+    PanelSpec spec, {
+    bool show = true,
+    List<CodeTarget> files = const [],
+    bool Function()? commit,
+  }) async {
+    final l10n = _l10n();
+    final pending = AppWindow._(
+      AppWindowKind.panel,
+      -1,
+      null,
+      panel: spec,
+      frame: spec.frame,
+    );
+    final viewId = await host.create(
+      frame: spec.frame,
+      title: pending.title(l10n),
+    );
+    if (viewId == null) return null;
+    if (await host.waitForView(viewId) == null) {
+      await host.close(viewId);
+      return null;
+    }
+    // The caller's last word once the view is there, before the panel is
+    // listed and its workbench mounts (a staged transfer that found its
+    // source changed closes it here; nothing was moved into it).
+    if (commit != null) {
+      try {
+        if (!commit()) {
+          await host.close(viewId);
+          return null;
+        }
+        // Unmount the source view before another view claims its editor,
+        // composer, approval dialog or terminal host.
+        await _nextFrame();
+      } catch (_) {
+        await host.close(viewId);
+        rethrow;
+      }
+    }
+    final created = AppWindow._(
+      AppWindowKind.panel,
+      viewId,
+      null,
+      frame: spec.frame,
+      panel: spec,
+    );
+    _panels.add(created);
+    _mru.insert(0, created);
+    _changed();
+    // Shown once it has something to show.
+    await _nextFrame();
+    if (show) _focus(created);
+    unawaited(
+      host.setTitle(
+        viewId,
+        created.title(l10n),
+        path: _localOnly(spec.projectPath),
+      ),
+    );
+    if (files.isNotEmpty) {
+      final delegate = await created.ready;
+      await delegate?.openFiles(files);
+    }
+    return created;
+  }
+
+  /// Closes the panel with [id] (as its close button does: its unsaved
+  /// files asked about first); whether it closed. With [returnChat], its
+  /// tab goes back to the main workbench (as [dockPanel]); without it the
+  /// panel closes and its tab is not taken back (a staged transfer that
+  /// found the window could not be kept closes it so).
+  Future<bool> closeFilePanel(String id, {bool returnChat = false}) async {
+    final panel = panelFor(id);
+    if (panel == null) return false;
+    return _closePanel(panel, dockBack: returnChat);
+  }
+
+  /// Returns the panel with [id] to the main dock after checking for
+  /// unsaved changes, whatever [PanelKind] it shows: the main workbench
+  /// takes its tab back (see [FilePanelDelegate.acceptDockedFiles]) and the
+  /// chat's window comes in front. Null if it is not open, or was kept.
+  Future<AppWindow?> dockPanel(String id) async {
+    final panel = panelFor(id);
+    if (panel == null) return null;
+    // A conversation's panel redocks as its window closes (see
+    // [requestClose]); docked here too, it would come back twice.
+    final closed = panel.panel?.kind == PanelKind.chat
+        ? await requestClose(panel)
+        : await _closePanel(panel, dockBack: true);
+    if (!closed) return null;
+    _focus(chat);
+    return chat;
+  }
+
+  /// The files panel's dock-back, as [dockPanel] (kept name).
+  Future<AppWindow?> dockFilePanel(String id) => dockPanel(id);
+
+  /// Called once a panel's window has closed, with what it showed: the
+  /// workbench lets a place in the dock free and drops what it cached of
+  /// the panel's owner. Not called for a panel the window could not close.
+  void Function(PanelSpec)? onDockPanelClosed;
+
+  /// Closes [window], a panel's, once (its guard the same as
+  /// [requestClose]'s): its workbench answers for its unsaved files, then
+  /// with [dockBack] its tab goes back to the main workbench
+  /// ([FilePanelDelegate.acceptDockedFiles]); without it the panel closes
+  /// as before.
+  Future<bool> _closePanel(AppWindow window, {required bool dockBack}) async {
+    if (!_panels.contains(window) || !_closing.add(window)) return false;
+    try {
+      // Its workbench answers for its unsaved files once (a panel built
+      // before this knew of none).
+      final delegate = window.delegate;
+      final mayClose = delegate is FilePanelDelegate
+          ? await (delegate as FilePanelDelegate).confirmFilePanelClose()
+          : await _confirmUnsaved([window]);
+      if (!mayClose) return false;
+      final spec = window.panel;
+      if (dockBack && spec == null) return false;
+      // Closing the only window shown would quit the app (Windows): the
+      // chat's shows again, as the window to use.
+      final lastShown = !_mru.any(
+        (other) => other.shown && !identical(other, window),
+      );
+      if (lastShown) _focus(chat);
+      await _remove(window);
+      try {
+        if (dockBack) {
+          workspace.layout = WorkspaceLayout.chat;
+          final main = await chat.ready;
+          if (main is FilePanelDelegate) {
+            (main as FilePanelDelegate).acceptDockedFiles(spec!);
+          }
+        }
+      } finally {
+        if (spec != null) onDockPanelClosed?.call(spec);
+      }
+      return true;
+    } finally {
+      _closing.remove(window);
+    }
+  }
+
+  /// A moved dock tab whose window could not be made goes back to the main
+  /// workbench, so that it is not lost.
+  Future<void> _undoDockRestore(PanelSpec spec) async {
+    if (undoDockPanelRestore case final undo?) {
+      undo(spec);
+      return;
+    }
+    final main = await chat.ready;
+    if (main is FilePanelDelegate) {
+      (main as FilePanelDelegate).acceptDockedFiles(spec);
+    }
   }
 
   // --- The stash's panel ------------------------------------------------------
@@ -1513,7 +2354,9 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
         host.setTitle(
           window.viewId,
           window.title(l10n),
-          path: _localOnly(window.folder),
+          path: _localOnly(
+            window.isPanel ? window.panel!.projectPath : window.folder,
+          ),
         ),
       );
     }
@@ -1543,6 +2386,8 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
                 ? Codicons.commentDiscussion
                 : window.isAgent
                 ? Codicons.comment
+                : window.isPanel
+                ? Codicons.files
                 : window.folder == null
                 ? Codicons.emptyWindow
                 : Codicons.folder,
@@ -1568,7 +2413,7 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
     if (!_started) return;
     final l10n = _l10n();
     final menus = [
-      for (final window in [chat, ..._ide, ..._agents])
+      for (final window in [chat, ..._ide, ..._agents, ..._panels])
         WindowMenuEntry(
           viewId: window.viewId,
           title: window.label(l10n),
@@ -1615,18 +2460,28 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// Keeps the windows for the next launch (`windows.json`), the one in
   /// front first, and tells the system whether the chat's shows then.
   void _save() {
-    if (!_started || _launch != null || _quitting) return;
+    // Not while what to open again is being read and opened: it would be
+    // written over with the windows opened so far.
+    if (!_started || _launch != null || _panelLaunch != null || _quitting) {
+      return;
+    }
     final store = _store;
     final data = <String, Object?>{
       'version': _version,
       'windows': [
-        // An agent's window is not opened again.
-        for (final window in _mru.where((w) => !w.isAgent))
+        // An agent's window is not opened again; the panels are kept
+        // apart, by their stable ids and owners.
+        for (final window in _mru.where((w) => !w.isAgent && !w.isPanel))
           (window.isChat
                   ? const _KeptWindow(chat: true)
                   : _KeptWindow(folder: window.folder, frame: window.frame))
               .toJson(),
       ],
+      if (_panels.isNotEmpty)
+        'panels': [
+          for (final window in _panels)
+            window.panel!.copyWith(frame: window.frame).toJson(),
+        ],
       'chatShown': chat.shown,
       'leftIn': _leftInIde ? 'ide' : 'chat',
     };
@@ -1642,7 +2497,8 @@ class AppWindows extends ChangeNotifier implements WindowHostEvents {
   /// those that show (the agents' aside). With none showing (the last
   /// closed, as on Windows it quits the app), where it was before.
   bool get _leftInIde {
-    if (_mru.firstWhereOrNull((w) => w.shown && !w.isAgent) case final front?) {
+    if (_mru.firstWhereOrNull((w) => w.shown && !w.isAgent && !w.isPanel)
+        case final front?) {
       _wasInIde = front.isIde;
     }
     return _wasInIde;

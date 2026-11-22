@@ -26,6 +26,16 @@ typedef DockMovePanel = void Function(
   bool root,
 );
 
+/// Reports a released tab drag wherever it ended. [globalPosition] is the
+/// pointer position at release, and [insideDock] says whether that point was
+/// within this host's bounds. The dock never detaches anything itself; owners
+/// decide what an outside release means.
+typedef DockPanelDragEnd = void Function(
+  String panelId, {
+  required Offset globalPosition,
+  required bool insideDock,
+});
+
 /// Renders a [DockController]. Panel IDs and all business behavior are opaque
 /// to this module: it never imports or depends on Workspace.
 class DockHost extends StatelessWidget {
@@ -37,6 +47,7 @@ class DockHost extends StatelessWidget {
     this.emptyBuilder,
     this.onActivatePanel,
     this.onDragPanel,
+    this.onPanelDragEnd,
     this.onPanelMenu,
     this.onKeepPanel,
     this.isPreviewPanel,
@@ -57,6 +68,10 @@ class DockHost extends StatelessWidget {
   final DockEmptyBuilder? emptyBuilder;
   final ValueChanged<String>? onActivatePanel;
   final ValueChanged<String>? onDragPanel;
+
+  /// Called when any tab drag is released, including outside the dock. It only
+  /// reports; detaching is left to the owner.
+  final DockPanelDragEnd? onPanelDragEnd;
   final void Function(String panelId, Offset position)? onPanelMenu;
   final ValueChanged<String>? onKeepPanel;
   final bool Function(String panelId)? isPreviewPanel;
@@ -98,40 +113,7 @@ class DockHost extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller,
-    builder: (context, _) {
-      final maximized = controller.maximizedPanelId;
-      final group = maximized == null
-          ? null
-          : _findGroup(controller.root, maximized);
-      final content = _isEmpty(controller.root)
-          ? _EmptyDock(host: this)
-          : group == null
-          ? _DockNodeView(
-              node: controller.root,
-              controller: controller,
-              host: this,
-              path: '',
-            )
-          : _DockGroupView(
-              key: ValueKey(group.groupId),
-              group: group,
-              controller: controller,
-              host: this,
-              maximized: true,
-            );
-      return ColoredBox(
-        color: AppColors.background,
-        child: Padding(
-          padding: const EdgeInsets.all(Islands.gap),
-          child: group == null && !_isEmpty(controller.root)
-              ? _DockRootDropTarget(host: this, child: content)
-              : content,
-        ),
-      );
-    },
-  );
+  Widget build(BuildContext context) => _DockHostSurface(host: this);
 
   static bool _isEmpty(DockNode node) => switch (node) {
     DockTabs() => node.orderedPanelIds.isEmpty,
@@ -148,6 +130,70 @@ class DockHost extends StatelessWidget {
       case null:
         return null;
     }
+  }
+}
+
+/// Owns the host's bounds so a released drag can be classified as inside or
+/// outside the whole dock, padding included.
+class _DockHostSurface extends StatefulWidget {
+  const _DockHostSurface({required this.host});
+
+  final DockHost host;
+
+  @override
+  State<_DockHostSurface> createState() => _DockHostSurfaceState();
+}
+
+class _DockHostSurfaceState extends State<_DockHostSurface> {
+  final _boundsKey = GlobalKey();
+
+  bool _contains(Offset globalPosition) {
+    final box = _boundsKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    return (Offset.zero & box.size).contains(box.globalToLocal(globalPosition));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final host = widget.host;
+    final controller = host.controller;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final maximized = controller.maximizedPanelId;
+        final group = maximized == null
+            ? null
+            : DockHost._findGroup(controller.root, maximized);
+        final content = DockHost._isEmpty(controller.root)
+            ? _EmptyDock(host: host)
+            : group == null
+            ? _DockNodeView(
+                node: controller.root,
+                controller: controller,
+                host: host,
+                path: '',
+                containsGlobal: _contains,
+              )
+            : _DockGroupView(
+                key: ValueKey(group.groupId),
+                group: group,
+                controller: controller,
+                host: host,
+                maximized: true,
+                containsGlobal: _contains,
+              );
+        return ColoredBox(
+          key: _boundsKey,
+          color: AppColors.background,
+          child: Padding(
+            padding: const EdgeInsets.all(Islands.gap),
+            child: group == null && !DockHost._isEmpty(controller.root)
+                ? _DockRootDropTarget(host: host, child: content)
+                : content,
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -306,12 +352,14 @@ class _DockNodeView extends StatelessWidget {
     required this.controller,
     required this.host,
     required this.path,
+    required this.containsGlobal,
   });
 
   final DockNode node;
   final DockController controller;
   final DockHost host;
   final String path;
+  final bool Function(Offset globalPosition) containsGlobal;
 
   @override
   Widget build(BuildContext context) {
@@ -323,6 +371,7 @@ class _DockNodeView extends StatelessWidget {
           controller: controller,
           host: host,
           maximized: false,
+          containsGlobal: containsGlobal,
         );
       case final DockSplit split:
         return LayoutBuilder(
@@ -346,6 +395,7 @@ class _DockNodeView extends StatelessWidget {
                   controller: controller,
                   host: host,
                   path: '${path}0',
+                  containsGlobal: containsGlobal,
                 ),
               ),
               _extent(
@@ -367,6 +417,7 @@ class _DockNodeView extends StatelessWidget {
                   controller: controller,
                   host: host,
                   path: '${path}1',
+                  containsGlobal: containsGlobal,
                 ),
               ),
             ];
@@ -485,6 +536,7 @@ class DockTab extends StatelessWidget {
     this.onKeep,
     this.onMenu,
     this.onDragStarted,
+    this.onDragEnd,
   });
 
   final String panelId;
@@ -499,6 +551,10 @@ class DockTab extends StatelessWidget {
   final VoidCallback? onKeep;
   final ValueChanged<Offset>? onMenu;
   final VoidCallback? onDragStarted;
+
+  /// Forwarded to [Draggable.onDragEnd]; [DraggableDetails.offset] is the
+  /// pointer's global position at release.
+  final ValueChanged<DraggableDetails>? onDragEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -564,6 +620,7 @@ class DockTab extends StatelessWidget {
     return Draggable<_DockDrag>(
       data: _DockDrag(panelId, groupId!),
       onDragStarted: onDragStarted,
+      onDragEnd: onDragEnd,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Material(
         color: Colors.transparent,
@@ -603,12 +660,14 @@ class _DockGroupView extends StatefulWidget {
     required this.controller,
     required this.host,
     required this.maximized,
+    required this.containsGlobal,
   });
 
   final DockTabs group;
   final DockController controller;
   final DockHost host;
   final bool maximized;
+  final bool Function(Offset globalPosition) containsGlobal;
 
   @override
   State<_DockGroupView> createState() => _DockGroupViewState();
@@ -781,6 +840,13 @@ class _DockGroupViewState extends State<_DockGroupView> {
             onDragStarted: host.onDragPanel == null
                 ? null
                 : () => host.onDragPanel!(panelId),
+            onDragEnd: host.onPanelDragEnd == null
+                ? null
+                : (details) => host.onPanelDragEnd!(
+                    panelId,
+                    globalPosition: details.offset,
+                    insideDock: widget.containsGlobal(details.offset),
+                  ),
           ),
         ),
       ),

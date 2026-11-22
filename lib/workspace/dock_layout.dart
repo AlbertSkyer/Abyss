@@ -213,6 +213,7 @@ class DockController extends ChangeNotifier {
 
   late DockNode _root;
   final Set<String> _availablePanelIds;
+  final Set<String> _blockedPanelIds = {};
   final String? _requiredPanelId;
   String? _maximizedPanelId;
   String? _focusedGroupId;
@@ -225,6 +226,97 @@ class DockController extends ChangeNotifier {
   Set<String> get openPanelIds => UnmodifiableSetView(_panelsIn(_root));
   bool get isEmpty => _root.isEmpty;
   bool get isNotEmpty => !isEmpty;
+
+  /// Whether [panelId] is held by a window of its own: it stays available,
+  /// but the dock will not open, reveal, move or restore it meanwhile.
+  bool isPanelBlocked(String panelId) => _blockedPanelIds.contains(panelId);
+
+  /// Where [panelId] sits, for returning it after being blocked.
+  ({String groupId, int index})? panelPlacement(String panelId) {
+    final group = _groupForPanel(_root, panelId);
+    if (group == null) return null;
+    return (
+      groupId: group.groupId,
+      index: group.orderedPanelIds.indexOf(panelId),
+    );
+  }
+
+  /// Takes [panelId] out of the tree while a window holds it and blocks every
+  /// later insertion until [unblockPanel]. The panel stays available.
+  bool blockPanel(String panelId) {
+    if (panelId.isEmpty || panelId == _requiredPanelId) return false;
+    _blockedPanelIds.add(panelId);
+    if (openPanelIds.contains(panelId)) {
+      _root =
+          _stripBlocked(_removeFrom(_root, panelId) ?? _emptyRoot()) ??
+          _emptyRoot();
+      if (_maximizedPanelId == panelId) _maximizedPanelId = null;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Unblocks [panelId]. If it is still registered and [groupId] exists, the
+  /// panel returns there at [index]. Whether it had been blocked.
+  bool unblockPanel(String panelId, {String? groupId, int? index}) {
+    if (!_blockedPanelIds.remove(panelId)) return false;
+    final placed =
+        groupId != null &&
+        _availablePanelIds.contains(panelId) &&
+        insertPanel(panelId, groupId: groupId, index: index ?? 0);
+    if (!placed) notifyListeners();
+    return true;
+  }
+
+  /// Puts an available [panelId] into [groupId] at [index]; an open panel is
+  /// moved there. False when the panel or group cannot take it.
+  bool insertPanel(String panelId, {required String groupId, int index = 0}) {
+    if (_blockedPanelIds.contains(panelId) ||
+        !_availablePanelIds.contains(panelId)) {
+      return false;
+    }
+    if (_groupById(_root, groupId) == null) return false;
+    final base = openPanelIds.contains(panelId)
+        ? _removeFrom(_root, panelId)
+        : _root;
+    if (base == null) return false;
+    final group = _groupById(base, groupId);
+    if (group == null) return false;
+    final ids = group.orderedPanelIds.where((id) => id != panelId).toList();
+    ids.insert(index.clamp(0, ids.length), panelId);
+    _root = _replaceGroup(
+      base,
+      groupId,
+      (tabs) => tabs.copyWith(orderedPanelIds: ids, active: panelId),
+    );
+    _focusedGroupId = groupId;
+    if (_maximizedPanelId != null) _maximizedPanelId = panelId;
+    notifyListeners();
+    return true;
+  }
+
+  /// [node] without blocked panels; null when nothing of it is left.
+  DockNode? _stripBlocked(DockNode? node) {
+    if (node == null) return null;
+    switch (node) {
+      case DockTabs():
+        final ids = node.orderedPanelIds
+            .where((id) => !_blockedPanelIds.contains(id))
+            .toList();
+        if (ids.isEmpty) return null;
+        if (ids.length == node.orderedPanelIds.length) return node;
+        return node.copyWith(orderedPanelIds: ids);
+      case DockSplit():
+        final first = _stripBlocked(node.first);
+        final second = _stripBlocked(node.second);
+        if (first == null) return second;
+        if (second == null) return first;
+        if (identical(first, node.first) && identical(second, node.second)) {
+          return node;
+        }
+        return node.copyWith(first: first, second: second);
+    }
+  }
 
   /// The group selected as the target for new tabs, if the tree is non-empty.
   DockTabs? get focusedGroup {
@@ -301,6 +393,7 @@ class DockController extends ChangeNotifier {
     if (panelId == _requiredPanelId || !_availablePanelIds.contains(panelId)) {
       return false;
     }
+    _blockedPanelIds.remove(panelId);
     _availablePanelIds.remove(panelId);
     if (openPanelIds.contains(panelId)) {
       _root = _removeFrom(_root, panelId) ?? _emptyRoot();
@@ -340,7 +433,9 @@ class DockController extends ChangeNotifier {
       requiredPanelId: _requiredPanelId,
     );
     if (sanitized == null) return false;
-    _root = sanitized;
+    final unblocked = _stripBlocked(sanitized);
+    if (unblocked == null) return false;
+    _root = unblocked;
     if (_maximizedPanelId != null &&
         !openPanelIds.contains(_maximizedPanelId)) {
       _maximizedPanelId = null;
@@ -416,7 +511,10 @@ class DockController extends ChangeNotifier {
   }
 
   bool open(String panelId) {
-    if (!_availablePanelIds.contains(panelId)) return false;
+    if (_blockedPanelIds.contains(panelId) ||
+        !_availablePanelIds.contains(panelId)) {
+      return false;
+    }
     if (openPanelIds.contains(panelId)) return reveal(panelId);
 
     if (_root.isEmpty) {
@@ -461,6 +559,7 @@ class DockController extends ChangeNotifier {
   }
 
   bool reveal(String panelId) {
+    if (_blockedPanelIds.contains(panelId)) return false;
     final group = _groupForPanel(_root, panelId);
     if (group == null) return false;
     final changedMaximize =
@@ -491,6 +590,7 @@ class DockController extends ChangeNotifier {
 
   /// Moves a panel to an edge of the complete tree, not just its current group.
   bool moveToRoot(String panelId, {required DockSide side}) {
+    if (_blockedPanelIds.contains(panelId)) return false;
     if (_groupForPanel(_root, panelId) == null) return false;
     if (_root case DockTabs group) {
       if (group.orderedPanelIds.length == 1) return false;
@@ -519,6 +619,10 @@ class DockController extends ChangeNotifier {
   /// Moves a tab into [target]'s group, or splits that group on [side].
   /// [target] may be either an open panel ID or a group ID.
   bool move(String panelId, {required String target, DockSide? side}) {
+    if (_blockedPanelIds.contains(panelId) ||
+        _blockedPanelIds.contains(target)) {
+      return false;
+    }
     final source = _groupForPanel(_root, panelId);
     final targetGroup =
         _groupForPanel(_root, target) ?? _groupById(_root, target);
@@ -662,10 +766,12 @@ class DockController extends ChangeNotifier {
       _availablePanelIds.addAll(
         ids.where((id) => id.startsWith('chat:') && id.length > 5),
       );
-      next = _sanitize(
-        value['root'],
-        _availablePanelIds,
-        requiredPanelId: _requiredPanelId,
+      next = _stripBlocked(
+        _sanitize(
+          value['root'],
+          _availablePanelIds,
+          requiredPanelId: _requiredPanelId,
+        ),
       );
     }
     _root = next ?? _defaultRoot(_availablePanelIds);

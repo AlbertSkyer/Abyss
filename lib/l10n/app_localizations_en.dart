@@ -64,6 +64,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dockDevelopLayout => 'Development';
 
   @override
+  String get filePanelDockBack => 'Dock Back to Main Window';
+
+  @override
+  String get filePanelNewWindow => 'New File Window';
+
+  @override
+  String get filePanelDetach => 'Float Files Panel';
+
+  @override
+  String get filePanelLock => 'Lock to Current Conversation';
+
+  @override
+  String get filePanelUnlock => 'Follow Active Conversation';
+
+  @override
+  String get filePanelReadOnly => 'Read-only copy';
+
+  @override
+  String get filePanelOwnerMissing =>
+      'The conversation this file window belongs to is no longer available.';
+
+  @override
+  String get filePanelOpenFailed =>
+      'Could not open a separate file window. The original panel was kept.';
+
+  @override
   String get teamStandby => 'Standby';
 
   @override

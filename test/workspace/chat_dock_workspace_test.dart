@@ -174,5 +174,151 @@ void main() {
       );
       restored.dispose();
     });
+
+    test('a detached chat keeps its thread and redocks where it was', () async {
+      final workspace = Workspace(
+        kernels: [kernel],
+        preferences: MemoryPreferenceStore(),
+      );
+      await workspace.load();
+      final a = workspace.threads.firstWhere((t) => t.id == 'a');
+      final b = workspace.threads.firstWhere((t) => t.id == 'b');
+      workspace.openChatTab(a);
+      workspace.openChatTab(b);
+      final panel = workspace.chatDock.panelId(b);
+      final group = workspace.chatDock.groupOf(b)!.groupId;
+      final index = workspace.chatDock.tabsOf(b).indexOf(b);
+      expect(workspace.detachChatTab(b), isTrue);
+      expect(workspace.isChatDetached(b), isTrue);
+      expect(workspace.openChats, isNot(contains(b)));
+      expect(workspace.chatDock.threadFor(panel), isNull);
+      expect(
+        workspace.resolveFloatingThread(workspace.referenceOfThread(b), panel),
+        same(b),
+      );
+      expect(workspace.redockChatTab(b, groupId: group, index: index), isTrue);
+      expect(workspace.isChatDetached(b), isFalse);
+      expect(workspace.chatDock.tabsOf(b), containsAllInOrder([a, b]));
+      expect(identical(workspace.current, b), isTrue);
+      workspace.dispose();
+    });
+
+    test('an unsent detached chat resolves to the same thread', () async {
+      final workspace = Workspace(
+        kernels: [kernel],
+        preferences: MemoryPreferenceStore(),
+      );
+      await workspace.load();
+      final source = workspace.threads.firstWhere((t) => t.id == 'a');
+      final draft = workspace.create(project: source.project);
+      expect(draft.id, isNull);
+      final reference = workspace.referenceOfThread(draft);
+      expect((reference as Map)['new'], source.project.path);
+      final panel = workspace.chatDock.panelId(draft);
+      expect(workspace.detachChatTab(draft), isTrue);
+      expect(workspace.resolveFloatingThread(reference, panel), same(draft));
+      expect(workspace.redockChatTab(draft), isTrue);
+      expect(workspace.isChatDetached(draft), isFalse);
+      workspace.dispose();
+    });
+
+    test(
+      'a generic owner lookup can leave the live dock chat mounted',
+      () async {
+        final workspace = Workspace(
+          kernels: [kernel],
+          preferences: MemoryPreferenceStore(),
+        );
+        await workspace.load();
+        final a = workspace.threads.firstWhere((t) => t.id == 'a');
+        workspace.openChatTab(a);
+        final panel = workspace.chatDock.panelId(a);
+        expect(
+          workspace.resolveFloatingThread(
+            workspace.referenceOfThread(a),
+            panel,
+            detach: false,
+          ),
+          same(a),
+        );
+        expect(workspace.isChatDetached(a), isFalse);
+        expect(workspace.openChats, contains(a));
+        workspace.dispose();
+      },
+    );
+
+    test('a restored window chat not in the dock is marked detached', () async {
+      final workspace = Workspace(
+        kernels: [kernel],
+        preferences: MemoryPreferenceStore(),
+      );
+      await workspace.load();
+      final b = workspace.threads.firstWhere((t) => t.id == 'b');
+      expect(workspace.openChats, isNot(contains(b)));
+      final panel = 'chat:restored-window';
+      expect(
+        workspace.resolveFloatingThread(workspace.referenceOfThread(b), panel),
+        same(b),
+      );
+      expect(workspace.isChatDetached(b), isTrue);
+      // Raw opens and restores cannot mount it while its window holds it.
+      expect(workspace.chatDock.open(b), isFalse);
+      expect(workspace.openChats, isNot(contains(b)));
+      expect(workspace.redockChatTab(b), isTrue);
+      expect(workspace.isChatDetached(b), isFalse);
+      expect(workspace.openChats, contains(b));
+      workspace.dispose();
+    });
+
+    test('archiving a detached chat releases its marker', () async {
+      final workspace = Workspace(
+        kernels: [kernel],
+        preferences: MemoryPreferenceStore(),
+      );
+      await workspace.load();
+      final b = workspace.threads.firstWhere((t) => t.id == 'b');
+      workspace.openChatTab(b);
+      expect(workspace.detachChatTab(b), isTrue);
+      workspace.setArchived(b, true);
+      expect(workspace.isChatDetached(b), isFalse);
+      expect(workspace.redockChatTab(b), isFalse);
+      workspace.dispose();
+    });
+
+    test('an unsent scratch window restores its draft text', () async {
+      final store = MemoryPreferenceStore();
+      final drafts = MemoryPreferenceStore();
+      final workspace = Workspace(
+        kernels: [kernel],
+        preferences: store,
+        drafts: drafts,
+      );
+      await workspace.load();
+      final source = workspace.threads.firstWhere((t) => t.id == 'a');
+      final scratch = await workspace.createEmptyScratch(source);
+      scratch.session.draft.save(
+        'SCRATCH',
+        const TextSelection.collapsed(offset: 7),
+        const [],
+      );
+      final reference = workspace.referenceOfScratch(scratch);
+      expect((reference! as Map)['empty'], isTrue);
+      workspace.dispose();
+      await pumpEventQueue();
+      final restored = Workspace(
+        kernels: [kernel],
+        preferences: store,
+        drafts: drafts,
+      );
+      await restored.load();
+      final again = restored.resolveFloatingScratch(reference, null);
+      expect(again, isNotNull);
+      expect(again!.session.draft.content, 'SCRATCH');
+      expect(restored.isScratch(again), isTrue);
+      expect(restored.isChatDetached(again), isTrue);
+      expect(restored.redockChatTab(again), isTrue);
+      expect(restored.isChatDetached(again), isFalse);
+      restored.dispose();
+    });
   });
 }

@@ -479,7 +479,15 @@ class AgentSidePanelView extends StatelessWidget {
     this.leading,
     this.windowTitleBar = true,
     this.section,
+    this.fileRoot,
+    this.filePreviewsReadOnly = false,
+    this.onOpenInFileWindow,
   });
+
+  /// A detached files page keeps its original project and its own tabs.
+  final String? fileRoot;
+  final bool filePreviewsReadOnly;
+  final ValueChanged<FileOpenRequest>? onOpenInFileWindow;
 
   /// A docked page uses its own outer tab bar; business state stays in panel.
   final SidePanelSection? section;
@@ -550,7 +558,7 @@ class AgentSidePanelView extends StatelessWidget {
     for (final root in roots) {
       if (root == path || _paths.isWithin(root, path)) return root;
     }
-    return session.root;
+    return fileRoot ?? session.root;
   }
 
   /// The project's, on its host.
@@ -668,7 +676,7 @@ class AgentSidePanelView extends StatelessWidget {
   /// it or from the conversation.
   Widget _filesPage(BuildContext context, SidePanelTabs tabs) {
     final l10n = context.l10n;
-    final root = session.root;
+    final root = fileRoot ?? session.root;
     final active = tabs.active;
     final explorer = root == null
         ? null
@@ -1315,10 +1323,19 @@ class AgentSidePanelView extends StatelessWidget {
     SidePanelTab tab, {
     bool plan = false,
   }) => FilePreview(
-    key: ValueKey((session, tab.path, tab.diff)),
-    request: tab.request,
+    key: fileRoot != null
+        ? ObjectKey(tab)
+        : ValueKey((session, tab.path, tab.diff)),
+    request: filePreviewsReadOnly
+        ? FileOpenRequest(
+            tab.path,
+            range: tab.request.range,
+            local: tab.request.local,
+            readOnly: true,
+          )
+        : tab.request,
     reveal: tab.reveal,
-    edit: tab.edit,
+    edit: filePreviewsReadOnly ? null : tab.edit,
     onEdit: (edit) => panel.keepEdit(tab, edit),
     diffScroll: tab.diffScroll,
     onDiffScrolled: (offset) => tab.diffScroll = offset,
@@ -1330,7 +1347,11 @@ class AgentSidePanelView extends StatelessWidget {
             tab.path,
             (kept) => kept.copyWith(previewLine: line),
           ),
-    agentEdit: tab.diff || tab.request.local || tab.request.readOnly
+    agentEdit:
+        filePreviewsReadOnly ||
+            tab.diff ||
+            tab.request.local ||
+            tab.request.readOnly
         ? null
         : IdeAgentEdit.inSession(session, tab.path),
     // In the tab of what was looked at last: one done, the next in its place.
@@ -1363,12 +1384,20 @@ class AgentSidePanelView extends StatelessWidget {
           maxPickerWidth: 180,
           padding: const EdgeInsets.only(left: 6),
         )
-      else if (onOpenInIde case final open?)
-        IdeActionButton(
-          icon: Codicons.goToFile,
-          tooltip: context.l10n.sidePanelOpenInIde,
-          onPressed: () => open(tab.request),
-        ),
+      else ...[
+        if (onOpenInIde case final open?)
+          IdeActionButton(
+            icon: Codicons.goToFile,
+            tooltip: context.l10n.sidePanelOpenInIde,
+            onPressed: () => open(tab.request),
+          ),
+        if (onOpenInFileWindow case final open? when !tab.diff)
+          IdeActionButton(
+            icon: Codicons.add,
+            tooltip: context.l10n.filePanelNewWindow,
+            onPressed: () => open(tab.request),
+          ),
+      ],
     ],
   );
 }

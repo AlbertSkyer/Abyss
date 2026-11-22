@@ -64,6 +64,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dockDevelopLayout => '开发工作区';
 
   @override
+  String get filePanelDockBack => '停靠回主窗口';
+
+  @override
+  String get filePanelNewWindow => '新建文件窗口';
+
+  @override
+  String get filePanelDetach => '浮动文件面板';
+
+  @override
+  String get filePanelLock => '固定到当前会话';
+
+  @override
+  String get filePanelUnlock => '恢复跟随主会话';
+
+  @override
+  String get filePanelReadOnly => '只读副本';
+
+  @override
+  String get filePanelOwnerMissing => '此文件窗口的来源会话已不存在。';
+
+  @override
+  String get filePanelOpenFailed => '无法打开独立文件窗口，原面板已保留。';
+
+  @override
   String get teamStandby => '待命';
 
   @override

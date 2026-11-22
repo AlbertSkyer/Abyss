@@ -200,6 +200,54 @@ abstract class AppLocalizations {
   /// **'Development'**
   String get dockDevelopLayout;
 
+  /// No description provided for @filePanelDockBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Dock Back to Main Window'**
+  String get filePanelDockBack;
+
+  /// No description provided for @filePanelNewWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'New File Window'**
+  String get filePanelNewWindow;
+
+  /// No description provided for @filePanelDetach.
+  ///
+  /// In en, this message translates to:
+  /// **'Float Files Panel'**
+  String get filePanelDetach;
+
+  /// No description provided for @filePanelLock.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock to Current Conversation'**
+  String get filePanelLock;
+
+  /// No description provided for @filePanelUnlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow Active Conversation'**
+  String get filePanelUnlock;
+
+  /// No description provided for @filePanelReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only copy'**
+  String get filePanelReadOnly;
+
+  /// No description provided for @filePanelOwnerMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation this file window belongs to is no longer available.'**
+  String get filePanelOwnerMissing;
+
+  /// No description provided for @filePanelOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open a separate file window. The original panel was kept.'**
+  String get filePanelOpenFailed;
+
   /// No description provided for @teamStandby.
   ///
   /// In en, this message translates to:

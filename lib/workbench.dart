@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:bao_editor/textmate/textmate_syntax.dart';
 import 'package:bao_remote/client.dart' show SshPrompt;
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, listEquals;
+    show defaultTargetPlatform, kIsWeb, listEquals, mapEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -100,6 +100,7 @@ import 'notifications/attention_host.dart';
 import 'notifications/attention_service.dart';
 import 'notifications/attention_settings.dart';
 import 'platform/app_edition.dart';
+import 'platform/app_platform.dart';
 import 'platform/data_dir.dart' show DataDirectory;
 import 'platform/event_log.dart' show appEvent;
 import 'platform/local_paths.dart'
@@ -130,6 +131,7 @@ import 'tips/feature_tips_view.dart';
 import 'tips/star_prompt.dart';
 import 'window/app_windows.dart';
 import 'window/code_args.dart';
+import 'window/window_frame.dart';
 import 'window/window_settings.dart';
 import 'remote/open_remote.dart';
 import 'remote/project_host.dart';
@@ -265,7 +267,15 @@ class Workbench extends StatefulWidget {
   State<Workbench> createState() => _WorkbenchState();
 }
 
-class _WorkbenchState extends State<Workbench> implements WindowDelegate {
+class _ScratchPanelState {
+  AgentThread? thread;
+  AgentThread? source;
+  bool opening = false;
+  bool choosing = false;
+}
+
+class _WorkbenchState extends State<Workbench>
+    implements WindowDelegate, FilePanelDelegate {
   static const _duration = Duration(milliseconds: 200);
 
   /// The border between sidebar and chat: a line at the left of a strip
@@ -391,6 +401,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   bool get _multi => _windows?.multi ?? false;
 
   /// Whether this is one of them.
+  bool get _panelWindow => widget.window?.isPanel ?? false;
   bool get _ideWindow => _multi && (widget.window?.isIde ?? false);
 
   /// Whether this is an agent's window (Explorer's Open with BaoCode): its
@@ -401,7 +412,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// Whether this is the app's main window, the chat's: what the app does
   /// once (its notifications, the system's requests, the File menu) is
   /// done here.
-  bool get _main => !_ideWindow && !_agentWindow;
+  bool get _main => !_ideWindow && !_agentWindow && !_panelWindow;
 
   int get _viewId => widget.window?.viewId ?? 0;
 
@@ -426,7 +437,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// Whether the keyboard is in this window (each window's workbench sees
   /// every key).
   bool get _hasKeyboard {
-    if (!_multi) return true;
+    if (!_multi && _windows?.started != true) return true;
     final focus = FocusManager.instance.primaryFocus?.context;
     if (focus != null && focus.mounted) {
       final view = focus.findAncestorWidgetOfExactType<View>();
@@ -441,7 +452,17 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// The terminals under the conversations, in the focused agent's
   /// project (see [ChatTerminals]); none where they cannot run, nor in an
   /// IDE window (the IDE has its own).
-  late final ChatTerminals? _terminals = switch (widget.terminalBackend) {
+  _WorkbenchState? get _mainWorkbench => switch (_windows?.chat.delegate) {
+    final _WorkbenchState main when !identical(main, this) => main,
+    _ => null,
+  };
+
+  bool get _detachedFiles => widget.window?.panel?.kind == PanelKind.files;
+
+  ChatTerminals? get _terminals =>
+      _panelWindow ? _mainWorkbench?._localTerminals : _localTerminals;
+
+  late final ChatTerminals? _localTerminals = switch (widget.terminalBackend) {
     final backend? when backend.supported && !_ideWindow => ChatTerminals(
       backend,
       rootOf: () => (_agentThread ?? _workspace.current)?.project.path,
@@ -477,16 +498,21 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   final Map<String, Object?> _dockPresets = {};
   final Map<String, GlobalKey> _dockKeys = {};
   final GlobalKey _dockHostKey = GlobalKey();
-  AgentThread? _scratchThread;
-  bool _scratchOpening = false;
+  final _ScratchPanelState _localScratch = _ScratchPanelState();
+  _ScratchPanelState get _scratch =>
+      _panelWindow && widget.window?.panel?.kind == PanelKind.scratch
+      ? _mainWorkbench?._localScratch ?? _localScratch
+      : _localScratch;
+  AgentThread? get _scratchThread => _scratch.thread;
+  set _scratchThread(AgentThread? value) => _scratch.thread = value;
+  AgentThread? get _scratchSource => _scratch.source;
+  set _scratchSource(AgentThread? value) => _scratch.source = value;
+  bool get _scratchOpening => _scratch.opening;
+  set _scratchOpening(bool value) => _scratch.opening = value;
+  bool get _scratchChoosing => _scratch.choosing;
+  set _scratchChoosing(bool value) => _scratch.choosing = value;
+  // Keyboard focus is local to the view; drafts and selection are not.
   bool _scratchFocused = false;
-
-  /// While the new-chat choices show. It keeps reopening an existing
-  /// temporary chat from replacing the choice with it.
-  bool _scratchChoosing = false;
-
-  /// The main conversation new temporary chats are made beside.
-  AgentThread? _scratchSource;
 
   Timer? _dockSaveTimer;
   void _dockChanged() {
@@ -510,10 +536,16 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// The panel at the right of the conversations: the focused agent's
   /// changes and the files opened from its conversation (see
   /// [AgentSidePanel]), shown and as wide as the last run left it.
-  late final AgentSidePanel _sidePanel =
+  AgentSidePanel get _sidePanel => _panelWindow && !_detachedFiles
+      ? _mainWorkbench?._localSidePanel ?? _localSidePanel
+      : _localSidePanel;
+
+  late final AgentSidePanel _localSidePanel =
       AgentSidePanel(
-          state: _workspace.sidePanelView,
-          onSave: () => _workspace.keepSidePanelView(_sidePanel.toJson()),
+          state: _panelWindow ? null : _workspace.sidePanelView,
+          onSave: _panelWindow
+              ? null
+              : () => _workspace.keepSidePanelView(_sidePanel.toJson()),
           settings: widget.settings?.files?.settings,
         )
         ..pane = (() => _panesSidePanels ? _workspace.current?.session : null)
@@ -546,9 +578,13 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// docked sidebar, it stays and the sidebar gives way (see
   /// [_sidePanelLast]).
   void _sidePanelChanged() {
+    if (_panelWindow) {
+      _keepDetachedFiles();
+      return;
+    }
     final asked = _sidePanel.asks != _sidePanelAsks;
     if (AppEdition.isAbyss && asked && _workspace.current != null) {
-      _dock.open(_sidePanel.tabsOf(_workspace.current!.session).shown.name);
+      _showDockTool(_sidePanel.tabsOf(_workspace.current!.session).shown.name);
     }
     if (_sidePanel.isShown == _sidePanelShown &&
         _sidePanel.layout == _layout &&
@@ -689,6 +725,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   void _setPinned(bool pinned) {
     setState(() => _pinned = pinned);
     WindowControls.setAlwaysOnTop(pinned, viewId: _viewId);
+    if (_panelWindow) _keepFloatingPanel();
   }
 
   /// Back in the app, the list picks up sessions started elsewhere (e.g.
@@ -731,6 +768,25 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   @override
   void initState() {
     super.initState();
+    if (_panelWindow) {
+      final window = widget.window!;
+      WindowControls.handleEditCommands(_viewId);
+      WindowControls.handleWindowEvents(_viewId);
+      _pinned = window.panel!.pinned;
+      if (_detachedFiles) {
+        _syncDetachedFileOwner();
+        _workspace.addListener(_syncDetachedFileOwner);
+      } else {
+        _detachedOwner = _floatingOwner(window.panel!);
+        _detachedSession = _detachedOwner?.session;
+        _workspace.addListener(_floatingWorkspaceChanged);
+      }
+      window.attach(this);
+      if (_pinned) {
+        unawaited(WindowControls.setAlwaysOnTop(true, viewId: _viewId));
+      }
+      return;
+    }
     HardwareKeyboard.instance.addHandler(_handleKey);
     _keybindings.addListener(_keybindingsChanged);
     // The window's own channels: its menu bar's commands (the key window's,
@@ -750,6 +806,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     widget.window?.attach(this);
     _windows?.addListener(_windowsChanged);
     if (_main) {
+      if ((AppEdition.isAbyss ? _windows : null) case final windows?) {
+        windows.prepareDockPanelRestore = _prepareFloatingPanelRestore;
+        windows.undoDockPanelRestore = _undoFloatingPanelRestore;
+        windows.onDockPanelClosed = _onFloatingPanelClosed;
+      }
       // A link to a stash (#12 references) shows it here.
       StashController.current?.showPage = _showStash;
       // A stash's file opens as the Stash page shows it.
@@ -888,6 +949,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   void _restoreWorkbench() {
     if (_workspace.workbenchView case final view?) {
       _workspace.removeListener(_restoreWorkbench);
+      if (_main && AppEdition.isAbyss) {
+        if (view['fixedFilesOwner'] case final String owner) {
+          _fixedFilesId = owner;
+        }
+      }
       if (view['dockPresets'] case final Map presets) {
         _dockPresets.addAll(presets.cast<String, Object?>());
       }
@@ -1044,6 +1110,37 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   @override
   void dispose() {
+    if (_panelWindow) {
+      if (_detachedFiles) {
+        _workspace.removeListener(_syncDetachedFileOwner);
+        _localSidePanel.removeListener(_sidePanelChanged);
+        _releaseDetachedTabs();
+        _localSidePanel.dispose();
+      } else {
+        _workspace.removeListener(_floatingWorkspaceChanged);
+      }
+      widget.window?.detach(this);
+      _notifications.dispose();
+      for (final git in _sidePanelGits.values) {
+        git.dispose();
+      }
+      _chatCode?.dispose();
+      for (final index in _fileIndexes.values) {
+        index.dispose();
+      }
+      for (final ide in _ideSpaces.values) {
+        ide.dispose();
+      }
+      super.dispose();
+      return;
+    }
+    if ((_main ? _windows : null) case final windows?) {
+      if (windows.prepareDockPanelRestore == _prepareFloatingPanelRestore) {
+        windows.prepareDockPanelRestore = null;
+        windows.undoDockPanelRestore = null;
+        windows.onDockPanelClosed = null;
+      }
+    }
     _dockSaveTimer?.cancel();
     if (AppEdition.isAbyss) _keepDock();
     _dock.removeListener(_dockChanged);
@@ -1311,7 +1408,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       if (_dock.openPanelIds.contains('terminal')) {
         _dock.close('terminal');
       } else {
-        _dock.open('terminal');
+        _showDockTool('terminal');
       }
       return;
     }
@@ -1436,6 +1533,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// Opens [thread] (in the focused pane, unless it is shown in one) and
   /// focuses its input.
   void _openAgent(AgentThread thread) {
+    if (_focusFloatingConversation(thread)) return;
+    if (_returnedToolOwners.isNotEmpty) setState(_returnedToolOwners.clear);
     _closeDrawer();
     _closeCustomize();
     if (!identical(thread, _workspace.current)) _workspace.select(thread);
@@ -1446,6 +1545,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   /// chat while the IDE shows (its folder's IDE, if another shows), else as
   /// the sidebar opens it.
   void _openNotifiedAgent(AgentThread thread) {
+    if (_focusFloatingConversation(thread)) return;
     if (_workspace.layout != WorkspaceLayout.ide) return _openAgent(thread);
     final folder = thread.project.path;
     if (folder != _ideFolder) _openIdeFolder(folder);
@@ -2991,6 +3091,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   @override
   Widget build(BuildContext context) {
+    if (_panelWindow) return _buildFloatingPanel(context);
     if (_main) _syncFileMenu(context.l10n);
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4103,6 +4204,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   }
 
   void _showSidePanelSection(SidePanelSection section) {
+    if (_windows?.windowForTab(section.name) case final window?) {
+      _windows!.focus(window);
+      return;
+    }
     final thread = _agentThread ?? _workspace.current;
     if (thread != null) _sidePanel.showSection(thread.session, section);
   }
@@ -4158,6 +4263,646 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     if (_sidePanelShownFor(thread)) focus.requestFocus();
   }
 
+  AgentThread? _detachedOwner;
+  ChatSession? _detachedSession;
+  final Set<ChatSession> _detachedFileSessions = {};
+  bool _seedingDetachedFiles = false;
+  String? _fixedFilesId;
+  AgentThread? _fixedFilesDraftOwner;
+  AgentThread? get _fixedFilesOwner => _fixedFilesId == null
+      ? _fixedFilesDraftOwner
+      : _workspace.threads.where((t) => t.id == _fixedFilesId).firstOrNull;
+
+  void _fixFilesTo(AgentThread? owner) {
+    setState(() {
+      _fixedFilesId = owner?.id;
+      _fixedFilesDraftOwner = _fixedFilesId == null ? owner : null;
+    });
+    _workspace.keepWorkbenchView({
+      ...?_workspace.workbenchView,
+      'fixedFilesOwner': _fixedFilesId,
+    });
+  }
+
+  bool _openingFilePanel = false;
+
+  void _syncDetachedFileOwner() {
+    final window = widget.window!;
+    final spec = window.panel!;
+    final anchor = _floatingOwner(spec);
+    final owner = spec.filesLocked
+        ? anchor
+        : _workspace.current ?? anchor;
+    if (owner == null) {
+      // Keep the last session long enough to offer to save its edits.
+      if (_detachedOwner != null && mounted) {
+        setState(() => _detachedOwner = null);
+      }
+      return;
+    }
+    final session = owner.session;
+    final was = _detachedSession;
+    final previous = _detachedOwner;
+    final changed = !identical(previous, owner) || !identical(was, session);
+    _detachedOwner = owner;
+    _detachedSession = session;
+    if (changed && _detachedFileSessions.add(session)) {
+      _seedingDetachedFiles = true;
+      try {
+        if (was != null && identical(previous, owner)) {
+          _sidePanel.carryOver(was, session);
+          _detachedFileSessions.remove(was);
+        } else if (was == null && identical(anchor, owner)) {
+          _openPanelTabs(session, spec.tabs, spec.activeFile);
+        }
+      } finally {
+        _seedingDetachedFiles = false;
+      }
+    }
+    final id = owner.id ?? '';
+    final project = owner.project.path;
+    final reference = _workspace.referenceOfThread(owner);
+    final sameReference = reference is Map && spec.ownerReference is Map
+        ? mapEquals(reference, spec.ownerReference as Map)
+        : reference == spec.ownerReference;
+    if (id != spec.ownerId || project != spec.projectPath || !sameReference) {
+      (_mainWorkbench ?? this)._floatingOwners[spec.id] = owner;
+      _windows?.keepPanelState(
+        window,
+        spec.state,
+        ownerId: id,
+        projectPath: project,
+        ownerReference: reference,
+      );
+    }
+    if (changed) {
+      _keepDetachedFiles();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _toggleDetachedFilesLock() {
+    final window = widget.window!;
+    final spec = window.panel!;
+    _windows?.keepPanelState(window, {
+      ...spec.state,
+      'filesLocked': !spec.filesLocked,
+    });
+    _syncDetachedFileOwner();
+    setState(() {});
+  }
+
+  Iterable<SidePanelTab> get _detachedFileTabs sync* {
+    for (final session in _detachedFileSessions) {
+      yield* _sidePanel.tabsOf(session).files;
+    }
+  }
+
+  void _openPanelTabs(
+    ChatSession session,
+    List<FileOpenRequest> files,
+    String? activeFile,
+  ) {
+    for (final file in files) {
+      _sidePanel.open(session, file);
+    }
+    final tabs = _sidePanel.tabsOf(session);
+    if (tabs.files.where((tab) => tab.path == activeFile).firstOrNull
+        case final active?) {
+      _sidePanel.activate(session, active);
+    }
+  }
+
+  void _keepDetachedFiles() {
+    final session = _detachedSession;
+    if (session == null || _seedingDetachedFiles) return;
+    final tabs = _sidePanel.tabsOf(session);
+    final window = widget.window!;
+    _windows?.keepFilePanel(
+      window,
+      files: [for (final tab in tabs.files) tab.request],
+      activeFile: tabs.active?.path,
+      pinned: _pinned,
+    );
+    _windows?.setEdited(window, _detachedFileTabs.any((tab) => tab.dirty));
+  }
+
+  void _releaseDetachedTabs() {
+    for (final session in _detachedFileSessions) {
+      for (final tab in [..._sidePanel.tabsOf(session).files]) {
+        _sidePanel.close(session, tab);
+      }
+    }
+  }
+
+  Future<bool> _confirmFileEdits(List<SidePanelTab> tabs) async {
+    final dirty = tabs.where((tab) => tab.dirty).toList();
+    if (dirty.isEmpty) return true;
+    if (_panelWindow) _windows?.focus(widget.window!);
+    final l10n = context.l10n;
+    final choice = await showIdeDialog(
+      context,
+      message: dirty.length == 1
+          ? l10n.wbConfirmSave(p.basename(dirty.single.path))
+          : l10n.windowSaveChanges(dirty.length),
+      detail: l10n.explorerChangesLost,
+      buttons: [l10n.commonSave, l10n.commonDontSave],
+    );
+    if (choice == 1) return true;
+    if (choice != 0 || !mounted) return false;
+    for (final tab in dirty) {
+      await tab.edit?.save();
+      if (tab.dirty) {
+        if (mounted) {
+          await showIdeDialog(
+            context,
+            message: localizedFileError(
+              l10n,
+              tab.edit?.error ?? StateError(tab.path),
+            ),
+            buttons: [l10n.commonOk],
+          );
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> confirmFilePanelClose() async {
+    if (_detachedFiles) return _confirmFileEdits(_detachedFileTabs.toList());
+    final session = _detachedSession;
+    if (session == null) return true;
+    final tabs = _sidePanel.tabsOf(session);
+    return _confirmFileEdits(switch (widget.window!.panel!.kind) {
+      PanelKind.changes => tabs.diffs,
+      PanelKind.plan => [?tabs.plan],
+      _ => const [],
+    });
+  }
+
+  @override
+  void acceptDockedFiles(PanelSpec panel) {
+    if (!mounted || !_main) return;
+    final owner = _floatingOwner(panel);
+    if (panel.kind == PanelKind.chat) {
+      if (owner != null) {
+        _workspace.redockChatTab(
+          owner,
+          groupId: panel.dockGroup,
+          index: panel.dockIndex,
+        );
+      }
+      return;
+    }
+    if (panel.kind == PanelKind.files) {
+      _fixFilesTo(panel.filesLocked ? owner : null);
+      if (owner != null) {
+        _openPanelTabs(owner.session, panel.tabs, panel.activeFile);
+      }
+    }
+    final id = panel.tabId ?? panel.kind.name;
+    if (panel.kind != PanelKind.files && owner != null) {
+      _returnedToolOwners[id] = owner;
+    }
+    _dock.unblockPanel(id, groupId: panel.dockGroup, index: panel.dockIndex);
+    _dock.open(id);
+  }
+
+  AgentThread? get _filesOwner {
+    final fixed = _fixedFilesOwner;
+    if (fixed != null && _workspace.threads.contains(fixed)) return fixed;
+    return _agentThread ?? _workspace.current;
+  }
+
+  void _toggleFilesLock(AgentThread owner) {
+    _fixFilesTo(identical(_fixedFilesOwner, owner) ? null : owner);
+  }
+
+  Future<void> _openFloatingFiles(
+    AgentThread owner, {
+    FileOpenRequest? file,
+  }) async {
+    final windows = _windows;
+    final id = owner.id;
+    if (windows == null ||
+        !windows.started ||
+        id == null ||
+        _openingFilePanel) {
+      return;
+    }
+    _openingFilePanel = true;
+    try {
+      final tabs = _sidePanel.tabsOf(owner.session);
+      final result = await windows.openFilePanel(
+        id,
+        projectPath: _detachedFiles
+            ? widget.window!.panel!.projectPath
+            : owner.project.path,
+        id: 'file:$id:${DateTime.now().microsecondsSinceEpoch}',
+        tabs: file == null
+            ? [for (final tab in tabs.files) tab.request]
+            : [file],
+        activeFile: file?.path ?? tabs.active?.path,
+        readOnly:
+            file != null ||
+            tabs.files.isNotEmpty ||
+            (widget.window?.panel?.readOnly ?? false),
+      );
+      if (mounted && result == null) {
+        _notifications.notify(
+          IdeSeverity.error,
+          context.l10n.filePanelOpenFailed,
+        );
+      }
+    } finally {
+      _openingFilePanel = false;
+    }
+  }
+
+  final Map<String, AgentThread> _floatingOwners = {};
+  // A returned tool first displays exactly what it showed while floating.
+  // The next explicit main conversation selection follows that conversation.
+  final Map<String, AgentThread> _returnedToolOwners = {};
+
+  AgentThread? _returnedToolOwner(String id) {
+    final owner = _returnedToolOwners[id];
+    return owner != null && _workspace.threads.contains(owner) ? owner : null;
+  }
+
+  final Set<String> _transferringTabs = {};
+
+  AgentThread? _savedFloatingOwner(PanelSpec spec) {
+    final byId = _workspace.threads
+        .where((t) => t.id == spec.ownerId && !t.archived)
+        .firstOrNull;
+    if (byId != null) return byId;
+    if (spec.ownerId.isNotEmpty || spec.ownerReference == null) return null;
+    return _workspace.resolveFloatingThread(
+      spec.ownerReference,
+      spec.tabId ?? spec.id,
+      detach: false,
+    );
+  }
+
+  AgentThread? _floatingOwner(PanelSpec spec) {
+    final live = (_mainWorkbench ?? this)._floatingOwners[spec.id];
+    if (live != null && !live.archived && _workspace.threads.contains(live)) {
+      return live;
+    }
+    if (spec.ownerId.isEmpty) return null;
+    return _workspace.threads
+        .where((t) => t.id == spec.ownerId && !t.archived)
+        .firstOrNull;
+  }
+
+  void _floatingWorkspaceChanged() {
+    final spec = widget.window!.panel!;
+    final owner = _floatingOwner(spec);
+    if (!identical(_detachedOwner, owner) ||
+        !identical(_detachedSession, owner?.session)) {
+      final was = _detachedSession;
+      final session = owner?.session;
+      _detachedOwner = owner;
+      _detachedSession = session;
+      if (was != null && session != null && !identical(was, session)) {
+        _sidePanel.carryOver(was, session);
+        if (owner != null) _chatKeys[owner] = null;
+      }
+    }
+    if (spec.kind == PanelKind.scratch) {
+      final reference = _scratchThread == null
+          ? null
+          : _workspace.referenceOfScratch(_scratchThread!);
+      if (!mapEquals(
+        reference as Map<Object?, Object?>?,
+        spec.state['scratch'] as Map<Object?, Object?>?,
+      )) {
+        _keepFloatingPanel();
+      }
+    } else if (owner?.id case final id? when id != spec.ownerId) {
+      _keepFloatingPanel();
+    }
+    if (mounted) setState(() {});
+  }
+
+  bool _prepareFloatingPanelRestore(PanelSpec spec) {
+    final owner = _savedFloatingOwner(spec);
+    if (owner == null &&
+        spec.ownerReference != 'empty-workspace' &&
+        spec.kind != PanelKind.scratch) {
+      return false;
+    }
+    final tab = spec.tabId;
+    if (spec.kind == PanelKind.chat) {
+      if (owner == null || tab == null) return false;
+      final moved = _workspace.resolveFloatingThread(
+        _workspace.referenceOfThread(owner),
+        tab,
+      );
+      if (!identical(owner, moved) || !_workspace.isChatDetached(owner)) {
+        return false;
+      }
+    } else if (tab != null && !_dock.blockPanel(tab)) {
+      return false;
+    }
+    if (owner != null) _floatingOwners[spec.id] = owner;
+    if (spec.kind == PanelKind.scratch) {
+      _scratchThread = _workspace.resolveFloatingScratch(
+        spec.state['scratch'],
+        owner,
+      );
+      _scratchSource = owner;
+      _scratchChoosing = spec.state['choosing'] == true;
+    }
+    if (spec.kind == PanelKind.agents && owner != null) {
+      _sidePanel.tabsOf(owner.session).agentMemberId =
+          spec.state['member'] as String?;
+    }
+    return true;
+  }
+
+  void _undoFloatingPanelRestore(PanelSpec spec) {
+    acceptDockedFiles(spec);
+    _floatingOwners.remove(spec.id);
+  }
+
+  void _onFloatingPanelClosed(PanelSpec spec) {
+    if (!mounted || _windows?.panelFor(spec.id) != null) return;
+    final owner = _floatingOwners.remove(spec.id);
+    if (spec.tabId case final tab? when spec.kind != PanelKind.chat) {
+      _dock.unblockPanel(tab);
+    }
+    if (spec.kind == PanelKind.chat &&
+        owner != null &&
+        _workspace.isChatDetached(owner)) {
+      _workspace.releaseDetachedChat(owner);
+    }
+    if ((spec.kind == PanelKind.scratch ? _scratchThread : null)
+        case final scratch?) {
+      _workspace.releaseDetachedChat(scratch);
+    }
+  }
+
+  bool _focusFloatingConversation(AgentThread owner) {
+    final windows = _windows;
+    if (windows == null || !_workspace.isChatDetached(owner)) return false;
+    final window = windows.panelWindows.where((w) {
+      final spec = w.panel!;
+      return spec.kind == PanelKind.chat &&
+          identical(_floatingOwner(spec), owner);
+    }).firstOrNull;
+    if (window != null) windows.focus(window);
+    return window != null;
+  }
+
+  void _showDockTool(String id) {
+    if (_windows?.windowForTab(id) case final window?) {
+      _windows!.focus(window);
+    } else {
+      _dock.open(id);
+    }
+  }
+
+  Map<String, Object?> _panelRuntimeState(PanelKind kind, AgentThread? owner) =>
+      {
+        if (owner != null) 'title': owner.title,
+        if (kind == PanelKind.scratch) ...{
+          'choosing': _scratchChoosing,
+          if (_scratchThread case final thread?)
+            'scratch': _workspace.referenceOfScratch(thread),
+        },
+        if (kind == PanelKind.agents && owner != null)
+          'member': _sidePanel.tabsOf(owner.session).agentMemberId,
+      };
+
+  void _keepFloatingPanel() {
+    if (_detachedFiles) {
+      _keepDetachedFiles();
+      final window = widget.window!;
+      _windows?.keepPanelState(
+        window,
+        window.panel!.state,
+        ownerId: _detachedOwner?.id,
+      );
+      return;
+    }
+    final window = widget.window!;
+    final kind = window.panel!.kind;
+    final owner = _floatingOwner(window.panel!);
+    _windows?.keepPanelState(
+      window,
+      _panelRuntimeState(kind, owner),
+      pinned: _pinned,
+      ownerId: owner?.id,
+    );
+  }
+
+  Future<void> _floatDockTab(String id, Offset release) async {
+    final windows = _windows;
+    if (windows == null || !windows.started || _transferringTabs.contains(id)) {
+      return;
+    }
+    if (windows.windowForTab(id) case final existing?) {
+      windows.focus(existing);
+      return;
+    }
+    final placement = _dock.panelPlacement(id);
+    if (placement == null) return;
+    final chat = _workspace.chatDock.threadFor(id);
+    final kind = chat != null
+        ? PanelKind.chat
+        : PanelKind.values.asNameMap()[id];
+    if (kind == null || (kind == PanelKind.scratch && _scratchOpening)) return;
+    AgentThread? sourceOfTool() => kind == PanelKind.files
+        ? _filesOwner
+        : _returnedToolOwner(id) ?? _agentThread ?? _workspace.current;
+    final owner = chat ?? sourceOfTool();
+    _transferringTabs.add(id);
+    final session = owner?.session;
+    final fileTabs = kind == PanelKind.files && session != null
+        ? _sidePanel.tabsOf(session)
+        : null;
+    final original = [...?fileTabs?.files];
+    try {
+      if (!await _confirmFileEdits(original) || !mounted) return;
+      final approved = {
+        for (final tab in original) tab: tab.edit?.controller.document.text,
+      };
+      final requests = [for (final tab in original) tab.request];
+      final source = await windows.host.frame(_viewId);
+      if (!mounted) return;
+      WindowFrame? frame;
+      if (source != null) {
+        final scale = AppPlatform.isWindows
+            ? View.of(context).devicePixelRatio
+            : 1.0;
+        final point = source.bounds.topLeft + release * scale;
+        frame = WindowFrame(
+          Rect.fromLTWH(
+            point.dx - 65 * scale,
+            point.dy - 20 * scale,
+            770 * scale,
+            570 * scale,
+          ),
+        );
+        frame = frame.fit(await windows.host.screens());
+      }
+      if (!mounted) return;
+      final instance = 'dock:$id';
+      final created = await windows.openFilePanel(
+        owner?.id ?? '',
+        projectPath: owner?.project.path ?? '',
+        id: instance,
+        kind: kind,
+        tabId: id,
+        ownerReference: owner == null
+            ? 'empty-workspace'
+            : _workspace.referenceOfThread(owner),
+        dockGroup: placement.groupId,
+        dockIndex: placement.index,
+        state: _panelRuntimeState(kind, owner),
+        frame: frame,
+        tabs: requests,
+        activeFile: fileTabs?.active?.path,
+        commit: () {
+          if (!mounted ||
+              _dock.panelPlacement(id) != placement ||
+              (owner != null &&
+                  (!_workspace.threads.contains(owner) ||
+                      !identical(owner.session, session))) ||
+              (chat == null && !identical(owner, sourceOfTool())) ||
+              (kind == PanelKind.scratch && _scratchOpening) ||
+              (fileTabs != null &&
+                  (fileTabs.files.length != original.length ||
+                      original.indexed.any(
+                        (entry) =>
+                            !identical(fileTabs.files[entry.$1], entry.$2) ||
+                            !identical(entry.$2.request, requests[entry.$1]) ||
+                            (entry.$2.dirty &&
+                                approved[entry.$2] !=
+                                    entry.$2.edit?.controller.document.text),
+                      )))) {
+            return false;
+          }
+          final moved = chat == null
+              ? _dock.blockPanel(id)
+              : _workspace.detachChatTab(chat);
+          if (!moved) return false;
+          if (owner != null) _floatingOwners[instance] = owner;
+          if (kind == PanelKind.scratch) _holdFloatingScratch();
+          if (kind == PanelKind.files && session != null) {
+            for (final tab in original) {
+              _sidePanel.close(session, tab);
+            }
+          }
+          return true;
+        },
+      );
+      if (mounted && created == null) {
+        _notifications.notify(
+          IdeSeverity.error,
+          context.l10n.filePanelOpenFailed,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _notifications.notify(
+          IdeSeverity.error,
+          context.l10n.filePanelOpenFailed,
+        );
+      }
+      debugPrint('dock panel: $error');
+    } finally {
+      _transferringTabs.remove(id);
+    }
+  }
+
+  Widget _buildFloatingPanel(BuildContext context) {
+    final window = widget.window!;
+    final spec = window.panel!;
+    final kind = spec.kind;
+    final owner = _detachedFiles ? _detachedOwner : _floatingOwner(spec);
+    final l10n = context.l10n;
+    final windows = _windows!;
+    final section = SidePanelSection.values.asNameMap()[kind.name];
+    final content = switch (kind) {
+      PanelKind.scratch => _buildScratchPanel(owner),
+      _ when owner == null => Center(
+        child: Text(
+          spec.ownerReference == 'empty-workspace'
+              ? l10n.sidePanelNoFolder
+              : l10n.filePanelOwnerMissing,
+        ),
+      ),
+      PanelKind.chat => _buildChat(
+        showToggle: false,
+        pane: owner,
+        docked: true,
+        layered: false,
+      ),
+      PanelKind.team => _buildTeamPanel(owner),
+      _ => _buildSidePanel(owner, section: section, windowTitleBar: false),
+    };
+    return Material(
+      color: AppColors.windowCanvas,
+      child: Column(
+        children: [
+          WindowHeader(
+            workspace: _workspace,
+            ide: false,
+            hasFolder: false,
+            sidebarShown: false,
+            onToggleSidebar: null,
+            pinned: _pinned,
+            onTogglePin: _setPinned,
+            onOpenFolder: () async {},
+            onToggleContextPanel: () {},
+            chatTools: false,
+            compact: true,
+            title: window.label(l10n),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (spec.readOnly)
+                Expanded(
+                  child: Text(
+                    l10n.filePanelReadOnly,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              if (kind == PanelKind.files)
+                IdeActionButton(
+                  key: const ValueKey('floating-file-panel-lock'),
+                  icon: spec.filesLocked ? Codicons.lock : Codicons.unlock,
+                  checked: spec.filesLocked,
+                  tooltip: spec.filesLocked
+                      ? l10n.filePanelUnlock
+                      : l10n.filePanelLock,
+                  onPressed: owner == null ? null : _toggleDetachedFilesLock,
+                ),
+              IdeButton(
+                label: l10n.filePanelDockBack,
+                secondary: true,
+                onPressed: () => unawaited(windows.dockPanel(spec.id)),
+              ),
+              if (kind == PanelKind.files && owner != null)
+                IdeButton(
+                  label: l10n.filePanelNewWindow,
+                  secondary: true,
+                  onPressed: () => unawaited(_openFloatingFiles(owner)),
+                ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          Expanded(child: content),
+        ],
+      ),
+    );
+  }
+
   /// [showToggle]: the window's sidebar hidden, the panel at the
   /// conversations' left is at the window's, under the traffic lights.
   Widget _withSidePanel(Widget child, {required bool showToggle}) =>
@@ -4192,6 +4937,19 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
           emptyBuilder: (context) => _buildChat(showToggle: showToggle),
           onActivatePanel: _activateDockPanel,
           onDragPanel: _keepDockChat,
+          onPanelDragEnd: (id, {required globalPosition, required insideDock}) {
+            if (insideDock || !_main) return;
+            // A release on the sidebar or title bar is still in this view.
+            final box = context.findRenderObject();
+            if (box is! RenderBox ||
+                !box.hasSize ||
+                (Offset.zero & box.size).contains(
+                  box.globalToLocal(globalPosition),
+                )) {
+              return;
+            }
+            unawaited(_floatDockTab(id, globalPosition));
+          },
           onKeepPanel: _keepDockChat,
           isPreviewPanel: (id) => switch (_workspace.chatDock.threadFor(id)) {
             final thread? => _workspace.isPreviewChat(thread),
@@ -4266,6 +5024,24 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
   }
 
   void _dockPanelMenu(String id, Offset position) {
+    if ((id == 'files' && _main ? _filesOwner : null) case final owner?) {
+      final l10n = context.l10n;
+      unawaited(
+        showIdeMenu(
+          context,
+          position: position,
+          entries: [
+            IdeMenuAction(
+              identical(_fixedFilesOwner, owner)
+                  ? l10n.filePanelUnlock
+                  : l10n.filePanelLock,
+              onSelected: () => _toggleFilesLock(owner),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     final thread = _workspace.chatDock.threadFor(id);
     if (thread == null) return;
     final l10n = context.l10n;
@@ -4304,9 +5080,23 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     for (final id in dockDefaultPanelIds.where((id) => id != dockMainPanelId))
       HeaderMenuItem(
         _dockTitle(id),
-        checked: _dock.openPanelIds.contains(id),
-        onSelected: () => _dock.open(id),
+        checked:
+            _dock.openPanelIds.contains(id) ||
+            _windows?.windowForTab(id) != null,
+        onSelected: () => _showDockTool(id),
       ),
+    if ((_main && _windows?.started == true ? _filesOwner : null)
+        case final owner? when owner.id != null)
+      HeaderMenuItem(
+        context.l10n.filePanelNewWindow,
+        onSelected: () => unawaited(_openFloatingFiles(owner)),
+      ),
+    if (_main && _windows != null)
+      for (final window in _windows!.panelWindows)
+        HeaderMenuItem(
+          window.label(context.l10n),
+          onSelected: () => _windows!.focus(window),
+        ),
     const HeaderMenuItem.rule(),
     HeaderMenuItem(
       context.l10n.dockFocusLayout,
@@ -4441,10 +5231,47 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         child: _buildChat(showToggle: false, pane: chat, docked: true),
       );
     }
-    final thread = _agentThread ?? _workspace.current;
+    final thread = id == 'files'
+        ? _filesOwner
+        : _returnedToolOwner(id) ?? _agentThread ?? _workspace.current;
     if (id == 'scratch') return _buildScratchPanel(thread);
     if (thread == null) return const SizedBox.shrink();
     if (id == 'team') return _buildTeamPanel(thread);
+    if (id == 'files' && _main) {
+      final l10n = context.l10n;
+      final locked = identical(_fixedFilesOwner, thread);
+      return Column(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  thread.localizedTitle(l10n),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IdeActionButton(
+                key: const ValueKey('file-panel-lock'),
+                icon: locked ? Codicons.lock : Codicons.unlock,
+                checked: locked,
+                tooltip: locked ? l10n.filePanelUnlock : l10n.filePanelLock,
+                onPressed: () => _toggleFilesLock(thread),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          Expanded(
+            child: _buildSidePanel(
+              thread,
+              section: SidePanelSection.files,
+              windowTitleBar: false,
+            ),
+          ),
+        ],
+      );
+    }
     final section = SidePanelSection.values
         .where((s) => s.name == id)
         .firstOrNull;
@@ -4462,9 +5289,25 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         onUpdate: thread.session.updateAgentMember,
         onDelete: thread.session.deleteAgentMember,
         onShowTasks: (memberId) {
-          _workspace.select(thread);
-          _sidePanel.showAgentTasks(thread.session, memberId: memberId);
-          _dock.open('agents');
+          final main = _mainWorkbench ?? this;
+          if (main._windows?.windowForTab('agents') case final window?) {
+            final owner = main._floatingOwner(window.panel!);
+            if (identical(owner, thread)) {
+              main._sidePanel.showAgentTasks(
+                thread.session,
+                memberId: memberId,
+              );
+              main._windows!.focus(window);
+            } else {
+              // Do not silently retarget another conversation's fixed task view.
+              unawaited(main._openRelatedTasks(thread, memberId));
+            }
+          } else {
+            main._returnedToolOwners['agents'] = thread;
+            main._sidePanel.showAgentTasks(thread.session, memberId: memberId);
+            main._showDockTool('agents');
+            main._windows?.showChat();
+          }
         },
         statusLabel: (s) => switch (s) {
           AgentMemberStatus.running => l10n.sidePanelAgentRunning,
@@ -4487,6 +5330,48 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     },
   );
 
+  Future<void> _openRelatedTasks(AgentThread thread, String memberId) async {
+    final windows = _windows;
+    if (windows == null) return;
+    final reference = _workspace.referenceOfThread(thread);
+    _sidePanel.showAgentTasks(thread.session, memberId: memberId);
+    final id = 'related:agents:$reference';
+    await windows.openFilePanel(
+      thread.id ?? '',
+      id: id,
+      projectPath: thread.project.path,
+      ownerReference: reference,
+      kind: PanelKind.agents,
+      state: _panelRuntimeState(PanelKind.agents, thread),
+      commit: () {
+        if (!mounted || !_workspace.threads.contains(thread)) return false;
+        _floatingOwners[id] = thread;
+        return true;
+      },
+    );
+  }
+
+  void _changeScratchSelection(VoidCallback change) {
+    final before = _scratchThread;
+    setState(change);
+    if (widget.window?.panel?.kind == PanelKind.scratch) {
+      if (!identical(before, _scratchThread) && before != null) {
+        _workspace.releaseDetachedChat(before);
+      }
+      _holdFloatingScratch();
+      _keepFloatingPanel();
+    }
+  }
+
+  void _holdFloatingScratch() {
+    if (_scratchThread case final thread?
+        when !_workspace.isChatDetached(thread)) {
+      if (!_workspace.detachChatTab(thread)) {
+        _workspace.chatDock.markDetached(thread);
+      }
+    }
+  }
+
   Future<void> _openScratch(AgentThread source, {bool empty = false}) async {
     if (_scratchOpening) return;
     final forceNew = _scratchChoosing;
@@ -4498,7 +5383,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       if (!mounted) return;
       if (scratch == null) throw StateError(context.l10n.scratchUnavailable);
       if (!_workspace.scratchChats.contains(scratch)) return;
-      setState(() {
+      _changeScratchSelection(() {
         _scratchThread = scratch;
         _scratchSource = source;
         _scratchChoosing = false;
@@ -4514,13 +5399,14 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         );
       }
     } finally {
-      if (mounted) setState(() => _scratchOpening = false);
+      _scratchOpening = false;
+      if (mounted) setState(() {});
     }
   }
 
   void _chooseScratch(AgentThread? source) {
     if (_scratchOpening) return;
-    setState(() {
+    _changeScratchSelection(() {
       _scratchSource = source;
       _scratchThread = null;
       _scratchChoosing = true;
@@ -4543,7 +5429,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
       if (choice != 0 || !mounted) return;
       _workspace.delete(scratch);
       if (identical(_scratchThread, scratch)) {
-        setState(() {
+        _changeScratchSelection(() {
           _scratchThread = null;
           _scratchSource = source;
           _scratchChoosing = true;
@@ -4551,7 +5437,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         });
       }
     } finally {
-      if (mounted) setState(() => _scratchOpening = false);
+      _scratchOpening = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -4570,10 +5457,11 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         : _workspace.threads.contains(candidate)
         ? candidate
         : null;
-    if (!_scratchChoosing) {
+    if (!_scratchChoosing && !_panelWindow) {
       _scratchThread ??= source == null ? null : _workspace.scratchFor(source);
     }
-    if (!_scratchChoosing &&
+    if (!_panelWindow &&
+        !_scratchChoosing &&
         _scratchThread == null &&
         source != null &&
         _workspace.hasEmptyScratchDraft(source)) {
@@ -4617,7 +5505,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                 ],
                 onChanged: _scratchOpening
                     ? null
-                    : (item) => setState(() {
+                    : (item) => _changeScratchSelection(() {
                         _scratchThread = item;
                         _scratchSource = item == null
                             ? null
@@ -4673,7 +5561,7 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                         ],
                         onChanged: _scratchOpening
                             ? null
-                            : (item) => setState(() {
+                            : (item) => _changeScratchSelection(() {
                                 _scratchThread = item;
                                 _scratchSource = item == null
                                     ? null
@@ -4825,13 +5713,23 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     bool windowTitleBar = true,
     SidePanelSection? section,
   }) {
-    final (:files, :paths) = _projectFiles(thread);
-    final location = thread.project.path;
+    final spec = _detachedFiles ? widget.window?.panel : null;
+    final location = widget.window?.panel?.projectPath ?? thread.project.path;
+    final (:files, :paths) = _filesOfProject(location);
     final multi = _workspace.multiRootAt(location);
     return AgentSidePanelView(
       section: section,
       panel: _sidePanel,
       session: thread.session,
+      fileRoot: spec == null ? null : ProjectHost.of(location).pathOf(location),
+      filePreviewsReadOnly: spec?.readOnly ?? false,
+      onOpenInFileWindow:
+          AppEdition.isAbyss &&
+              (_main || _panelWindow) &&
+              _windows?.started == true &&
+              thread.id != null
+          ? (request) => unawaited(_openFloatingFiles(thread, file: request))
+          : null,
       files: files,
       readBytes: files is IdeHostFiles ? files.readBytes : readFileBytes,
       paths: paths,
@@ -4859,7 +5757,9 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
                 insertSpaces: insertSpaces,
               ),
       git: _shownGit(thread),
-      terminals: _terminals?.terminalsOf(thread.project.path),
+      terminals: _panelWindow && section != SidePanelSection.terminal
+          ? null
+          : _terminals?.terminalsOf(thread.project.path),
       terminalHosts: _terminals?.hosts,
       terminalSkipShell: chatTerminalSkipShell,
       onOpenTerminalLink: _openTerminalLink,
@@ -4968,8 +5868,10 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   /// The files of [thread]'s project, on its host, and how it spells
   /// their paths.
-  ({IdeFileService files, p.Context paths}) _projectFiles(AgentThread thread) {
-    final location = thread.project.path;
+  ({IdeFileService files, p.Context paths}) _projectFiles(AgentThread thread) =>
+      _filesOfProject(thread.project.path);
+
+  ({IdeFileService files, p.Context paths}) _filesOfProject(String location) {
     final host = ProjectHost.of(location);
     return (
       files: _projectFileServices[location] ??= host.files(
@@ -5128,16 +6030,44 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     return store.commandFile(name, project: RemoteLocation.pathOf(location));
   }
 
+  void _openLinkedPanelFile(AgentThread thread, FileOpenRequest request) {
+    final main = _mainWorkbench ?? this;
+    final kind = request.plan
+        ? 'plan'
+        : request.diff
+        ? 'changes'
+        : 'files';
+    final floating = main._windows?.windowForTab(kind);
+    if (floating?.delegate case final _WorkbenchState view
+        when identical(view._detachedOwner, thread)) {
+      view._sidePanel.open(thread.session, request, listAway: true);
+      main._windows!.focus(floating!);
+      return;
+    }
+    if (kind == 'files' &&
+        (floating != null ||
+            (main._fixedFilesOwner != null &&
+                !identical(main._filesOwner, thread)))) {
+      unawaited(main._openFloatingFiles(thread, file: request));
+      return;
+    }
+    main._sidePanel.open(thread.session, request, listAway: true);
+    if (AppEdition.isAbyss && floating == null && main._main) {
+      if (kind != 'files') main._returnedToolOwners[kind] = thread;
+      main._showDockTool(kind);
+      if (_panelWindow) main._windows?.showChat();
+    }
+  }
+
   FileLinkTarget _fileLinks(AgentThread thread, {required bool embedded}) {
     final (:files, :paths) = _projectFiles(thread);
     return FileLinkTarget(
       open: embedded
           ? (request) => _openRequestInIde(thread, request)
           // From the conversation: the file alone, its list out of the way.
-          : (request) => _sidePanel.open(
-              thread.session,
+          : (request) => _openLinkedPanelFile(
+              thread,
               _agentChangeIn(thread.session, request),
-              listAway: true,
             ),
       inPanel: !embedded,
       openInIde: embedded
@@ -5692,7 +6622,8 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
     // The terminal's and the side panel's toggles, on the card's row along
     // its top, under Windows' header as well: in the header only where it
     // has the title in place of that row (see [_titleInHeader]).
-    final cardTools = !embedded && !(place.alone && _titleInHeader);
+    final cardTools =
+        !_panelWindow && !embedded && !(place.alone && _titleInHeader);
     final terminals = _terminals;
     // The window's along the top, in the order of the IDE's title bar
     // ([pin][back]): the pin, then the way to the other layout at the end,
@@ -5845,10 +6776,12 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
         // A pane's card is under the window's row (see [_panesTitleBar]).
         windowTitleBar: place.top && !inPane,
         titleBar: !(place.alone && _titleInHeader),
-        focused: docked
-            ? _workspace.visibleChats.contains(thread) &&
-                  identical(thread, _workspace.current)
-            : place.alone || identical(thread, _workspace.current),
+        focused:
+            _panelWindow ||
+            (docked
+                ? _workspace.visibleChats.contains(thread) &&
+                      identical(thread, _workspace.current)
+                : place.alone || identical(thread, _workspace.current)),
         // On a card of its own, but in the IDE; of several side by side,
         // the focused one's outlined.
         island: embedded ? null : AppColors.conversationSurface,
@@ -6201,6 +7134,20 @@ class _WorkbenchState extends State<Workbench> implements WindowDelegate {
 
   @override
   Future<void> openFiles(List<CodeTarget> files) async {
+    if (_panelWindow) {
+      if (_detachedSession case final session?) {
+        _openPanelTabs(session, [
+          for (final file in files)
+            FileOpenRequest(
+              file.path,
+              range: file.line == null
+                  ? null
+                  : FileLineRange(file.line!, null, file.column),
+            ),
+        ], files.lastOrNull?.path);
+      }
+      return;
+    }
     if (!_showsIde) _workspace.layout = WorkspaceLayout.ide;
     setState(() {});
     // Once the IDE shows.

@@ -252,7 +252,9 @@ void main() {
 
     test('applying multiple main-chat slots retains every open chat', () {
       final chats = dock();
-      for (final name in ['a', 'b', 'c', 'd']) chats.open(name);
+      for (final name in ['a', 'b', 'c', 'd']) {
+        chats.open(name);
+      }
       final old = chats.openChats.toSet();
       final preset = {
         'version': 1,
@@ -293,6 +295,139 @@ void main() {
       expect(encoded, isNot(contains('bindings')));
       expect(chats.applyPreset(snapshot), isTrue);
       expect(chats.openChats.toSet(), {'secret-session', 'other'});
+    });
+  });
+
+  group('detached chats', () {
+    test('detach keeps the tab out and redock restores its group index', () {
+      final chats = dock();
+      chats.open('a');
+      chats.open('b', target: 'a');
+      chats.open('c', target: 'b');
+      final panel = chats.panelId('b');
+      expect(chats.detach('b'), isTrue);
+      expect(chats.isDetached('b'), isTrue);
+      expect(chats.openChats, ['a', 'c']);
+      expect(chats.visibleChats, isNot(contains('b')));
+      expect(chats.open('b'), isFalse);
+      expect(chats.activate('b'), isFalse);
+      expect(jsonEncode(chats.toJson()), isNot(contains(panel)));
+      expect(chats.redock('b'), isTrue);
+      expect(chats.isDetached('b'), isFalse);
+      expect(chats.openChats.toSet(), {'a', 'b', 'c'});
+      expect(chats.tabsOf('a'), ['a', 'b', 'c']);
+      expect(chats.selected, 'b');
+      expect(chats.panelId('b'), panel);
+    });
+
+    test('an unsent detached chat keeps its reference token', () {
+      final chats = ChatDock<String>(
+        referenceOf: (thread) => {'new': '/project', 'slot': thread},
+        resolveReference: (reference, panel) => reference is String
+            ? reference
+            : (reference as Map)['slot'] as String,
+      );
+      chats.open('one');
+      final panel = chats.panelId('one');
+      chats.detach('one');
+      expect(chats.redock('one'), isTrue);
+      expect(chats.panelId('one'), panel);
+      expect(chats.toJson()['bindings'], {
+        panel: {'new': '/project', 'slot': 'one'},
+      });
+    });
+
+    test('restore never mounts a detached chat a second time', () {
+      final chats = dock();
+      chats.open('one');
+      chats.open('two');
+      final saved = jsonDecode(jsonEncode(chats.toJson()));
+      expect(chats.detach('one'), isTrue);
+      expect(chats.restore(saved), isTrue);
+      expect(chats.isDetached('one'), isTrue);
+      expect(chats.openChats, ['two']);
+    });
+
+    test('a released detached chat is not mounted by restoring it', () {
+      final chats = dock();
+      chats.open('one');
+      final saved = jsonDecode(jsonEncode(chats.toJson()));
+      chats.detach('one');
+      chats.releaseDetached('one');
+      expect(chats.isDetached('one'), isFalse);
+      expect(chats.openChats, isEmpty);
+      // Not detached any more: it can come back normally.
+      expect(chats.restore(saved), isTrue);
+      expect(chats.openChats, ['one']);
+    });
+  });
+
+  group('blocked tool panels', () {
+    test('a blocked tool leaves the tree and cannot be mounted raw', () {
+      final chats = dock();
+      chats.open('chat');
+      chats.controller.open('files');
+      final placement = chats.controller.panelPlacement('files')!;
+      expect(chats.controller.blockPanel('files'), isTrue);
+      expect(chats.controller.isPanelBlocked('files'), isTrue);
+      expect(chats.controller.openPanelIds, isNot(contains('files')));
+      expect(chats.controller.open('files'), isFalse);
+      expect(chats.controller.reveal('files'), isFalse);
+      expect(
+        chats.controller.move('files', target: chats.panelId('chat')),
+        isFalse,
+      );
+      expect(
+        chats.controller.insertPanel('files', groupId: placement.groupId),
+        isFalse,
+      );
+      final chatPanel = chats.panelId('chat');
+      expect(
+        chats.controller.replaceRoot(
+          DockTabs(
+            groupId: placement.groupId,
+            orderedPanelIds: [chatPanel, 'files'],
+            active: chatPanel,
+          ),
+        ),
+        isTrue,
+      );
+      expect(chats.controller.openPanelIds, {chatPanel});
+      expect(
+        chats.controller.unblockPanel(
+          'files',
+          groupId: placement.groupId,
+          index: placement.index,
+        ),
+        isTrue,
+      );
+      expect(chats.controller.isPanelBlocked('files'), isFalse);
+      expect(chats.controller.openPanelIds, contains('files'));
+      expect(chats.controller.panelPlacement('files'), (
+        groupId: placement.groupId,
+        index: placement.index,
+      ));
+    });
+
+    test('loadJson and stale dock-close cannot reopen a floating tool', () {
+      final chats = dock();
+      chats.open('chat');
+      final panel = chats.panelId('chat');
+      chats.controller.open('files');
+      chats.controller.blockPanel('files');
+      chats.controller.loadJson({
+        'version': 1,
+        'root': {
+          'type': 'tabs',
+          'groupId': 'restored',
+          'orderedPanelIds': [panel, 'files'],
+          'active': 'files',
+        },
+      });
+      expect(chats.controller.openPanelIds, isNot(contains('files')));
+      expect(chats.controller.close('files'), isFalse);
+      expect(chats.controller.removePanel('files'), isFalse);
+      expect(chats.controller.isPanelBlocked('files'), isTrue);
     });
   });
 }

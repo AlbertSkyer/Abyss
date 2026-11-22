@@ -33,16 +33,24 @@ class ChatDock<T extends Object> {
   final Map<String, T> _threads = {};
   final Map<String, Object> _references = {};
   final Map<T, String> _panels = {};
+  final Map<T, _DetachedPlacement> _detached = {};
   final Map<String, String> _legacyPanels = {};
   final Set<String> _previews = {};
   final List<String> _openingOrder = [];
   String? _selectedPanel;
   bool _changing = false;
   bool _notifying = false;
+  bool _reconciling = false;
 
   static const _newReferencePrefix = 'new:';
 
   T? get selected => threadFor(_selectedPanel);
+
+  /// Whether [thread] is shown in a window of its own instead of the dock.
+  bool isDetached(T thread) => _detached.containsKey(thread);
+
+  /// Whether any chat is shown outside the dock.
+  bool get hasDetached => _detached.isNotEmpty;
 
   /// The last focused group, including a group containing only tool panels.
   DockTabs? get focusedGroup => controller.focusedGroup;
@@ -107,6 +115,8 @@ class ChatDock<T extends Object> {
   }
 
   bool _open(T thread, {bool preview = false, T? target, DockSide? side}) {
+    // A detached chat is shown in its own window: never a second view here.
+    if (_detached.containsKey(thread)) return false;
     if (groupOf(thread) case final group?) {
       if (preview) {
         _markPreview(_panels[thread]!, group.groupId);
@@ -190,6 +200,7 @@ class ChatDock<T extends Object> {
   }
 
   bool _activate(T thread) {
+    if (_detached.containsKey(thread)) return false;
     final panel = _panels[thread];
     if (panel == null || groupFor(panel) == null) return false;
     final result = controller.reveal(panel);
@@ -287,6 +298,114 @@ class ChatDock<T extends Object> {
     if (chats.length < 2) return null;
     final index = chats.indexOf(panel);
     return chats[index == chats.length - 1 ? index - 1 : index + 1];
+  }
+
+  /// Takes [thread] out of the dock for a window of its own. The same thread,
+  /// session and reference stay; nothing is disposed. A marker keeps it from
+  /// being mounted here again until [redock]. Whether it was open.
+  bool detach(T thread) {
+    if (_changing) return _detach(thread);
+    var result = false;
+    _commit(() => result = _detach(thread));
+    return result;
+  }
+
+  bool _detach(T thread) {
+    if (_detached.containsKey(thread)) return false;
+    final panel = _panels[thread];
+    final group = panel == null ? null : groupFor(panel);
+    if (panel == null || group == null) return false;
+    final reference = _freshReference(panel);
+    final placement = _DetachedPlacement(
+      token: _token(reference),
+      groupId: group.groupId,
+      index: group.orderedPanelIds.indexOf(panel),
+      preview: _previews.contains(panel),
+    );
+    final selected = _selectedPanel;
+    final wasSelected = selected == panel;
+    final next = _fallbackIn(group, panel);
+    _forget(panel);
+    _detached[thread] = placement;
+    if (!wasSelected) {
+      _selectedPanel = selected;
+      return true;
+    }
+    if (next != null) {
+      controller.reveal(next);
+      _select(next);
+    } else {
+      final remaining = openChats;
+      _select(remaining.isEmpty ? null : _panels[remaining.last]);
+    }
+    return true;
+  }
+
+  /// Puts a detached [thread] back into the dock: at [groupId]/[index] when
+  /// given, else where it was; in the focused group when that place is gone.
+  bool redock(T thread, {String? groupId, int? index}) {
+    if (_changing) return _redock(thread, groupId: groupId, index: index);
+    var result = false;
+    _commit(() => result = _redock(thread, groupId: groupId, index: index));
+    return result;
+  }
+
+  bool _redock(T thread, {String? groupId, int? index}) {
+    final placement = _detached[thread];
+    if (placement == null) return false;
+    final panel = _register(thread);
+    final targetGroup = groupId ?? placement.groupId;
+    final targetIndex = index ?? placement.index;
+    if (!controller.open(panel)) {
+      _forget(panel);
+      return false;
+    }
+    if (targetGroup != null &&
+        _groupById(controller.root, targetGroup) != null) {
+      controller.insertPanel(panel, groupId: targetGroup, index: targetIndex);
+    }
+    _detached.remove(thread);
+    if (placement.preview && !_hasThreadDraft(thread)) {
+      _previews.add(panel);
+    }
+    _select(panel);
+    return true;
+  }
+
+  /// Marks [thread] as shown in a window of its own without mounting it here
+  /// (one restored into a window whose tab the dock no longer holds). Raw
+  /// opens and restores cannot mount it until [redock]. Whether it is a
+  /// valid thread not already detached.
+  bool markDetached(T thread) {
+    if (_detached.containsKey(thread)) return true;
+    // Open here still: it must be detached (and placed) instead.
+    if (groupOf(thread) != null) return false;
+    Object reference;
+    try {
+      reference = _referenceOf(thread);
+    } on Object {
+      return false;
+    }
+    if (!_validReference(reference)) return false;
+    final copy = _copyReference(reference);
+    _detached[thread] = _DetachedPlacement(
+      token: _token(copy),
+      groupId: null,
+      index: 0,
+      preview: false,
+    );
+    _changed();
+    return true;
+  }
+
+  /// Forgets a detached [thread] without mounting it (its session is gone).
+  void releaseDetached(T thread) {
+    if (_detached.remove(thread) != null) _changed();
+  }
+
+  bool _isDetachedToken(Object reference) {
+    final token = _token(reference);
+    return _detached.values.any((placement) => placement.token == token);
   }
 
   bool move(
@@ -439,8 +558,11 @@ class ChatDock<T extends Object> {
       final reference = entry.value;
       if (panel is! String || !panel.startsWith('chat:')) continue;
       if (!_validReference(reference) || resolved.containsKey(panel)) continue;
+      // A chat shown in a window is never mounted here a second time, nor
+      // is another thread made for its unsent reference.
+      if (_isDetachedToken(reference)) continue;
       final thread = _resolve(panel, reference);
-      if (thread == null) continue;
+      if (thread == null || _detached.containsKey(thread)) continue;
       resolved[panel] = thread;
       references[panel] = _copyReference(reference);
       panels.add(panel);
@@ -1284,26 +1406,40 @@ class ChatDock<T extends Object> {
   }
 
   void _layoutChanged() {
-    if (_changing || _notifying) return;
-    // Tool operations also come through this controller. Reconcile any dynamic
-    // IDs removed through it so the public queries never expose stale chats.
-    final open = controller.openPanelIds;
-    for (final panel in _threads.keys.toList()) {
-      if (!open.contains(panel)) {
-        _threads.remove(panel);
-        _references.remove(panel);
-        _previews.remove(panel);
-        _openingOrder.remove(panel);
-        final thread = _panels.entries
-            .where((entry) => entry.value == panel)
-            .firstOrNull
-            ?.key;
-        if (thread != null) _panels.remove(thread);
-        _legacyPanels.removeWhere((_, value) => value == panel);
-        if (_selectedPanel == panel) _selectedPanel = null;
+    if (_changing || _notifying || _reconciling) return;
+    _reconciling = true;
+    try {
+      // Tool operations also come through this controller. Reconcile any
+      // dynamic IDs removed through it so the public queries never expose
+      // stale chats.
+      final open = controller.openPanelIds;
+      for (final panel in _threads.keys.toList()) {
+        if (!open.contains(panel)) {
+          _threads.remove(panel);
+          _references.remove(panel);
+          _previews.remove(panel);
+          _openingOrder.remove(panel);
+          final thread = _panels.entries
+              .where((entry) => entry.value == panel)
+              .firstOrNull
+              ?.key;
+          if (thread != null) _panels.remove(thread);
+          _legacyPanels.removeWhere((_, value) => value == panel);
+          if (_selectedPanel == panel) _selectedPanel = null;
+        }
       }
+      // A raw tree mutation must not mount a chat this dock does not know
+      // (its panel was released on detach): unmount it rather than showing
+      // an empty or second view.
+      for (final panel in controller.openPanelIds) {
+        if (panel.startsWith('chat:') && !_threads.containsKey(panel)) {
+          controller.removePanel(panel);
+        }
+      }
+      _selectedPanel ??= _activeChat(controller.root);
+    } finally {
+      _reconciling = false;
     }
-    _selectedPanel ??= _activeChat(controller.root);
     _changed();
   }
 
@@ -1343,6 +1479,24 @@ class ChatDock<T extends Object> {
     controller.removeListener(_layoutChanged);
     controller.dispose();
   }
+}
+
+/// Where a chat was when it moved to a window of its own: its reference
+/// token, its group and place there, and whether it was a preview.
+final class _DetachedPlacement {
+  const _DetachedPlacement({
+    required this.token,
+    required this.groupId,
+    required this.index,
+    required this.preview,
+  });
+
+  final String token;
+
+  /// Where it was; null when only marked (a restored window, no dock tab).
+  final String? groupId;
+  final int index;
+  final bool preview;
 }
 
 final class _Geometry {

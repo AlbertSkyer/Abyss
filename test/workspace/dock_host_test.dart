@@ -13,6 +13,7 @@ Widget _host(
   DockEmptyBuilder? emptyBuilder,
   ValueChanged<String>? onActivatePanel,
   ValueChanged<String>? onDragPanel,
+  DockPanelDragEnd? onPanelDragEnd,
   void Function(String panelId, Offset position)? onPanelMenu,
   ValueChanged<String>? onKeepPanel,
   bool Function(String panelId)? isPreviewPanel,
@@ -31,6 +32,7 @@ Widget _host(
         emptyBuilder: emptyBuilder,
         onActivatePanel: onActivatePanel,
         onDragPanel: onDragPanel,
+        onPanelDragEnd: onPanelDragEnd,
         onPanelMenu: onPanelMenu,
         onKeepPanel: onKeepPanel,
         isPreviewPanel: isPreviewPanel,
@@ -334,6 +336,75 @@ void main() {
     );
     await gesture.up();
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('drag release inside the dock reports insideDock', (
+    tester,
+  ) async {
+    final controller = DockController();
+    addTearDown(controller.dispose);
+    final releases = <(String, Offset, bool)>[];
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        onPanelDragEnd: (id, {required globalPosition, required insideDock}) =>
+            releases.add((id, globalPosition, insideDock)),
+      ),
+    );
+    final dock = tester.getRect(find.byType(DockHost));
+    final destination = Offset(dock.center.dx, dock.bottom - 80);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('dock-tab-files'))),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await gesture.moveTo(destination);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(releases, hasLength(1));
+    expect(releases.single.$1, 'files');
+    expect(releases.single.$2, destination);
+    expect(releases.single.$3, isTrue);
+    expect(controller.openPanelIds.length, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('drag release outside the dock reports outside', (tester) async {
+    final controller = DockController();
+    addTearDown(controller.dispose);
+    final releases = <(String, Offset, bool)>[];
+    await tester.pumpWidget(
+      _host(
+        controller,
+        (context, id) => Text('body:$id'),
+        onPanelDragEnd: (id, {required globalPosition, required insideDock}) =>
+            releases.add((id, globalPosition, insideDock)),
+      ),
+    );
+    final dock = tester.getRect(find.byType(DockHost));
+    final destination = Offset(dock.right + 60, dock.center.dy);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('dock-tab-files'))),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await gesture.moveTo(destination);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(releases, hasLength(1));
+    expect(releases.single.$1, 'files');
+    expect(releases.single.$2, destination);
+    expect(releases.single.$3, isFalse);
+    expect(controller.openPanelIds.toList()..sort(), ['files', 'main-chat']);
+    expect(find.text('body:files'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
