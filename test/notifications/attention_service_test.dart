@@ -79,12 +79,13 @@ void main() {
   var focused = true;
   final opened = <AgentThread>[];
 
-  void start() {
+  void start({Future<bool> Function(TrayState?)? confirmTray}) {
     workspace = Workspace.mock();
     host = _FakeHost();
     service = AttentionService(
       workspace: workspace,
       host: host,
+      confirmTray: confirmTray,
       settings: () => settings,
       l10n: () => englishLocalizations,
       onOpen: opened.add,
@@ -202,6 +203,45 @@ void main() {
     workspace.windowActive = true;
     expect(shown.status, ThreadStatus.idle);
     await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('retries an unchanged tray state until the host confirms it', (
+    tester,
+  ) async {
+    final sends = <TrayState?>[];
+    start(
+      confirmTray: (tray) async {
+        sends.add(tray);
+        return sends.length == 2;
+      },
+    );
+    await tester.pump();
+    expect(sends, hasLength(1));
+    service.refresh();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(sends, [sends.first, sends.first]);
+    service.refresh();
+    await tester.pump(const Duration(seconds: 5));
+    expect(sends, hasLength(2));
+  });
+
+  testWidgets('disabling the tray cancels an older enable retry', (
+    tester,
+  ) async {
+    final sends = <TrayState?>[];
+    start(
+      confirmTray: (tray) async {
+        sends.add(tray);
+        return tray == null;
+      },
+    );
+    await tester.pump();
+    settings = const AttentionSettings(tray: false);
+    service.refresh();
+    await tester.pump(const Duration(seconds: 5));
+    expect(sends, hasLength(2));
+    expect(sends.first, isNotNull);
+    expect(sends.last, isNull);
   });
 
   testWidgets('follows the settings', (tester) async {

@@ -26,11 +26,15 @@ class AttentionService {
     required this.onOpen,
     this.settingsChanges,
     this.shown,
+    this.confirmTray,
     bool Function()? focused,
   }) : _focused = focused ?? _windowFocused;
 
   final Workspace workspace;
   final AttentionHost host;
+
+  /// An acknowledged tray update, when the native host supports it.
+  final Future<bool> Function(TrayState?)? confirmTray;
 
   /// The settings now (settings.json's, read as they change).
   final AttentionSettings Function() settings;
@@ -68,14 +72,30 @@ class AttentionService {
   AppLifecycleListener? _lifecycle;
   int? _badge;
   TrayState? _tray;
-  bool _trayShown = false;
+  Timer? _trayRetry;
+  int _trayRevision = 0;
+  bool _trayUnconfirmed = false;
+  static const _trayRetryDelays = [
+    Duration(milliseconds: 250),
+    Duration(seconds: 1),
+    Duration(seconds: 3),
+  ];
   DateTime? _lastSound;
 
   void start() {
     host.onOpen = _open;
     workspace.addListener(_update);
     settingsChanges?.addListener(_update);
-    _lifecycle = AppLifecycleListener(onStateChange: (_) => _focusChanged());
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        _focusChanged();
+        if (state == AppLifecycleState.resumed &&
+            _trayUnconfirmed &&
+            _trayRetry == null) {
+          _sendTray(_tray);
+        }
+      },
+    );
     _focusChanged();
     _update();
   }
@@ -86,6 +106,9 @@ class AttentionService {
     settingsChanges?.removeListener(_update);
     _lifecycle?.dispose();
     _lifecycle = null;
+    _trayRevision++;
+    _trayRetry?.cancel();
+    _trayRetry = null;
   }
 
   /// Brings the badge and the tray up to date, e.g. in a new language.
@@ -163,9 +186,7 @@ class AttentionService {
 
   void _updateTray(List<AgentThread> waiting, int running) {
     if (!settings().tray) {
-      if (_trayShown) unawaited(host.setTray(null));
-      _trayShown = false;
-      _tray = null;
+      if (_tray != null) _sendTray(null);
       return;
     }
     final l10n = this.l10n();
@@ -185,10 +206,33 @@ class AttentionService {
         'quit': l10n.trayQuit,
       },
     );
-    if (_trayShown && tray == _tray) return;
-    _trayShown = true;
+    if (tray != _tray) _sendTray(tray);
+  }
+
+  void _sendTray(TrayState? tray) {
     _tray = tray;
-    unawaited(host.setTray(tray));
+    final confirm = confirmTray;
+    if (confirm == null) {
+      unawaited(host.setTray(tray));
+      return;
+    }
+    final revision = ++_trayRevision;
+    _trayRetry?.cancel();
+    _trayRetry = null;
+    _trayUnconfirmed = false;
+
+    Future<void> attempt(int index) async {
+      final confirmed = await confirm(tray);
+      if (revision != _trayRevision) return;
+      _trayUnconfirmed = !confirmed;
+      if (confirmed || index >= _trayRetryDelays.length) return;
+      _trayRetry = Timer(_trayRetryDelays[index], () {
+        _trayRetry = null;
+        unawaited(attempt(index + 1));
+      });
+    }
+
+    unawaited(attempt(0));
   }
 
   /// Whether the user is looking at [thread]: the window in front, the

@@ -395,7 +395,13 @@ void Attention::HandleMethodCall(
   }
   if (method == "setTray") {
     SetTray(argument);
-    result->Success();
+    if constexpr (edition::kIsAbyss) {
+      // Explorer's rectangle query is not an acknowledgement: it may fail
+      // for a registered icon in the overflow area. Use the add/modify result.
+      result->Success(flutter::EncodableValue(!tray_ || icon_added_));
+    } else {
+      result->Success();
+    }
     return;
   }
   if (method == "quit") {

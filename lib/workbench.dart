@@ -745,6 +745,9 @@ class _WorkbenchState extends State<Workbench>
       ? AttentionService(
           workspace: _workspace,
           host: ChannelAttentionHost.instance,
+          confirmTray: AppEdition.isAbyss && AppPlatform.isWindows
+              ? ChannelAttentionHost.instance.setTrayConfirmed
+              : null,
           settings: () => AttentionSettings.parse(
             widget.settings?.files?.settings.values ?? const {},
           ),

@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../platform/app_edition.dart';
 import '../platform/app_platform.dart';
+import '../platform/event_log.dart';
 import '../workspace/window_controls.dart';
 import 'system_sounds_stub.dart'
     if (dart.library.io) 'system_sounds_io.dart'
@@ -150,6 +152,24 @@ class ChannelAttentionHost implements AttentionHost {
 
   @override
   Future<void> setTray(TrayState? state) => _invoke('setTray', state?.encoded);
+
+  /// Windows Abyss confirms the native host received the state and, when
+  /// enabled, successfully added or updated the notification-area icon.
+  Future<bool> setTrayConfirmed(TrayState? state) async {
+    assert(AppEdition.isAbyss && AppPlatform.isWindows);
+    try {
+      if (await _channel.invokeMethod<bool>('setTray', state?.encoded) ==
+          true) {
+        return true;
+      }
+      appEvent('attention', 'Windows did not confirm the tray update');
+    } on MissingPluginException {
+      appEvent('attention', 'Tray channel unavailable');
+    } on PlatformException catch (error) {
+      appEvent('attention', 'Tray update failed (${error.code})');
+    }
+    return false;
+  }
 
   @override
   Future<String?> pickSound() async => AppPlatform.isLinux
